@@ -1,7 +1,7 @@
 use bytes::{BufMut, Bytes, BytesMut};
 use thiserror::Error;
 
-use crate::*;
+use crate::data::*;
 
 mod t;
 mod r;

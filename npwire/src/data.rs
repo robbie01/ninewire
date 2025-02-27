@@ -257,3 +257,200 @@ pub struct Twstat {
 
 #[derive(Debug, Clone, Copy)]
 pub struct Rwstat;
+
+#[derive(Debug, Clone)]
+pub enum TMessage {
+    Tversion(Tversion),
+    Tauth(Tauth),
+    Tflush(Tflush),
+    Tattach(Tattach),
+    Twalk(Twalk),
+    Topen(Topen),
+    Tcreate(Tcreate),
+    Tread(Tread),
+    Twrite(Twrite),
+    Tclunk(Tclunk),
+    Tremove(Tremove),
+    Tstat(Tstat),
+    Twstat(Twstat),
+}
+
+impl From<Tversion> for TMessage {
+    fn from(value: Tversion) -> Self {
+        Self::Tversion(value)
+    }
+}
+
+impl From<Tauth> for TMessage {
+    fn from(value: Tauth) -> Self {
+        Self::Tauth(value)
+    }
+}
+
+impl From<Tflush> for TMessage {
+    fn from(value: Tflush) -> Self {
+        Self::Tflush(value)
+    }
+}
+
+impl From<Tattach> for TMessage {
+    fn from(value: Tattach) -> Self {
+        Self::Tattach(value)
+    }
+}
+
+impl From<Twalk> for TMessage {
+    fn from(value: Twalk) -> Self {
+        Self::Twalk(value)
+    }
+}
+
+impl From<Topen> for TMessage {
+    fn from(value: Topen) -> Self {
+        Self::Topen(value)
+    }
+}
+
+impl From<Tcreate> for TMessage {
+    fn from(value: Tcreate) -> Self {
+        Self::Tcreate(value)
+    }
+}
+
+impl From<Tread> for TMessage {
+    fn from(value: Tread) -> Self {
+        Self::Tread(value)
+    }
+}
+
+impl From<Twrite> for TMessage {
+    fn from(value: Twrite) -> Self {
+        Self::Twrite(value)
+    }
+}
+
+impl From<Tclunk> for TMessage {
+    fn from(value: Tclunk) -> Self {
+        Self::Tclunk(value)
+    }
+}
+
+impl From<Tremove> for TMessage {
+    fn from(value: Tremove) -> Self {
+        Self::Tremove(value)
+    }
+}
+
+impl From<Tstat> for TMessage {
+    fn from(value: Tstat) -> Self {
+        Self::Tstat(value)
+    }
+}
+
+impl From<Twstat> for TMessage {
+    fn from(value: Twstat) -> Self {
+        Self::Twstat(value)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum RMessage {
+    Rversion(Rversion),
+    Rauth(Rauth),
+    Rerror(Rerror),
+    Rflush(Rflush),
+    Rattach(Rattach),
+    Rwalk(Rwalk),
+    Ropen(Ropen),
+    Rcreate(Rcreate),
+    Rread(Rread),
+    Rwrite(Rwrite),
+    Rclunk(Rclunk),
+    Rremove(Rremove),
+    Rstat(Rstat),
+    Rwstat(Rwstat),
+}
+
+impl From<Rversion> for RMessage {
+    fn from(value: Rversion) -> Self {
+        Self::Rversion(value)
+    }
+}
+
+impl From<Rauth> for RMessage {
+    fn from(value: Rauth) -> Self {
+        Self::Rauth(value)
+    }
+}
+
+impl From<Rerror> for RMessage {
+    fn from(value: Rerror) -> Self {
+        Self::Rerror(value)
+    }
+}
+
+impl From<Rflush> for RMessage {
+    fn from(value: Rflush) -> Self {
+        Self::Rflush(value)
+    }
+}
+
+impl From<Rattach> for RMessage {
+    fn from(value: Rattach) -> Self {
+        Self::Rattach(value)
+    }
+}
+
+impl From<Rwalk> for RMessage {
+    fn from(value: Rwalk) -> Self {
+        Self::Rwalk(value)
+    }
+}
+
+impl From<Ropen> for RMessage {
+    fn from(value: Ropen) -> Self {
+        Self::Ropen(value)
+    }
+}
+
+impl From<Rcreate> for RMessage {
+    fn from(value: Rcreate) -> Self {
+        Self::Rcreate(value)
+    }
+}
+
+impl From<Rread> for RMessage {
+    fn from(value: Rread) -> Self {
+        Self::Rread(value)
+    }
+}
+
+impl From<Rwrite> for RMessage {
+    fn from(value: Rwrite) -> Self {
+        Self::Rwrite(value)
+    }
+}
+
+impl From<Rclunk> for RMessage {
+    fn from(value: Rclunk) -> Self {
+        Self::Rclunk(value)
+    }
+}
+
+impl From<Rremove> for RMessage {
+    fn from(value: Rremove) -> Self {
+        Self::Rremove(value)
+    }
+}
+
+impl From<Rstat> for RMessage {
+    fn from(value: Rstat) -> Self {
+        Self::Rstat(value)
+    }
+}
+
+impl From<Rwstat> for RMessage {
+    fn from(value: Rwstat) -> Self {
+        Self::Rwstat(value)
+    }
+}

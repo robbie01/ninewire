@@ -4,7 +4,7 @@ use bytes::{Buf as _, Bytes};
 use bytestring::ByteString;
 use thiserror::Error;
 
-use crate::*;
+use crate::data::*;
 
 mod t;
 mod r;

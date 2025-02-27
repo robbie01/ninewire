@@ -149,3 +149,24 @@ impl Rerror {
         Ok(buf.freeze())
     }
 }
+
+impl RMessage {
+    pub fn serialize(&self, tag: u16) -> Result<Bytes, SerializeError> {
+        match self {
+            RMessage::Rversion(v) => v.serialize(tag),
+            RMessage::Rauth(v) => v.serialize(tag),
+            RMessage::Rflush(v) => v.serialize(tag),
+            RMessage::Rattach(v) => v.serialize(tag),
+            RMessage::Rwalk(v) => v.serialize(tag),
+            RMessage::Ropen(v) => v.serialize(tag),
+            RMessage::Rcreate(v) => v.serialize(tag),
+            RMessage::Rread(v) => v.serialize(tag),
+            RMessage::Rwrite(v) => v.serialize(tag),
+            RMessage::Rclunk(v) => v.serialize(tag),
+            RMessage::Rremove(v) => v.serialize(tag),
+            RMessage::Rstat(v) => v.serialize(tag),
+            RMessage::Rwstat(v) => v.serialize(tag),
+            RMessage::Rerror(v) => v.serialize(tag),
+        }
+    }
+}

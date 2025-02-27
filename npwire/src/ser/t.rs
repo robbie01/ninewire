@@ -157,3 +157,23 @@ impl Twstat {
         Ok(buf.freeze())
     }
 }
+
+impl TMessage {
+    pub fn serialize(&self, tag: u16) -> Result<Bytes, SerializeError> {
+        match self {
+            TMessage::Tversion(m) => m.serialize(tag),
+            TMessage::Tauth(m) => m.serialize(tag),
+            TMessage::Tflush(m) => m.serialize(tag),
+            TMessage::Tattach(m) => m.serialize(tag),
+            TMessage::Twalk(m) => m.serialize(tag),
+            TMessage::Topen(m) => m.serialize(tag),
+            TMessage::Tcreate(m) => m.serialize(tag),
+            TMessage::Tread(m) => m.serialize(tag),
+            TMessage::Twrite(m) => m.serialize(tag),
+            TMessage::Tclunk(m) => m.serialize(tag),
+            TMessage::Tremove(m) => m.serialize(tag),
+            TMessage::Tstat(m) => m.serialize(tag),
+            TMessage::Twstat(m) => m.serialize(tag),
+        }
+    }
+}

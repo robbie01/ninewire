@@ -26,7 +26,7 @@ impl traits::Fid for Fid {
 
 const PRIVATE_KEY: [u8; 32] = [127, 93, 161, 223, 213, 211, 245, 80, 69, 165, 77, 133, 169, 40, 130, 112, 218, 255, 225, 74, 78, 69, 83, 20, 154, 244, 58, 224, 51, 34, 61, 102];
 
-pub async fn serve<S: Serve<Fid> + 'static>(
+pub async fn serve<S: Serve<Fid>>(
     handler: Arc<S>,
     listener: TcpListener,
 ) -> io::Result<Infallible> {

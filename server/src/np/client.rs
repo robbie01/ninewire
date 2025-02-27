@@ -1,6 +1,5 @@
 use std::{future::Future, mem, pin::{pin, Pin}, sync::Arc, task::{Context, Poll}};
 
-use bytes::Bytes;
 use futures::{io, stream::FuturesUnordered, SinkExt, StreamExt};
 use tokio::{io::{AsyncRead, AsyncWrite}, task::{Id, JoinError, JoinHandle}};
 use tokio_util::codec::LengthDelimitedCodec;
@@ -30,67 +29,66 @@ impl<T> Future for TaggedJoinHandle<T> {
     }
 }
 
-async fn dispatch<S: Serve<Fid> + 'static>(
+async fn dispatch<S: Serve<Fid>>(
     handler: Arc<S>,
     connection_id: Id,
-    request: TMessage,
-    tag: u16
-) -> Result<Bytes, Rerror> {
+    request: TMessage
+) -> Result<RMessage, Rerror> {
     match request {
         TMessage::Tversion(..) | TMessage::Tflush(..) => {
             unimplemented!()
         },
         TMessage::Tauth(Tauth { afid, uname, aname }) => {
             let aqid = handler.auth(Fid::new(connection_id, afid), &uname, &aname).await?;
-            Ok(Rauth { aqid }.serialize(tag)?)
+            Ok(Rauth { aqid }.into())
         },
         TMessage::Tattach(Tattach { fid, afid, uname, aname }) => {
             let qid = handler.attach(Fid::new(connection_id, fid), Fid::new(connection_id, afid), &uname, &aname).await?;
-            Ok(Rattach { qid }.serialize(tag)?)
+            Ok(Rattach { qid }.into())
         },
         TMessage::Twalk(Twalk { fid, newfid, wname }) => {
-            let wname = wname.iter().map(|s| &s[..]).collect();
-            let wqid = handler.walk(Fid::new(connection_id, fid), Fid::new(connection_id, newfid), wname).await?;
-            Ok(Rwalk { wqid: wqid.into_iter().collect() }.serialize(tag)?)
+            let wname = wname.iter().map(|s| &s[..]).collect::<Vec<_>>();
+            let wqid = handler.walk(Fid::new(connection_id, fid), Fid::new(connection_id, newfid), &wname).await?;
+            Ok(Rwalk { wqid: wqid.into_iter().collect() }.into())
         },
         TMessage::Topen(Topen { fid, mode }) => {
             let (qid, iounit) = handler.open(Fid::new(connection_id, fid), mode).await?;
-            Ok(Ropen { qid, iounit }.serialize(tag)?)
+            Ok(Ropen { qid, iounit }.into())
         },
         TMessage::Tcreate(Tcreate { fid, name, perm, mode }) => {
             let (qid, iounit) = handler.create(Fid::new(connection_id, fid), &name, perm, mode).await?;
-            Ok(Rcreate { qid, iounit }.serialize(tag)?)
+            Ok(Rcreate { qid, iounit }.into())
         },
         TMessage::Tread(Tread { fid, offset, count }) => {
             let fid = Fid::new(connection_id, fid);
 
             let data = handler.read(fid, offset, count).await?;
-            Ok(Rread { data }.serialize(tag)?)
+            Ok(Rread { data }.into())
         },
         TMessage::Twrite(Twrite { fid, offset, data }) => {
             let count = handler.write(Fid::new(connection_id, fid), offset, &data[..]).await?;
-            Ok(Rwrite { count }.serialize(tag)?)
+            Ok(Rwrite { count }.into())
         },
         TMessage::Tclunk(Tclunk { fid }) => {
             handler.clunk(Fid::new(connection_id, fid)).await?;
-            Ok(Rclunk.serialize(tag)?)
+            Ok(Rclunk.into())
         },
         TMessage::Tremove(Tremove { fid }) => {
             handler.remove(Fid::new(connection_id, fid)).await?;
-            Ok(Rremove.serialize(tag)?)
+            Ok(Rremove.into())
         },
         TMessage::Tstat(Tstat { fid }) => {
             let stat = handler.stat(Fid::new(connection_id, fid)).await?;
-            Ok(Rstat { stat }.serialize(tag)?)
+            Ok(Rstat { stat }.into())
         },
         TMessage::Twstat(Twstat { fid, stat }) => {
             handler.wstat(Fid::new(connection_id, fid), stat).await?;
-            Ok(Rwstat.serialize(tag)?)
+            Ok(Rwstat.into())
         }
     }
 }
 
-pub async fn handle_client<S: Serve<Fid> + 'static>(
+pub async fn handle_client<S: Serve<Fid>>(
     peer: impl AsyncRead + AsyncWrite,
     id: Id,
     handler: Arc<S>
@@ -103,7 +101,7 @@ pub async fn handle_client<S: Serve<Fid> + 'static>(
         .length_adjustment(-4)
         .new_framed(peer);
 
-    let mut inflight = FuturesUnordered::<TaggedJoinHandle<Result<Bytes, Rerror>>>::new();
+    let mut inflight = FuturesUnordered::<TaggedJoinHandle<Result<RMessage, Rerror>>>::new();
 
     loop {
         tokio::select! {
@@ -111,7 +109,10 @@ pub async fn handle_client<S: Serve<Fid> + 'static>(
             Some((tag, flushes, resp)) = inflight.next() => {
                 let resp = resp
                     .unwrap_or_else(|e| Err(e.into()))
-                    .or_else(|e| e.serialize(tag))
+                    .unwrap_or_else(RMessage::from);
+
+                let resp = resp
+                    .serialize(tag)
                     .unwrap_or_else(|e| Rerror::from(e).serialize(tag).unwrap());
 
                 framed.send(resp).await?;
@@ -147,8 +148,7 @@ pub async fn handle_client<S: Serve<Fid> + 'static>(
                                     hdl: tokio::spawn(dispatch(
                                         handler.clone(),
                                         id,
-                                        req,
-                                        tag
+                                        req
                                     ))
                                 });
                             }

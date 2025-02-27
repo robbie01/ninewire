@@ -1,4 +1,4 @@
-use std::{collections::HashMap as StdHashMap, fmt::Debug, io, net::Ipv4Addr, path::PathBuf, sync::Arc};
+use std::{collections::HashMap as StdHashMap, convert::Infallible, fmt::Debug, io, net::Ipv4Addr, path::PathBuf, sync::Arc};
 
 use bytes::Bytes;
 use np::Serve;
@@ -78,7 +78,7 @@ impl<Fid: np::traits::Fid + Debug> Serve<Fid> for Handler<Fid> {
         }
     }
 
-    async fn walk(&self, fid: Fid, newfid: Fid, wname: Vec<&str>) -> anyhow::Result<impl IntoIterator<Item = Qid>> {
+    async fn walk(&self, fid: Fid, newfid: Fid, wname: &[&str]) -> anyhow::Result<impl IntoIterator<Item = Qid>> {
         if newfid.is_nofid() {
             return Err(HandlerError::InvalidArgument.into());
         }
@@ -207,13 +207,11 @@ impl<Fid: np::traits::Fid + Debug> Serve<Fid> for Handler<Fid> {
 }
 
 #[tokio::main(flavor = "current_thread")]
-async fn main() -> io::Result<()> {
+async fn main() -> io::Result<Infallible> {
     let listener = TcpListener::bind((Ipv4Addr::UNSPECIFIED, 64444)).await?;
 
     np::serve(Arc::new(Handler::new([
         ("forfun".into(), "forfun".into()),
         ("ff2".into(), "forfun".into())
-    ].into_iter().collect())), listener).await?;
-
-    Ok(())
+    ].into_iter().collect())), listener).await
 }
