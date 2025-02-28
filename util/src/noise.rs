@@ -38,7 +38,7 @@ impl<T: AsyncRead + AsyncWrite> NoiseStream<T> {
         Ok(this)
     }
 
-    pub fn new(inner: T) -> Self {
+    fn new(inner: T) -> Self {
         let inner = LengthDelimitedCodec::builder()
             .big_endian()
             .length_field_type::<u16>()
@@ -51,7 +51,7 @@ impl<T: AsyncRead + AsyncWrite> NoiseStream<T> {
         }
     }
 
-    pub async fn initialize(self: Pin<&mut Self>, privkey: &[u8], side: Side<'_>) -> io::Result<()> {
+    async fn initialize(self: Pin<&mut Self>, privkey: &[u8], side: Side<'_>) -> io::Result<()> {
         let mut this = self.project();
 
         if this.st.is_some() {

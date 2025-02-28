@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = [ "noiseproxy", "npwire","server", "util"]
+members = [ "client", "noiseproxy", "npwire","server", "util"]
 
 [workspace.dependencies]
 util.path = "./util"
@@ -14,3 +14,4 @@ futures = "0.3"
 int-enum = "1.1"
 thiserror = "2"
 bytestring = "1.4"
+rand = "0.9"

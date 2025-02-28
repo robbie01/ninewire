@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::fmt::{Debug, Display};
 
 use bytestring::ByteString;
 use int_enum::IntEnum;
@@ -258,7 +258,7 @@ pub struct Twstat {
 #[derive(Debug, Clone, Copy)]
 pub struct Rwstat;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum TMessage {
     Tversion(Tversion),
     Tauth(Tauth),
@@ -273,6 +273,26 @@ pub enum TMessage {
     Tremove(Tremove),
     Tstat(Tstat),
     Twstat(Twstat),
+}
+
+impl Debug for TMessage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Tversion(inner) => Debug::fmt(inner, f),
+            Self::Tauth(inner) => Debug::fmt(inner, f),
+            Self::Tflush(inner) => Debug::fmt(inner, f),
+            Self::Tattach(inner) => Debug::fmt(inner, f),
+            Self::Twalk(inner) => Debug::fmt(inner, f),
+            Self::Topen(inner) => Debug::fmt(inner, f),
+            Self::Tcreate(inner) => Debug::fmt(inner, f),
+            Self::Tread(inner) => Debug::fmt(inner, f),
+            Self::Twrite(inner) => Debug::fmt(inner, f),
+            Self::Tclunk(inner) => Debug::fmt(inner, f),
+            Self::Tremove(inner) => Debug::fmt(inner, f),
+            Self::Tstat(inner) => Debug::fmt(inner, f),
+            Self::Twstat(inner) => Debug::fmt(inner, f),
+        }
+    }
 }
 
 impl From<Tversion> for TMessage {
@@ -353,7 +373,7 @@ impl From<Twstat> for TMessage {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum RMessage {
     Rversion(Rversion),
     Rauth(Rauth),
@@ -369,6 +389,27 @@ pub enum RMessage {
     Rremove(Rremove),
     Rstat(Rstat),
     Rwstat(Rwstat),
+}
+
+impl Debug for RMessage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Rversion(inner) => Debug::fmt(inner, f),
+            Self::Rauth(inner) => Debug::fmt(inner, f),
+            Self::Rerror(inner) => Debug::fmt(inner, f),
+            Self::Rflush(inner) => Debug::fmt(inner, f),
+            Self::Rattach(inner) => Debug::fmt(inner, f),
+            Self::Rwalk(inner) => Debug::fmt(inner, f),
+            Self::Ropen(inner) => Debug::fmt(inner, f),
+            Self::Rcreate(inner) => Debug::fmt(inner, f),
+            Self::Rread(inner) => Debug::fmt(inner, f),
+            Self::Rwrite(inner) => Debug::fmt(inner, f),
+            Self::Rclunk(inner) => Debug::fmt(inner, f),
+            Self::Rremove(inner) => Debug::fmt(inner, f),
+            Self::Rstat(inner) => Debug::fmt(inner, f),
+            Self::Rwstat(inner) => Debug::fmt(inner, f),
+        }
+    }
 }
 
 impl From<Rversion> for RMessage {

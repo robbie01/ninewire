@@ -1,9 +1,9 @@
-use std::{cmp::Reverse, collections::BinaryHeap, sync::{Arc, Mutex, Weak}};
+use std::{collections::BTreeSet, ptr, sync::{Arc, Mutex, Weak}};
 
 #[derive(Debug, Default)]
 pub struct FidPoolInner {
     next: u32,
-    free_list: BinaryHeap<Reverse<u32>>
+    free_list: BTreeSet<u32>
 }
 
 #[derive(Debug, Default)]
@@ -25,7 +25,7 @@ impl FidPool {
     pub fn get(&self) -> Option<FidHandle> {
         let mut inner = self.inner.lock().ok()?;
 
-        let fid = if let Some(Reverse(fid)) = inner.free_list.pop() {
+        let fid = if let Some(fid) = inner.free_list.pop_first() {
             fid
         } else {
             let old_next = inner.next;
@@ -41,12 +41,33 @@ impl FidHandle {
     pub fn fid(&self) -> u32 {
         self.fid
     }
+
+    pub fn is_nofid(&self) -> bool {
+        self.fid == !0
+    }
+
+    pub fn is_of(&self, pool: &FidPool) -> bool {
+        ptr::addr_eq(
+            self.parent.as_ptr(),
+            Arc::as_ptr(&pool.inner)
+        )
+    }
+}
+
+impl Default for FidHandle {
+    fn default() -> Self {
+        Self {
+            fid: !0,
+            parent: Weak::new()
+        }
+    }
 }
 
 impl Drop for FidHandle {
     fn drop(&mut self) {
         let Some(parent) = self.parent.upgrade() else { return };
-        let Ok(mut parent) = parent.lock() else { return };
-        parent.free_list.push(Reverse(self.fid));
+        let mut parent = parent.lock().unwrap();
+        assert!(self.fid < parent.next);
+        assert!(parent.free_list.insert(self.fid));
     }
 }

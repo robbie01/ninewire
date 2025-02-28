@@ -9,16 +9,16 @@ use util::noise::{NoiseStream, Side};
 use super::{Serve, Fid};
 
 const MAX_IN_FLIGHT: usize = 16;
-const MAX_MESSAGE_SIZE: u32 = 16384;
+const MAX_MESSAGE_SIZE: u32 = 65535 - 16;
 
 struct TaggedJoinHandle<T> {
     tag: u16,
-    flushes: Vec<u16>,
+    flushes: Option<u16>,
     hdl: JoinHandle<T>
 }
 
 impl<T> Future for TaggedJoinHandle<T> {
-    type Output = (u16, Vec<u16>, Result<T, JoinError>);
+    type Output = (u16, Option<u16>, Result<T, JoinError>);
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         Pin::new(&mut self.hdl).poll(cx).map(|v| (
@@ -32,7 +32,8 @@ impl<T> Future for TaggedJoinHandle<T> {
 async fn dispatch<S: Serve<Fid>>(
     handler: Arc<S>,
     connection_id: Id,
-    request: TMessage
+    request: TMessage,
+    maxlen: usize
 ) -> Result<RMessage, Rerror> {
     match request {
         TMessage::Tversion(..) | TMessage::Tflush(..) => {
@@ -60,6 +61,10 @@ async fn dispatch<S: Serve<Fid>>(
             Ok(Rcreate { qid, iounit }.into())
         },
         TMessage::Tread(Tread { fid, offset, count }) => {
+            // Bound count by the maximum frame size
+            let maxcount = (maxlen - 7).try_into().unwrap_or(u32::MAX);
+            let count = count.min(maxcount);
+
             let fid = Fid::new(connection_id, fid);
 
             let data = handler.read(fid, offset, count).await?;
@@ -106,21 +111,6 @@ pub async fn handle_client<S: Serve<Fid>>(
     loop {
         tokio::select! {
             biased;
-            Some((tag, flushes, resp)) = inflight.next() => {
-                let resp = resp
-                    .unwrap_or_else(|e| Err(e.into()))
-                    .unwrap_or_else(RMessage::from);
-
-                let resp = resp
-                    .serialize(tag)
-                    .unwrap_or_else(|e| Rerror::from(e).serialize(tag).unwrap());
-
-                framed.send(resp).await?;
-
-                for flush in flushes {
-                    framed.send(Rflush.serialize(flush).unwrap()).await?;
-                }
-            },
             Some(incoming) = framed.next(), if inflight.len() < MAX_IN_FLIGHT => {
                 let incoming = incoming?;
 
@@ -131,12 +121,14 @@ pub async fn handle_client<S: Serve<Fid>>(
                             TMessage::Tversion(Tversion { msize, version }) => {
                                 let msize = msize.min(MAX_MESSAGE_SIZE);
                                 let version = if version == "9P2000" { "9P2000" } else { "unknown" };
-                                framed.codec_mut().set_max_frame_length((msize - 4) as usize);
+                                framed.codec_mut().set_max_frame_length(msize.checked_sub(4).unwrap() as usize);
                                 framed.send(Rversion { msize, version: version.into() }.serialize(tag).unwrap()).await?;
                             },
                             TMessage::Tflush(Tflush { oldtag }) => {
                                 if let Some(flushes) = inflight.iter_mut().find_map(|h| (h.tag == oldtag).then_some(&mut h.flushes)) {
-                                    flushes.push(tag);
+                                    // https://9fans.github.io/plan9port/man/man9/flush.html
+                                    // "it need respond only to the last flush"
+                                    *flushes = Some(tag);
                                 } else {
                                     framed.send(Rflush.serialize(tag).unwrap()).await?;
                                 }
@@ -144,11 +136,12 @@ pub async fn handle_client<S: Serve<Fid>>(
                             req => {
                                 inflight.push(TaggedJoinHandle {
                                     tag,
-                                    flushes: Vec::new(),
+                                    flushes: None,
                                     hdl: tokio::spawn(dispatch(
                                         handler.clone(),
                                         id,
-                                        req
+                                        req,
+                                        framed.codec().max_frame_length()
                                     ))
                                 });
                             }
@@ -162,6 +155,23 @@ pub async fn handle_client<S: Serve<Fid>>(
                         }
                     }
                 }
+            },
+            Some((tag, flushes, resp)) = inflight.next() => {
+                let resp = resp
+                    .unwrap_or_else(|e| Err(e.into()))
+                    .unwrap_or_else(RMessage::from);
+
+                let resp = resp
+                    .serialize(tag)
+                    .unwrap_or_else(|e| Rerror::from(e).serialize(tag).unwrap());
+
+                framed.feed(resp).await?;
+
+                if let Some(flush) = flushes {
+                    framed.feed(Rflush.serialize(flush).unwrap()).await?;
+                }
+
+                framed.flush().await?;
             },
             else => break
         }
