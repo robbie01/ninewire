@@ -1,19 +1,19 @@
 use std::{future::pending, mem, pin::Pin, task::{ready, Poll}};
 
 use bytes::Bytes;
-use npwire::{Ropen, Rread, Rwalk, Topen, Tread, Twalk};
+use npwire::{Rread, Tread};
 use tokio_util::sync::ReusableBoxFuture;
 
 use super::*;
 
 #[derive(Debug)]
 pub struct File {
-    fsys: Arc<FilesystemInner>,
-    fid: FidHandle
+    pub(super) fsys: Arc<FilesystemInner>,
+    pub(super) fid: FidHandle
 }
 
 impl Directory {
-    pub async fn open(&self, path: impl AsRef<str>) -> io::Result<File> {
+    pub async fn open_at(&self, path: impl AsRef<str>) -> io::Result<File> {
         let file = File {
             fsys: self.fsys.clone(),
             fid: self.fsys.get_fid().unwrap()
@@ -31,36 +31,24 @@ impl Directory {
 
         let nc = wname.len();
 
-        let resp = self.fsys.transact(Twalk {
-            fid: self.fid.fid(),
-            newfid: file.fid.fid(),
-            wname
-        }).await?;
+        let wqid = self.fsys.walk(
+            &self.fid,
+            &file.fid,
+            wname).await?;
 
-        let wqid = match resp {
-            RMessage::Rerror(Rerror { ename }) => return Err(io::Error::other(&ename[..])),
-            RMessage::Rwalk(Rwalk { wqid }) => wqid,
-            _ => return Err(io::Error::other("unexpected message type"))
-        };
-
-        if wqid.len() != nc {
+        if wqid.len() < nc {
             return Err(io::ErrorKind::NotFound.into());
+        }
+        
+        if wqid.len() > nc {
+            return Err(io::Error::other("invalid response from server"));
         }
 
         if wqid.last().unwrap().type_ & QTDIR == QTDIR {
             return Err(io::ErrorKind::IsADirectory.into());
         }
 
-        let resp = self.fsys.transact(Topen {
-            fid: file.fid.fid(),
-            mode: 0
-        }).await?;
-
-        let qid = match resp {
-            RMessage::Rerror(Rerror { ename }) => return Err(io::Error::other(&ename[..])),
-            RMessage::Ropen(Ropen { qid, iounit: _ }) => qid,
-            _ => return Err(io::Error::other("unexpected message type"))
-        };
+        let qid = self.fsys.open(&file.fid).await?;
 
         assert_eq!(wqid.last(), Some(&qid));
 
@@ -69,6 +57,10 @@ impl Directory {
 }
 
 impl File {
+    pub async fn stat(&self) -> io::Result<npwire::Stat> {
+        self.fsys.stat(&self.fid).await
+    }
+
     pub async fn read_at(&self, count: u32, offset: u64) -> io::Result<Bytes> {
         let resp = self.fsys.transact(Tread {
             fid: self.fid.fid(),

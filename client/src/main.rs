@@ -1,10 +1,10 @@
-use std::{io, net::Ipv4Addr, time::Duration};
+use std::{net::Ipv4Addr, time::Duration};
 
 use fs::{Filesystem, ReadableFile};
 use rand::random;
 use tokio::{io::AsyncReadExt as _, net::TcpStream, time};
 
-mod fs;
+pub mod fs;
 
 const PUBLIC_KEY: [u8; 32] = [241, 1, 228, 0, 247, 163, 248, 66, 94, 57, 122, 30, 59, 183, 146, 22, 39, 145, 26, 136, 130, 145, 111, 87, 19, 2, 218, 116, 17, 82, 71, 40];
 
@@ -21,14 +21,15 @@ async fn main() -> anyhow::Result<()> {
     let fsys = Filesystem::new(noise);
     {
         let root = fsys.mount().await?;
-        for _ in 0..4 {
-            let root = root.try_clone().await?;
-            tokio::spawn(async move {
-                let _f = root.open("ff2/dvd/video/ch1").await?;
-                Ok::<_, io::Error>(())
-            });
+        let mut readdir = root.open_dir_at("ff2/").await?.read_dir().await?;
+        while let Some(x) = readdir.next_entry().await? {
+            if x.mode & npwire::DMDIR == npwire::DMDIR {
+                println!("{}/", x.name);
+            } else {
+                println!("{}", x.name);
+            }
         }
-        let f = root.open("ff2/dvd/video/ch1").await?;
+        let f = root.open_at("ff2/dvd/video/ch1").await?;
         let mut file = ReadableFile::new(&f);
 
         let mut s = String::new();

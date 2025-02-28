@@ -1,7 +1,5 @@
 use std::mem;
 
-use npwire::{Rwalk, Twalk};
-
 use super::*;
 
 #[derive(Debug)]
@@ -39,29 +37,47 @@ impl Filesystem {
 }
 
 impl Directory {
+    pub async fn stat(&self) -> io::Result<npwire::Stat> {
+        self.fsys.stat(&self.fid).await
+    }
+
     pub async fn try_clone(&self) -> io::Result<Self> {
+        self.open_dir_at("").await
+    }
+
+    pub async fn open_dir_at(&self, path: impl AsRef<str>) -> io::Result<Self> {
         let dir = Directory {
             fsys: self.fsys.clone(),
             fid: self.fsys.get_fid().unwrap()
         };
 
-        let resp = self.fsys.transact(Twalk {
-            fid: self.fid.fid(),
-            newfid: dir.fid.fid(),
-            wname: Vec::new()
-        }).await?;
+        let wname = path.as_ref()
+            .split('/')
+            .filter(|&c| !(c.is_empty() || c == "."))
+            .map(|c| c.into())
+            .collect::<Vec<_>>();
 
-        match resp {
-            RMessage::Rerror(Rerror { ename }) => Err(io::Error::other(&ename[..])),
-            RMessage::Rwalk(Rwalk { wqid }) => {
-                if !wqid.is_empty() {
-                    return Err(io::Error::other("idek bro"));
-                }
+        let nc = wname.len();
 
-                Ok(dir)       
-            },
-            _ => Err(io::Error::other("unexpected message type"))
+        let wqid = self.fsys.walk(
+            &self.fid,
+            &dir.fid,
+            wname
+        ).await?;
+
+        if wqid.len() < nc {
+            return Err(io::ErrorKind::NotFound.into());
         }
+        
+        if wqid.len() > nc {
+            return Err(io::Error::other("invalid response from server"));
+        }
+
+        if wqid.last().is_some_and(|qid| qid.type_ & QTDIR != QTDIR) {
+            return Err(io::ErrorKind::NotADirectory.into());
+        }
+
+        Ok(dir)
     }
 }
 
