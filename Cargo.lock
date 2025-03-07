@@ -765,10 +765,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bytes",
- "bytestring",
  "cfg-if",
  "futures",
- "int-enum",
  "npwire",
  "scc",
  "string_cache",

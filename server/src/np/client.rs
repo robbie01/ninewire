@@ -62,7 +62,7 @@ async fn dispatch<S: Serve<Fid>>(
         },
         TMessage::Tread(Tread { fid, offset, count }) => {
             // Bound count by the maximum frame size
-            let maxcount = (maxlen - 7).try_into().unwrap_or(u32::MAX);
+            let maxcount = (maxlen - RREAD_OVERHEAD).try_into().unwrap_or(u32::MAX);
             let count = count.min(maxcount);
 
             let fid = Fid::new(connection_id, fid);
@@ -99,7 +99,7 @@ pub async fn handle_client<S: Serve<Fid>>(
     handler: Arc<S>
 ) -> io::Result<()> {
     let peer = pin!(peer);
-    let peer = NoiseStream::new_init(peer, &super::PRIVATE_KEY, Side::Responder).await?;
+    let peer = NoiseStream::new(peer, &super::PRIVATE_KEY, Side::Responder).await?;
     let mut framed = LengthDelimitedCodec::builder()
         .little_endian()
         .length_field_type::<u32>()

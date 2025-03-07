@@ -1,14 +1,15 @@
-use std::{collections::HashMap, io, pin::pin, sync::Arc};
+use std::{collections::HashMap, pin::pin, sync::Arc};
 
 use anyhow::bail;
 use bytestring::ByteString;
 use futures::{SinkExt, StreamExt as _, TryStreamExt};
-use npwire::{deserialize_r, RMessage, Rattach, Rclunk, Rerror, Ropen, Rstat, Rwalk, TMessage, Tattach, Tclunk, Topen, Tstat, Tversion, Twalk, QTDIR};
+use npwire::{deserialize_r, RMessage, Rerror, TMessage, Tversion, Twrite, TWRITE_OVERHEAD};
 use pool::TagPool;
 use tokio::{io::{AsyncRead, AsyncWrite}, sync::{mpsc, oneshot}};
 use tokio_util::codec::LengthDelimitedCodec;
 
 mod pool;
+mod transact;
 mod dir;
 mod file;
 mod readdir;
@@ -33,72 +34,13 @@ pub(crate) struct FilesystemInner {
 }
 
 #[derive(Debug)]
-pub struct Filesystem(Arc<FilesystemInner>);
+pub struct Filesystem {
+    fsys: Arc<FilesystemInner>
+}
 
 impl FilesystemInner {
-    async fn transact(&self, message: impl Into<TMessage>) -> io::Result<RMessage> {
-        let (reply_to, rcv) = oneshot::channel();
-        self.sender.send(Request { message: message.into(), reply_to }).await.map_err(|_| io::ErrorKind::BrokenPipe)?;
-        rcv.await.map_err(|_| io::ErrorKind::BrokenPipe.into())
-    }
-
     fn get_fid(&self) -> Option<FidHandle> {
         self.fids.get()
-    }
-
-    async fn clunk(&self, fid: FidHandle) -> io::Result<()> {
-        assert!(fid.is_of(&self.fids));
-
-        let resp = self.transact(Tclunk {
-            fid: fid.fid()
-        }).await?;
-
-        match resp {
-            RMessage::Rerror(Rerror { ename }) => Err(io::Error::other(&ename[..])),
-            RMessage::Rclunk(Rclunk) => Ok(()),
-            _ => Err(io::Error::other("unexpected message type"))
-        }
-    }
-
-    async fn stat(&self, fid: &FidHandle) -> io::Result<npwire::Stat> {
-        assert!(fid.is_of(&self.fids));
-
-        let resp = self.transact(Tstat {
-            fid: fid.fid()
-        }).await?;
-
-        match resp {
-            RMessage::Rerror(Rerror { ename }) => Err(io::Error::other(&ename[..])),
-            RMessage::Rstat(Rstat { stat }) => Ok(stat),
-            _ => Err(io::Error::other("unexpected message type"))
-        }
-    }
-
-    async fn open(&self, fid: &FidHandle) -> io::Result<npwire::Qid> {
-        let resp = self.transact(Topen {
-            fid: fid.fid(),
-            mode: 0
-        }).await?;
-
-        match resp {
-            RMessage::Rerror(Rerror { ename }) => Err(io::Error::other(&ename[..])),
-            RMessage::Ropen(Ropen { qid, iounit: _ }) => Ok(qid),
-            _ => Err(io::Error::other("unexpected message type"))
-        }
-    }
-
-    async fn walk(&self, fid: &FidHandle, newfid: &FidHandle, wname: Vec<ByteString>) -> io::Result<Vec<npwire::Qid>> {
-        let resp = self.transact(Twalk {
-            fid: fid.fid(),
-            newfid: newfid.fid(),
-            wname
-        }).await?;
-
-        match resp {
-            RMessage::Rerror(Rerror { ename }) => Err(io::Error::other(&ename[..])),
-            RMessage::Rwalk(Rwalk { wqid }) => Ok(wqid),
-            _ => Err(io::Error::other("unexpected message type"))
-        }
     }
 }
 
@@ -118,7 +60,7 @@ impl Filesystem {
                 msize: MAX_MESSAGE_SIZE,
                 version: ByteString::from_static("9P2000")
             });
-            eprintln!("<- {ver:?}");
+            //eprintln!("<- {ver:?}");
             framed.send(ver.serialize(!0).unwrap()).await?;
 
             let Some(ver) = framed.try_next().await? else {
@@ -126,7 +68,7 @@ impl Filesystem {
             };
             
             let (_, ver) = deserialize_r(ver.freeze())?;
-            eprintln!("-> {ver:?}");
+            //eprintln!("-> {ver:?}");
             let RMessage::Rversion(ver) = ver else {
                 bail!("invalid version response")
             };
@@ -134,7 +76,8 @@ impl Filesystem {
             if ver.version != "9P2000" {
                 bail!("protocol not supported")
             }
-            framed.codec_mut().set_max_frame_length(ver.msize.checked_sub(4).unwrap() as usize);
+            let maxlen = ver.msize.checked_sub(4).unwrap() as usize;
+            framed.codec_mut().set_max_frame_length(maxlen);
 
             let mut tags = TagPool::default();
 
@@ -142,12 +85,17 @@ impl Filesystem {
 
             loop {
                 tokio::select! {
-                    Some(req) = rcv.recv() => {
+                    Some(mut req) = rcv.recv() => {
                         let tag = tags.get().unwrap();
 
                         replies.insert(tag, req.reply_to);
+
+                        // Bound writes by the max message size
+                        if let TMessage::Twrite(Twrite { ref mut data, .. }) = req.message {
+                            data.truncate(maxlen - TWRITE_OVERHEAD);
+                        }
         
-                        eprintln!("<- {tag} {:?}", req.message);
+                        //eprintln!("<- {tag} {:?}", req.message);
                         let data = req.message
                             .serialize(tag)
                             .unwrap_or_else(|e| Rerror::from(e).serialize(tag).unwrap());
@@ -156,7 +104,7 @@ impl Filesystem {
                     },
                     Some(resp) = framed.next() => {
                         if let Ok((tag, resp)) = deserialize_r(resp?.freeze()) {
-                            eprintln!("-> {tag} {:?}", resp);
+                            //eprintln!("-> {tag} {:?}", resp);
                             let reply_to = replies.remove(&tag).unwrap();
                             tags.put(tag);
                             let _ = reply_to.send(resp);
@@ -169,9 +117,11 @@ impl Filesystem {
             Ok(())
         });
 
-        Self(Arc::new(FilesystemInner {
-            sender,
-            fids: Default::default()
-        }))
+        Self {
+            fsys: Arc::new(FilesystemInner {
+                sender,
+                fids: Default::default()
+            })
+        }
     }
 }

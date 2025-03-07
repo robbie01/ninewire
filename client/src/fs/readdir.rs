@@ -1,8 +1,8 @@
-use std::{collections::VecDeque, mem, u32};
+use std::{collections::VecDeque, io, mem};
 
-use npwire::{yank_stat, Stat};
+use npwire::{yank_stat, Stat, QTDIR};
 
-use super::*;
+use super::{Directory, File};
 
 #[derive(Debug)]
 pub struct ReadDir {

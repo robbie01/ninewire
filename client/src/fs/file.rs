@@ -1,10 +1,12 @@
-use std::{future::pending, mem, pin::Pin, task::{ready, Poll}};
+use std::{future::pending, io, mem, pin::Pin, sync::Arc, task::{ready, Context, Poll}};
 
-use bytes::Bytes;
-use npwire::{Rread, Tread};
+use bytes::{Buf, Bytes, BytesMut};
+use npwire::{RMessage, Rerror, Rread, Rwrite, Tread, Twrite, QTDIR};
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio_util::sync::ReusableBoxFuture;
+use util::fidpool::FidHandle;
 
-use super::*;
+use super::{Directory, FilesystemInner};
 
 #[derive(Debug)]
 pub struct File {
@@ -74,6 +76,20 @@ impl File {
             _ => Err(io::Error::other("unexpected message type"))
         }
     }
+
+    pub async fn write_at(&self, data: Bytes, offset: u64) -> io::Result<u32> {
+        let resp = self.fsys.transact(Twrite {
+            fid: self.fid.fid(),
+            offset,
+            data
+        }).await?;
+
+        match resp {
+            RMessage::Rerror(Rerror { ename }) => Err(io::Error::other(&ename[..])),
+            RMessage::Rwrite(Rwrite { count }) => Ok(count),
+            _ => Err(io::Error::other("unexpected message type"))
+        }
+    }
 }
 
 impl Drop for File {
@@ -87,14 +103,14 @@ impl Drop for File {
     }
 }
 
-pub struct ReadableFile<'a> {
+pub struct FileReader<'a> {
     file: &'a File,
     offset: u64,
     fut_valid: bool,
     fut: ReusableBoxFuture<'a, io::Result<Bytes>>
 }
 
-impl<'a> ReadableFile<'a> {
+impl<'a> FileReader<'a> {
     pub fn new(file: &'a File) -> Self {
         Self {
             file,
@@ -105,12 +121,12 @@ impl<'a> ReadableFile<'a> {
     }
 }
 
-impl AsyncRead for ReadableFile<'_> {
+impl AsyncRead for FileReader<'_> {
     fn poll_read(
         mut self: Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-        buf: &mut tokio::io::ReadBuf<'_>,
-    ) -> std::task::Poll<io::Result<()>> {
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
         if buf.remaining() == 0 {
             return Poll::Ready(Ok(()));
         }
@@ -129,5 +145,60 @@ impl AsyncRead for ReadableFile<'_> {
         self.offset += n as u64;
 
         Poll::Ready(Ok(()))
+    }
+}
+
+pub struct FileWriter<'a> {
+    file: &'a File,
+    offset: u64,
+    buffer: Bytes,
+    fut_valid: bool,
+    fut: ReusableBoxFuture<'a, io::Result<u32>>
+}
+
+impl<'a> FileWriter<'a> {
+    pub fn new(file: &'a File) -> Self {
+        Self {
+            file,
+            offset: 0,
+            buffer: Bytes::new(),
+            fut_valid: false,
+            fut: ReusableBoxFuture::new(pending())
+        }
+    }
+}
+
+impl AsyncWrite for FileWriter<'_> {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<Result<usize, io::Error>> {
+        let mut buffer = BytesMut::from(mem::take(&mut self.buffer));
+        buffer.extend_from_slice(buf);
+        self.buffer = buffer.freeze();
+        Poll::Ready(Ok(buf.len()))
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
+        if self.buffer.is_empty() {
+            return Poll::Ready(Ok(()))
+        }
+
+        if !self.fut_valid {
+            let fut = self.file.write_at(self.buffer.clone(), self.offset);
+            self.fut.set(fut);
+            self.fut_valid = true;
+        }
+
+        let res = ready!(self.fut.poll(cx))?;
+        self.buffer.advance(res as usize);
+        self.offset += u64::from(res);
+
+        Poll::Ready(Ok(()))
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
+        self.poll_flush(cx)
     }
 }

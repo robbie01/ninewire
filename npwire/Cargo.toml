@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 bytes.workspace = true
-int-enum.workspace = true
 thiserror.workspace = true
 bytestring.workspace = true
+
+int-enum = "1.1"

@@ -8,7 +8,7 @@ const PUBLIC_KEY: [u8; 32] = [241, 1, 228, 0, 247, 163, 248, 66, 94, 57, 122, 30
 async fn do_peer(mut peer: TcpStream) -> io::Result<()> {
     let sock = TcpStream::connect((Ipv4Addr::LOCALHOST, 64444)).await?;
     let k = random::<[u8; 32]>();
-    let mut noise = util::noise::NoiseStream::new_init(
+    let mut noise = util::noise::NoiseStream::new(
         sock,
         &k,
         util::noise::Side::Initiator { remote_public_key: &PUBLIC_KEY }

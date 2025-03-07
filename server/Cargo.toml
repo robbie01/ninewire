@@ -12,9 +12,7 @@ bytes.workspace = true
 tokio = { workspace = true, features = ["rt", "macros", "net", "io-util", "fs"] }
 tokio-util.workspace = true
 futures.workspace = true
-int-enum.workspace = true
 thiserror.workspace = true
-bytestring.workspace = true
 
 cfg-if = "1"
 string_cache = "0.8"

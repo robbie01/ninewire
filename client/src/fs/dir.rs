@@ -1,6 +1,9 @@
-use std::mem;
+use std::{io, mem, sync::Arc};
 
-use super::*;
+use npwire::{RMessage, Rattach, Rerror, Tattach, QTDIR};
+use util::fidpool::FidHandle;
+
+use super::{Filesystem, FilesystemInner};
 
 #[derive(Debug)]
 pub struct Directory {
@@ -9,17 +12,17 @@ pub struct Directory {
 }
 
 impl Filesystem {
-    pub async fn mount(&self) -> io::Result<Directory> {
+    pub async fn attach(&self, uname: &str, aname: &str) -> io::Result<Directory> {
         let dir = Directory {
-            fsys: self.0.clone(),
-            fid: self.0.get_fid().unwrap()
+            fsys: self.fsys.clone(),
+            fid: self.fsys.get_fid().unwrap()
         };
 
-        let resp = self.0.transact(Tattach {
+        let resp = self.fsys.transact(Tattach {
             fid: dir.fid.fid(),
             afid: !0,
-            uname: ByteString::from_static("anonymous"),
-            aname: ByteString::new()
+            uname: uname.into(),
+            aname: aname.into()
         }).await?;
 
         match resp {

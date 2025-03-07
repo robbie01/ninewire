@@ -70,6 +70,9 @@ size[4] Twstat tag[2] fid[4] stat[n]
 size[4] Rwstat tag[2] 
  */
 
+pub const RREAD_OVERHEAD: usize = 7;
+pub const TWRITE_OVERHEAD: usize = 19;
+
 pub const QTDIR: u8 = 0x80; /* type bit for directories */
 pub const QTAPPEND: u8 = 0x40; /* type bit for append only files */
 pub const QTEXCL: u8 = 0x20; /* type bit for exclusive use files */

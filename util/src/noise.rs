@@ -7,11 +7,15 @@ use snow::TransportState;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
+// Layers a Noise_IK handshake and encrypted stream on an existing socket.
+// In the future, the cipher will be replaced with AES-OCB, and hfs will
+// be added with MLKEM768.
+
 #[pin_project]
 pub struct NoiseStream<T> {
     #[pin]
     inner: Framed<T, LengthDelimitedCodec>,
-    st: Option<TransportState>,
+    st: TransportState,
     read_buf: BytesMut,
 }
 
@@ -27,38 +31,18 @@ pub enum Side<'a> {
 
 impl<T> NoiseStream<T> {
     pub fn remote_public_key(&self) -> Option<&[u8]> {
-        self.st.as_ref()?.get_remote_static()
+        self.st.get_remote_static()
     }
 }
 
 impl<T: AsyncRead + AsyncWrite> NoiseStream<T> {
-    pub async fn new_init(inner: T, privkey: &[u8], side: Side<'_>) -> io::Result<Self> where T: Unpin {
-        let mut this = Self::new(inner);
-        Pin::new(&mut this).initialize(privkey, side).await?;
-        Ok(this)
-    }
-
-    fn new(inner: T) -> Self {
-        let inner = LengthDelimitedCodec::builder()
+    pub async fn new(inner: T, privkey: &[u8], side: Side<'_>) -> io::Result<Self> where T: Unpin {
+        let mut inner = LengthDelimitedCodec::builder()
             .big_endian()
             .length_field_type::<u16>()
             .new_framed(inner);
 
-        Self {
-            inner,
-            st: None,
-            read_buf: BytesMut::with_capacity(MAX_PAYLOAD)
-        }
-    }
-
-    async fn initialize(self: Pin<&mut Self>, privkey: &[u8], side: Side<'_>) -> io::Result<()> {
-        let mut this = self.project();
-
-        if this.st.is_some() {
-            return Err(io::Error::other("already initialized"));
-        }
-
-        let handshake = snow::Builder::new("Noise_IK_25519_AESGCM_BLAKE2s".parse().unwrap())
+        let handshake = snow::Builder::new("Noise_IK_25519_AESGCM_SHA256".parse().unwrap())
             .local_private_key(privkey).map_err(io::Error::other)?;
 
         let mut handshake = match side {
@@ -74,18 +58,20 @@ impl<T: AsyncRead + AsyncWrite> NoiseStream<T> {
                 let n = handshake.write_message(&[], &mut buf[..])
                     .map_err(io::Error::other)?;
                 buf.truncate(n);
-                this.inner.send(buf.freeze()).await?;
+                inner.send(buf.freeze()).await?;
             } else {
-                let Some(buf) = this.inner.try_next().await?
+                let Some(buf) = inner.try_next().await?
                     else { return Err(io::ErrorKind::UnexpectedEof.into()) };
                 handshake.read_message(&buf[..], &mut [])
                     .map_err(io::Error::other)?;
             }
         }
 
-        *this.st = Some(handshake.into_transport_mode().map_err(io::Error::other)?);
-
-        Ok(())
+        Ok(Self {
+            inner,
+            st: handshake.into_transport_mode().map_err(io::Error::other)?,
+            read_buf: BytesMut::with_capacity(MAX_PAYLOAD)
+        })
     }
 }
 
@@ -96,7 +82,6 @@ impl<T: AsyncRead> AsyncRead for NoiseStream<T> {
         buf: &mut ReadBuf<'_>
     ) -> Poll<io::Result<()>> {
         let mut this = self.project();
-        let st = this.st.as_mut().ok_or_else(|| io::Error::other("uninitialized"))?;
 
         while this.read_buf.is_empty() {
             let buf = ready!(this.inner.as_mut().poll_next(cx)).transpose()?;
@@ -104,7 +89,7 @@ impl<T: AsyncRead> AsyncRead for NoiseStream<T> {
                 None => return Poll::Ready(Ok(())),
                 Some(buf) => {
                     this.read_buf.put_bytes(0, buf.len().saturating_sub(TAG_LEN));
-                    match st.read_message(&buf, &mut this.read_buf[..]) {
+                    match this.st.read_message(&buf, &mut this.read_buf[..]) {
                         Ok(n) => assert_eq!(this.read_buf.len(), n),
                         Err(e) => {
                             this.read_buf.truncate(0);
@@ -130,7 +115,6 @@ impl<T: AsyncWrite> AsyncWrite for NoiseStream<T> {
         mut buf: &[u8],
     ) -> Poll<Result<usize, io::Error>> {
         let mut this = self.project();
-        let st = this.st.as_mut().ok_or_else(|| io::Error::other("uninitialized"))?;
 
         if buf.is_empty() {
             return Poll::Ready(Ok(0));
@@ -143,7 +127,7 @@ impl<T: AsyncWrite> AsyncWrite for NoiseStream<T> {
         }
 
         let mut msg = BytesMut::zeroed(buf.len() + TAG_LEN);
-        st.write_message(buf, &mut msg[..]).map_err(io::Error::other)?;
+        this.st.write_message(buf, &mut msg[..]).map_err(io::Error::other)?;
         this.inner.as_mut().start_send(msg.freeze())?;
 
         Poll::Ready(Ok(buf.len()))
@@ -151,20 +135,12 @@ impl<T: AsyncWrite> AsyncWrite for NoiseStream<T> {
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
         let this = self.project();
-        
-        if this.st.is_none() {
-            return Poll::Ready(Err(io::Error::other("uninitialized")));
-        }
 
         this.inner.poll_flush(cx)
     }
 
     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
         let this = self.project();
-
-        if this.st.is_none() {
-            return Poll::Ready(Err(io::Error::other("uninitialized")));
-        }
 
         this.inner.poll_close(cx)
     }
