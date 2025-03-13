@@ -17,6 +17,7 @@ mod readdir;
 pub use dir::*;
 pub use readdir::*;
 pub use file::*;
+use tracing::trace;
 use util::fidpool::{FidHandle, FidPool};
 
 #[derive(Debug)]
@@ -60,15 +61,15 @@ impl Filesystem {
                 msize: MAX_MESSAGE_SIZE,
                 version: ByteString::from_static("9P2000")
             });
-            //eprintln!("<- {ver:?}");
             framed.send(ver.serialize(!0).unwrap()).await?;
+            trace!("sent request {ver:?}");
 
             let Some(ver) = framed.try_next().await? else {
                 return Ok(())
             };
             
             let (_, ver) = deserialize_r(ver.freeze())?;
-            //eprintln!("-> {ver:?}");
+            trace!("received reply {ver:?}");
             let RMessage::Rversion(ver) = ver else {
                 bail!("invalid version response")
             };
@@ -101,10 +102,11 @@ impl Filesystem {
                             .unwrap_or_else(|e| Rerror::from(e).serialize(tag).unwrap());
 
                         framed.send(data).await?;
+                        trace!("sent request with tag {tag}, {:?}", req.message);
                     },
                     Some(resp) = framed.next() => {
                         if let Ok((tag, resp)) = deserialize_r(resp?.freeze()) {
-                            //eprintln!("-> {tag} {:?}", resp);
+                            trace!("received reply with tag {tag}, {resp:?}");
                             let reply_to = replies.remove(&tag).unwrap();
                             tags.put(tag);
                             let _ = reply_to.send(resp);

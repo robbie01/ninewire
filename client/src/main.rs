@@ -38,6 +38,8 @@ async fn tree(dir: &Directory) -> io::Result<()> {
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
+    tracing_subscriber::fmt::init();
+    
     let privkey = random::<[u8; 32]>();
     let sock = TcpStream::connect((Ipv4Addr::LOCALHOST, 64444)).await?;
     let noise = util::noise::NoiseStream::new(

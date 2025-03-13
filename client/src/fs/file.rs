@@ -1,8 +1,8 @@
 use std::{future::pending, io, mem, pin::Pin, sync::Arc, task::{ready, Context, Poll}};
 
-use bytes::{Buf, Bytes, BytesMut};
+use bytes::{Buf, Bytes};
 use npwire::{RMessage, Rerror, Rread, Rwrite, Tread, Twrite, QTDIR};
-use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+use tokio::io::{AsyncRead, AsyncSeek, AsyncWrite, ReadBuf};
 use tokio_util::sync::ReusableBoxFuture;
 use util::fidpool::FidHandle;
 
@@ -148,6 +148,35 @@ impl AsyncRead for FileReader<'_> {
     }
 }
 
+impl AsyncSeek for FileReader<'_> {
+    fn start_seek(mut self: Pin<&mut Self>, position: io::SeekFrom) -> io::Result<()> {
+        match position {
+            io::SeekFrom::Start(offset) => {
+                if offset != self.offset {
+                    self.fut_valid = false;
+                }
+                self.offset = offset;
+                Ok(())
+            },
+            io::SeekFrom::Current(offset) => {
+                let offset = self.offset.checked_add_signed(offset).ok_or(io::ErrorKind::InvalidInput)?;
+                if offset != self.offset {
+                    self.fut_valid = false;
+                }
+                self.offset = offset;
+                Ok(())
+            },
+            io::SeekFrom::End(_) => {
+                todo!()
+            }
+        }
+    }
+
+    fn poll_complete(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<u64>> {
+        Poll::Ready(Ok(self.offset))
+    }
+}
+
 pub struct FileWriter<'a> {
     file: &'a File,
     offset: u64,
@@ -171,34 +200,59 @@ impl<'a> FileWriter<'a> {
 impl AsyncWrite for FileWriter<'_> {
     fn poll_write(
         mut self: Pin<&mut Self>,
-        _cx: &mut Context<'_>,
+        cx: &mut Context<'_>,
         buf: &[u8],
-    ) -> Poll<Result<usize, io::Error>> {
-        let mut buffer = BytesMut::from(mem::take(&mut self.buffer));
-        buffer.extend_from_slice(buf);
-        self.buffer = buffer.freeze();
+    ) -> Poll<io::Result<usize>> {
+        ready!(self.as_mut().poll_flush(cx))?;
+        self.buffer = Bytes::copy_from_slice(buf);
         Poll::Ready(Ok(buf.len()))
     }
 
-    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
-        if self.buffer.is_empty() {
-            return Poll::Ready(Ok(()))
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        while !self.buffer.is_empty() {
+            if !self.fut_valid {
+                let fut = self.file.write_at(self.buffer.clone(), self.offset);
+                self.fut.set(fut);
+                self.fut_valid = true;
+            }
+    
+            let res = ready!(self.fut.poll(cx))?;
+            self.fut_valid = false;
+            self.buffer.advance(res as usize);
+            self.offset += u64::from(res);
         }
-
-        if !self.fut_valid {
-            let fut = self.file.write_at(self.buffer.clone(), self.offset);
-            self.fut.set(fut);
-            self.fut_valid = true;
-        }
-
-        let res = ready!(self.fut.poll(cx))?;
-        self.buffer.advance(res as usize);
-        self.offset += u64::from(res);
 
         Poll::Ready(Ok(()))
     }
 
-    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         self.poll_flush(cx)
+    }
+}
+
+impl AsyncSeek for FileWriter<'_> {
+    fn start_seek(mut self: Pin<&mut Self>, position: io::SeekFrom) -> io::Result<()> {
+        if !self.buffer.is_empty() || self.fut_valid {
+            return Err(io::ErrorKind::Other.into());
+        }
+
+        match position {
+            io::SeekFrom::Start(offset) => {
+                self.offset = offset;
+                Ok(())
+            },
+            io::SeekFrom::Current(offset) => {
+                self.offset = self.offset.checked_add_signed(offset).ok_or(io::ErrorKind::InvalidInput)?;
+                Ok(())
+            },
+            io::SeekFrom::End(_) => {
+                todo!()
+            }
+        }
+    }
+
+    fn poll_complete(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<u64>> {
+        ready!(self.as_mut().poll_flush(cx))?;
+        Poll::Ready(Ok(self.offset))
     }
 }

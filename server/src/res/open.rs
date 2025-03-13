@@ -4,7 +4,7 @@ use bytes::{Bytes, BytesMut};
 use tokio::{fs::{self, File}, io::{AsyncReadExt, AsyncSeekExt}};
 
 use crate::{Atom, HandlerError};
-use npwire::{put_stat, Stat, Qid};
+use npwire::{put_stat, Qid, Stat, QTFILE};
 
 use super::path::{MountTable, ROOT_QID, ROOT_STAT};
 
@@ -101,6 +101,7 @@ impl Open {
             OpenInner::Root { mnts, rem, last_offset } => {
                 if offset == 0 {
                     rem.clear();
+                    rem.push("rpc".into());
                     rem.extend(mnts.keys().cloned());
                 } else if offset != *last_offset {
                     return Err(io::Error::other("Invalid operation!"));
@@ -108,8 +109,24 @@ impl Open {
 
                 let mut buf = BytesMut::new();
                 while let Some(name) = rem.first() {
-                    let path = mnts.get(name).unwrap();
-                    let stat = super::stat(name, &fs::metadata(path).await?);
+                    let stat = if name == "rpc" {
+                        Stat {
+                            type_: 0,
+                            dev: 0,
+                            qid: Qid { type_: QTFILE, version: 0, path: !0 },
+                            mode: 0o666,
+                            atime: 0,
+                            mtime: 0,
+                            length: 0,
+                            name: "rpc".into(),
+                            uid: "me".into(),
+                            gid: "me".into(),
+                            muid: "me".into()
+                        }
+                    } else {
+                        let path = mnts.get(name).unwrap();
+                        super::stat(name, &fs::metadata(path).await?)
+                    };
 
                     let oldlen = buf.len();
                     put_stat(&mut buf, &stat).map_err(io::Error::other)?;

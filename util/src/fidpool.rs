@@ -1,4 +1,4 @@
-use std::{collections::BTreeSet, ptr, sync::{Arc, Mutex, Weak}};
+use std::{collections::BTreeSet, sync::{Arc, Mutex, Weak}};
 
 #[derive(Debug, Default)]
 pub struct FidPoolInner {
@@ -47,10 +47,8 @@ impl FidHandle {
     }
 
     pub fn is_of(&self, pool: &FidPool) -> bool {
-        ptr::addr_eq(
-            self.parent.as_ptr(),
-            Arc::as_ptr(&pool.inner)
-        )
+        let Some(parent) = self.parent.upgrade() else { return false };
+        Arc::ptr_eq(&parent, &pool.inner)
     }
 }
 

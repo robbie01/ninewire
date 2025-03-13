@@ -2,7 +2,7 @@ use std::{collections::HashMap, path::PathBuf, sync::LazyLock};
 
 use crate::Atom;
 
-use npwire::{Qid, Stat, DMDIR, QTDIR};
+use npwire::{Qid, Stat, DMDIR, QTDIR, QTFILE};
 use tokio::fs;
 
 pub type MountTable = HashMap<Atom, PathBuf>;
@@ -10,6 +10,7 @@ pub type MountTable = HashMap<Atom, PathBuf>;
 #[derive(Debug, Clone)]
 pub(super) enum PathInner {
     Root,
+    Rpc,
     OnMount { mount: Atom, rem: Vec<Atom> }
 }
 
@@ -40,9 +41,16 @@ impl Path {
         matches!(self.0, PathInner::Root)
     }
 
+    pub const fn is_rpc(&self) -> bool {
+        matches!(self.0, PathInner::Rpc)
+    }
+
     fn ascend(&mut self) {
         match &mut self.0 {
             PathInner::Root => (),
+            PathInner::Rpc => {
+                self.0 = PathInner::Root
+            },
             PathInner::OnMount { mount: _, rem } if rem.is_empty() => {
                 self.0 = PathInner::Root;
             },
@@ -52,20 +60,29 @@ impl Path {
         }
     }
 
-    fn descend(&mut self, component: Atom) {
+    fn descend(&mut self, component: Atom) -> bool {
         match &mut self.0 {
             PathInner::Root => {
-                self.0 = PathInner::OnMount { mount: component, rem: Vec::new() };
+                if component[..] == *"rpc" {
+                    self.0 = PathInner::Rpc
+                } else {
+                    self.0 = PathInner::OnMount { mount: component, rem: Vec::new() };
+                }
+                true
+            },
+            PathInner::Rpc => {
+                false
             },
             PathInner::OnMount { mount: _, rem } => {
                 rem.push(component);
+                true
             }
         }
     }
 
     pub fn real_path(&self, mnts: &MountTable) -> Option<PathBuf> {
         let (mnt, rem) = match &self.0 {
-            PathInner::Root => return None,
+            PathInner::Root | PathInner::Rpc => return None,
             PathInner::OnMount { mount, rem } => (mount, rem)
         };
 
@@ -76,6 +93,7 @@ impl Path {
     async fn qid(&self, mnts: &MountTable) -> Option<Qid> {
         match &self.0 {
             PathInner::Root => Some(ROOT_QID),
+            PathInner::Rpc => Some(Qid { type_: QTFILE, version: 0, path: !0 }),
             _ => {
                 let path = self.real_path(mnts)?;
                 let meta = fs::metadata(path).await.ok()?;
@@ -91,7 +109,9 @@ impl Path {
         if component == *".." {
             self.ascend();
         } else {
-            self.descend(component);
+            if !self.descend(component) {
+                return None
+            }
         }
 
         let qid = self.qid(mnts).await?;
@@ -101,6 +121,7 @@ impl Path {
     pub fn name(&self) -> Atom {
         match &self.0 {
             PathInner::Root => "/".into(),
+            PathInner::Rpc => "rpc".into(),
             PathInner::OnMount { mount, rem } => match rem.last() {
                 Some(component) => component.clone(),
                 None => mount.clone()

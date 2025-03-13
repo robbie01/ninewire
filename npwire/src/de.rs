@@ -67,7 +67,7 @@ fn yank_string(buf: &mut Bytes, tag: u16) -> Result<ByteString, DeserializeError
     Ok(str)
 }
 
-pub fn yank_stat(mut buf: Bytes, tag: u16) -> Result<Stat, DeserializeError> {
+pub fn yank_stat(mut buf: &mut Bytes, tag: u16) -> Result<Stat, DeserializeError> {
     let len = buf.try_get_u16_le().map_err(|_| DeserializeError::TooShort { tag: Some(tag) })?.into();
     if buf.remaining() < len {
         return Err(DeserializeError::TooShort { tag: Some(tag) });
@@ -89,10 +89,6 @@ pub fn yank_stat(mut buf: Bytes, tag: u16) -> Result<Stat, DeserializeError> {
     let uid = yank_string(&mut buf, tag)?[..].into();
     let gid = yank_string(&mut buf, tag)?[..].into();
     let muid = yank_string(&mut buf, tag)?[..].into();
-
-    if !buf.is_empty() {
-        return Err(DeserializeError::TooLong { tag });
-    }
     
     Ok(Stat {
         type_, dev, qid, mode, atime, mtime,

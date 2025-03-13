@@ -144,19 +144,23 @@ impl<Fid: np::traits::Fid + Debug> Serve<Fid> for Handler<Fid> {
             _ => return Err(HandlerError::InvalidArgument.into())
         };
 
-        if mode != 0 {
-            return Err(HandlerError::Unimplemented.into());
-        }
-
-        let open = if path.is_root() {
-            res::open::Open::root(&self.mounts)
+        if path.is_rpc() {
+            todo!();
         } else {
-            let real = path.real_path(&self.mounts).ok_or(HandlerError::Transient)?;
-            res::open::Open::new(path.name(), real).await?
-        };
-        let qid = open.qid().await?;
-        res.insert(Resource::Open(open));
-        Ok((qid, 0))
+            if mode != 0 {
+                return Err(HandlerError::Unimplemented.into());
+            }
+
+            let open = if path.is_root() {
+                res::open::Open::root(&self.mounts)
+            } else {
+                let real = path.real_path(&self.mounts).ok_or(HandlerError::Transient)?;
+                res::open::Open::new(path.name(), real).await?
+            };
+            let qid = open.qid().await?;
+            res.insert(Resource::Open(open));
+            Ok((qid, 0))
+        }
     }
 
     async fn create(&self, _fid: Fid, _name: &str, _perm: u32, _mode: u8) -> anyhow::Result<(Qid, u32)> {

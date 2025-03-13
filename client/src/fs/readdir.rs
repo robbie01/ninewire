@@ -42,9 +42,7 @@ impl ReadDir {
         self.offset += data.len() as u64;
         
         while !data.is_empty() {
-            let len = u16::from_le_bytes(data[..2].try_into().map_err(io::Error::other)?);
-            let stat = data.split_to(usize::from(len)+2);
-            let stat = yank_stat(stat, !0).map_err(io::Error::other)?;
+            let stat = yank_stat(&mut data, !0).map_err(io::Error::other)?;
             self.buffer.push_back(stat);
         }
 

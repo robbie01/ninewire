@@ -146,7 +146,7 @@ impl Twstat {
         if buf.len() < stat_len {
             return Err(DeserializeError::TooShort { tag: Some(tag) });
         }
-        let stat = yank_stat(buf.split_to(stat_len), tag)?;
+        let stat = yank_stat(&mut buf, tag)?;
         if !buf.is_empty() {
             return Err(DeserializeError::TooLong { tag });
         }

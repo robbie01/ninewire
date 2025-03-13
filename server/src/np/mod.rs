@@ -1,6 +1,6 @@
 use std::{convert::Infallible, io, sync::Arc};
 
-use tokio::{net::TcpListener, task::{id, Id}};
+use tokio::{net::TcpListener, task::{id, Id, JoinSet}};
 pub use traits::Serve;
 
 pub mod traits;
@@ -30,18 +30,34 @@ pub async fn serve<S: Serve<Fid>>(
     handler: Arc<S>,
     listener: TcpListener,
 ) -> io::Result<Infallible> {
-    loop {
-        let (peer, addr) = listener.accept().await?;
-        eprintln!("conn from {addr}");
+    let mut conns = JoinSet::new();
 
-        let handler = handler.clone();
-        tokio::spawn(async move {
-            let id = id();
-            match client::handle_client(peer, id, handler.clone()).await {
-                Ok(_) => eprintln!("disconnect {addr}"),
-                Err(e) => eprintln!("disconnect {addr} with error {e}")
+    loop {
+        tokio::select! {
+            res = listener.accept() => {
+                let (peer, addr) = res?;
+                let handler = handler.clone();
+                conns.spawn(async move {
+                    let id = id();
+                    eprintln!("conn from {addr}, task id {id}");
+                    match client::handle_client(peer, id, handler).await {
+                        Ok(()) => eprintln!("disconnect {addr}"),
+                        Err(e) => eprintln!("disconnect {addr} with error {e}"),
+                    }
+                });
+            },
+            Some(res) = conns.join_next_with_id() => {
+                let id = match res {
+                    Ok((id, _)) => id,
+                    Err(ref e) => e.id()
+                };
+
+                if let Err(e) = res {
+                    eprintln!("{e}")
+                }
+
+                handler.clunk_where(|fid| fid.connection_id == id).await;
             }
-            handler.clunk_where(|fid| fid.connection_id == id).await;
-        });
+        }
     }
 }
