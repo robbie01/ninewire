@@ -1,11 +1,15 @@
 use std::{io, pin::Pin, task::{Context, Poll}};
 
-use bytes::{Buf, BufMut, BytesMut};
+use bytes::BytesMut;
 use futures::{SinkExt as _, TryStreamExt as _};
+use length::SixteenBitDelimitedCodec;
 use pin_project::pin_project;
-use snow::TransportState;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
-use tokio_util::{codec::{Decoder, Encoder, Framed, LengthDelimitedCodec}, io::{SinkWriter, StreamReader}};
+use tokio_util::{codec::Framed, io::{SinkWriter, StreamReader}};
+
+mod codec;
+mod length;
+use codec::NoiseCodec;
 
 const TAG_LEN: u16 = 16;
 const MAX_BUF: usize = 65535;
@@ -25,16 +29,13 @@ pub struct NoiseStream<T> {
 
 impl<T> NoiseStream<T> {
     pub fn remote_public_key(&self) -> Option<&[u8]> {
-        self.inner.get_ref().get_ref().codec().st.get_remote_static()
+        self.inner.get_ref().get_ref().codec().get_remote_static()
     }
 }
 
 impl<T: AsyncRead + AsyncWrite> NoiseStream<T> {
     pub async fn new(inner: T, privkey: &[u8], side: Side<'_>) -> io::Result<Self> where T: Unpin {
-        let mut inner = LengthDelimitedCodec::builder()
-            .big_endian()
-            .length_field_type::<u16>()
-            .new_framed(inner);
+        let mut inner = Framed::new(inner, SixteenBitDelimitedCodec);
 
         let handshake = snow::Builder::new("Noise_IK_25519_AESGCM_SHA256".parse().unwrap())
             .local_private_key(privkey).map_err(io::Error::other)?;
@@ -46,13 +47,13 @@ impl<T: AsyncRead + AsyncWrite> NoiseStream<T> {
             Side::Responder => handshake.build_responder().map_err(io::Error::other)?
         };
 
+        let mut write_buf = vec![0; MAX_BUF];
+
         while !handshake.is_handshake_finished() {
             if handshake.is_my_turn() {
-                let mut buf = BytesMut::zeroed(MAX_BUF);
-                let n = handshake.write_message(&[], &mut buf[..])
+                let n = handshake.write_message(&[], &mut write_buf)
                     .map_err(io::Error::other)?;
-                buf.truncate(n);
-                inner.send(buf.freeze()).await?;
+                inner.send(&write_buf[..n]).await?;
             } else {
                 let Some(buf) = inner.try_next().await?
                     else { return Err(io::ErrorKind::UnexpectedEof.into()) };
@@ -63,9 +64,11 @@ impl<T: AsyncRead + AsyncWrite> NoiseStream<T> {
 
         let st =  handshake.into_transport_mode().map_err(io::Error::other)?;
 
+        eprintln!("handshake complete");
+
         Ok(Self { inner: SinkWriter::new(
             StreamReader::new(
-                inner.map_codec(|_| NoiseCodec { st }))) })
+                inner.map_codec(|_| NoiseCodec::new(st)))) })
     }
 }
 
@@ -111,46 +114,5 @@ impl<T: AsyncWrite> AsyncWrite for NoiseStream<T> {
 
     fn is_write_vectored(&self) -> bool {
         self.inner.is_write_vectored()
-    }
-}
-
-struct NoiseCodec {
-    st: TransportState
-}
-
-impl<'a> Encoder<&'a [u8]> for NoiseCodec {
-    type Error = io::Error;
-
-    fn encode(&mut self, mut item: &'a [u8], dst: &mut BytesMut) -> io::Result<()> {
-        while !item.is_empty() {
-            let buf = &item[..item.len().min(MAX_PAYLOAD)];
-            item = &item[buf.len()..];
-
-            let n = item.len() + usize::from(TAG_LEN);
-            dst.put_u16(n as u16);
-            let pos = dst.len();
-            dst.put_bytes(0, n.into());
-            let n2 = self.st.write_message(item, &mut dst[pos..]).map_err(io::Error::other)?;
-            assert_eq!(usize::from(n), n2);
-        }
-        Ok(())
-    }
-}
-
-impl Decoder for NoiseCodec {
-    type Error = io::Error;
-    type Item = BytesMut;
-
-    fn decode(&mut self, src: &mut BytesMut) -> io::Result<Option<BytesMut>> {
-        if src.len() < 2 { return Ok(None); }
-        let n = u16::from_be_bytes(src[..2].try_into().unwrap());
-        if src.len() < (usize::from(n) + 2) { return Ok(None); }
-        src.advance(2);
-        let Some(n2) = n.checked_sub(TAG_LEN) else { return Err(io::Error::other("too short")) };
-        let ct = src.split_to(usize::from(n));
-        let mut pt = BytesMut::zeroed(n2.into());
-        let k = self.st.read_message(&ct, &mut pt).map_err(io::Error::other)?;
-        assert_eq!(usize::from(n2), k);
-        Ok(Some(pt))
     }
 }
