@@ -6,8 +6,8 @@ edition = "2024"
 [dependencies]
 bytes.workspace = true
 tokio.workspace = true
-tokio-util.workspace = true
+tokio-util = { workspace = true, features = ["io"] }
 futures.workspace = true
+pin-project.workspace = true
 
-pin-project = "1.1"
 snow = "0.10.0-alpha.1"

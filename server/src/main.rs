@@ -212,6 +212,8 @@ impl<Fid: np::traits::Fid + Debug> Serve<Fid> for Handler<Fid> {
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> io::Result<Infallible> {
+    console_subscriber::init();
+
     let listener = TcpListener::bind((Ipv4Addr::UNSPECIFIED, 64444)).await?;
 
     np::serve(Arc::new(Handler::new([

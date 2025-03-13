@@ -9,11 +9,13 @@ npwire.workspace = true
 
 anyhow.workspace = true
 bytes.workspace = true
-tokio = { workspace = true, features = ["rt", "macros", "net", "io-util", "fs"] }
+tokio = { workspace = true, features = ["rt", "macros", "net", "io-util", "fs", "full", "tracing"] }
 tokio-util.workspace = true
 futures.workspace = true
+pin-project.workspace = true
 thiserror.workspace = true
 
+console-subscriber = "0.4"
 cfg-if = "1"
 string_cache = "0.8"
 scc = "2.3"

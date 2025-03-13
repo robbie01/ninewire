@@ -108,10 +108,8 @@ impl Path {
 
         if component == *".." {
             self.ascend();
-        } else {
-            if !self.descend(component) {
-                return None
-            }
+        } else if !self.descend(component) {
+            return None
         }
 
         let qid = self.qid(mnts).await?;

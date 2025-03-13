@@ -1,27 +1,15 @@
-use std::{io, pin::Pin, task::{ready, Context, Poll}};
+use std::{io, pin::Pin, task::{Context, Poll}};
 
 use bytes::{Buf, BufMut, BytesMut};
-use futures::{Sink, SinkExt, Stream, TryStreamExt};
+use futures::{SinkExt as _, TryStreamExt as _};
 use pin_project::pin_project;
 use snow::TransportState;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
-use tokio_util::codec::{Framed, LengthDelimitedCodec};
+use tokio_util::{codec::{Decoder, Encoder, Framed, LengthDelimitedCodec}, io::{SinkWriter, StreamReader}};
 
-// Layers a Noise_IK handshake and encrypted stream on an existing socket.
-// In the future, the cipher will be replaced with AES-OCB, and hfs will
-// be added with MLKEM768.
-
-#[pin_project]
-pub struct NoiseStream<T> {
-    #[pin]
-    inner: Framed<T, LengthDelimitedCodec>,
-    st: TransportState,
-    read_buf: BytesMut,
-}
-
-const TAG_LEN: usize = 16;
+const TAG_LEN: u16 = 16;
 const MAX_BUF: usize = 65535;
-const MAX_PAYLOAD: usize = MAX_BUF - TAG_LEN;
+const MAX_PAYLOAD: usize = MAX_BUF - TAG_LEN as usize;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Side<'a> {
@@ -29,9 +17,15 @@ pub enum Side<'a> {
     Responder
 }
 
+#[pin_project]
+pub struct NoiseStream<T> {
+    #[pin]
+    inner: SinkWriter<StreamReader<Framed<T, NoiseCodec>, BytesMut>>
+}
+
 impl<T> NoiseStream<T> {
     pub fn remote_public_key(&self) -> Option<&[u8]> {
-        self.st.get_remote_static()
+        self.inner.get_ref().get_ref().codec().st.get_remote_static()
     }
 }
 
@@ -67,11 +61,11 @@ impl<T: AsyncRead + AsyncWrite> NoiseStream<T> {
             }
         }
 
-        Ok(Self {
-            inner,
-            st: handshake.into_transport_mode().map_err(io::Error::other)?,
-            read_buf: BytesMut::with_capacity(MAX_PAYLOAD)
-        })
+        let st =  handshake.into_transport_mode().map_err(io::Error::other)?;
+
+        Ok(Self { inner: SinkWriter::new(
+            StreamReader::new(
+                inner.map_codec(|_| NoiseCodec { st }))) })
     }
 }
 
@@ -79,69 +73,84 @@ impl<T: AsyncRead> AsyncRead for NoiseStream<T> {
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-        buf: &mut ReadBuf<'_>
+        buf: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
-        let mut this = self.project();
-
-        while this.read_buf.is_empty() {
-            let buf = ready!(this.inner.as_mut().poll_next(cx)).transpose()?;
-            match buf {
-                None => return Poll::Ready(Ok(())),
-                Some(buf) => {
-                    this.read_buf.put_bytes(0, buf.len().saturating_sub(TAG_LEN));
-                    match this.st.read_message(&buf, &mut this.read_buf[..]) {
-                        Ok(n) => assert_eq!(this.read_buf.len(), n),
-                        Err(e) => {
-                            this.read_buf.truncate(0);
-                            return Poll::Ready(Err(io::Error::other(e)));
-                        }
-                    }
-                }
-            }
-        }
-
-        let n = buf.remaining().min(this.read_buf.len());
-        buf.put_slice(&this.read_buf[..n]);
-        this.read_buf.advance(n);
-        Poll::Ready(Ok(()))
+        let me = self.project();
+        me.inner.poll_read(cx, buf)
     }
 }
 
-// TODO: this could be buffered for performance
 impl<T: AsyncWrite> AsyncWrite for NoiseStream<T> {
     fn poll_write(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-        mut buf: &[u8],
+        buf: &[u8],
     ) -> Poll<Result<usize, io::Error>> {
-        let mut this = self.project();
-
-        if buf.is_empty() {
-            return Poll::Ready(Ok(0));
-        }
-
-        ready!(this.inner.as_mut().poll_ready(cx))?;
-
-        if buf.len() > MAX_PAYLOAD {
-            buf = &buf[..MAX_PAYLOAD];
-        }
-
-        let mut msg = BytesMut::zeroed(buf.len() + TAG_LEN);
-        this.st.write_message(buf, &mut msg[..]).map_err(io::Error::other)?;
-        this.inner.as_mut().start_send(msg.freeze())?;
-
-        Poll::Ready(Ok(buf.len()))
+        let me = self.project();
+        me.inner.poll_write(cx, buf)
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
-        let this = self.project();
-
-        this.inner.poll_flush(cx)
+        let me = self.project();
+        me.inner.poll_flush(cx)
     }
 
     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
-        let this = self.project();
+        let me = self.project();
+        me.inner.poll_shutdown(cx)
+    }
 
-        this.inner.poll_close(cx)
+    fn poll_write_vectored(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bufs: &[io::IoSlice<'_>],
+    ) -> Poll<Result<usize, io::Error>> {
+        let me = self.project();
+        me.inner.poll_write_vectored(cx, bufs)
+    }
+
+    fn is_write_vectored(&self) -> bool {
+        self.inner.is_write_vectored()
+    }
+}
+
+struct NoiseCodec {
+    st: TransportState
+}
+
+impl<'a> Encoder<&'a [u8]> for NoiseCodec {
+    type Error = io::Error;
+
+    fn encode(&mut self, mut item: &'a [u8], dst: &mut BytesMut) -> io::Result<()> {
+        while !item.is_empty() {
+            let buf = &item[..item.len().min(MAX_PAYLOAD)];
+            item = &item[buf.len()..];
+
+            let n = item.len() + usize::from(TAG_LEN);
+            dst.put_u16(n as u16);
+            let pos = dst.len();
+            dst.put_bytes(0, n.into());
+            let n2 = self.st.write_message(item, &mut dst[pos..]).map_err(io::Error::other)?;
+            assert_eq!(usize::from(n), n2);
+        }
+        Ok(())
+    }
+}
+
+impl Decoder for NoiseCodec {
+    type Error = io::Error;
+    type Item = BytesMut;
+
+    fn decode(&mut self, src: &mut BytesMut) -> io::Result<Option<BytesMut>> {
+        if src.len() < 2 { return Ok(None); }
+        let n = u16::from_be_bytes(src[..2].try_into().unwrap());
+        if src.len() < (usize::from(n) + 2) { return Ok(None); }
+        src.advance(2);
+        let Some(n2) = n.checked_sub(TAG_LEN) else { return Err(io::Error::other("too short")) };
+        let ct = src.split_to(usize::from(n));
+        let mut pt = BytesMut::zeroed(n2.into());
+        let k = self.st.read_message(&ct, &mut pt).map_err(io::Error::other)?;
+        assert_eq!(usize::from(n2), k);
+        Ok(Some(pt))
     }
 }

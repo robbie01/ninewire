@@ -95,8 +95,7 @@ impl Filesystem {
                         if let TMessage::Twrite(Twrite { ref mut data, .. }) = req.message {
                             data.truncate(maxlen - TWRITE_OVERHEAD);
                         }
-        
-                        //eprintln!("<- {tag} {:?}", req.message);
+
                         let data = req.message
                             .serialize(tag)
                             .unwrap_or_else(|e| Rerror::from(e).serialize(tag).unwrap());
@@ -107,9 +106,11 @@ impl Filesystem {
                     Some(resp) = framed.next() => {
                         if let Ok((tag, resp)) = deserialize_r(resp?.freeze()) {
                             trace!("received reply with tag {tag}, {resp:?}");
-                            let reply_to = replies.remove(&tag).unwrap();
-                            tags.put(tag);
-                            let _ = reply_to.send(resp);
+
+                            if let Some(reply_to) = replies.remove(&tag) {
+                                tags.put(tag);
+                                let _ = reply_to.send(resp);
+                            }
                         }
                     },
                     else => break

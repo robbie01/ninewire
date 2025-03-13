@@ -1,7 +1,8 @@
-use std::{future::Future, mem, pin::{pin, Pin}, sync::Arc, task::{Context, Poll}};
+use std::{future::Future, pin::{pin, Pin}, sync::Arc, task::{Context, Poll}};
 
 use futures::{io, stream::FuturesUnordered, SinkExt, StreamExt};
-use tokio::{io::{AsyncRead, AsyncWrite}, task::{Id, JoinError, JoinHandle}};
+use pin_project::pin_project;
+use tokio::{io::{AsyncRead, AsyncWrite}, task::Id};
 use tokio_util::codec::LengthDelimitedCodec;
 use npwire::*;
 use util::noise::{NoiseStream, Side};
@@ -11,19 +12,23 @@ use super::{Serve, Fid};
 const MAX_IN_FLIGHT: usize = 16;
 const MAX_MESSAGE_SIZE: u32 = 65535 - 16;
 
+#[pin_project]
 struct TaggedJoinHandle<T> {
     tag: u16,
     flushes: Option<u16>,
-    hdl: JoinHandle<T>
+    #[pin]
+    hdl: T
 }
 
-impl<T> Future for TaggedJoinHandle<T> {
-    type Output = (u16, Option<u16>, Result<T, JoinError>);
+impl<T: Future> Future for TaggedJoinHandle<T> {
+    type Output = (u16, Option<u16>, T::Output);
 
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        Pin::new(&mut self.hdl).poll(cx).map(|v| (
-            self.tag,
-            mem::take(&mut self.flushes),
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let me = self.project();
+
+        me.hdl.poll(cx).map(|v| (
+            *me.tag,
+            *me.flushes,
             v
         ))
     }
@@ -106,7 +111,7 @@ pub async fn handle_client<S: Serve<Fid>>(
         .length_adjustment(-4)
         .new_framed(peer);
 
-    let mut inflight = FuturesUnordered::<TaggedJoinHandle<Result<RMessage, Rerror>>>::new();
+    let mut inflight = FuturesUnordered::<TaggedJoinHandle<_>>::new();
 
     loop {
         tokio::select! {

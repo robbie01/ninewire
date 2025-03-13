@@ -34,18 +34,7 @@ pub async fn serve<S: Serve<Fid>>(
 
     loop {
         tokio::select! {
-            res = listener.accept() => {
-                let (peer, addr) = res?;
-                let handler = handler.clone();
-                conns.spawn(async move {
-                    let id = id();
-                    eprintln!("conn from {addr}, task id {id}");
-                    match client::handle_client(peer, id, handler).await {
-                        Ok(()) => eprintln!("disconnect {addr}"),
-                        Err(e) => eprintln!("disconnect {addr} with error {e}"),
-                    }
-                });
-            },
+            biased;
             Some(res) = conns.join_next_with_id() => {
                 let id = match res {
                     Ok((id, _)) => id,
@@ -57,6 +46,18 @@ pub async fn serve<S: Serve<Fid>>(
                 }
 
                 handler.clunk_where(|fid| fid.connection_id == id).await;
+            },
+            res = listener.accept() => {
+                let (peer, addr) = res?;
+                let handler = handler.clone();
+                conns.spawn(async move {
+                    let id = id();
+                    eprintln!("conn from {addr}, task id {id}");
+                    match client::handle_client(peer, id, handler).await {
+                        Ok(()) => eprintln!("disconnect {addr}"),
+                        Err(e) => eprintln!("disconnect {addr} with error {e}"),
+                    }
+                });
             }
         }
     }
