@@ -104,7 +104,7 @@ pub async fn handle_client<S: Serve<Fid>>(
     handler: Arc<S>
 ) -> io::Result<()> {
     let peer = pin!(peer);
-    let peer = NoiseStream::new(peer, &super::PRIVATE_KEY, Side::Responder).await?;
+    let peer = NoiseStream::new(peer, Side::Responder { local_private_key: &super::PRIVATE_KEY }).await?;
     let mut framed = LengthDelimitedCodec::builder()
         .little_endian()
         .length_field_type::<u32>()

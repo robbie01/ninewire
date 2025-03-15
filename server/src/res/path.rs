@@ -18,6 +18,8 @@ pub(super) enum PathInner {
 pub struct Path(pub(super) PathInner);
 
 pub const ROOT_QID: Qid = Qid { type_: QTDIR, version: 0, path: 0 };
+pub const RPC_QID: Qid = Qid { type_: QTFILE, version: 0, path: !0 };
+
 pub static ROOT_STAT: LazyLock<Stat> = LazyLock::new(|| Stat {
     type_: 0,
     dev: 0,
@@ -27,6 +29,20 @@ pub static ROOT_STAT: LazyLock<Stat> = LazyLock::new(|| Stat {
     mtime: 0,
     length: 0,
     name: "/".into(),
+    uid: "me".into(),
+    gid: "me".into(),
+    muid: "me".into()
+});
+
+pub static RPC_STAT: LazyLock<Stat> = LazyLock::new(|| Stat {
+    type_: 0,
+    dev: 0,
+    qid: RPC_QID,
+    mode: 0o666,
+    atime: 0,
+    mtime: 0,
+    length: 0,
+    name: "rpc".into(),
     uid: "me".into(),
     gid: "me".into(),
     muid: "me".into()

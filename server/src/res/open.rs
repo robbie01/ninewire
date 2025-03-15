@@ -4,9 +4,9 @@ use bytes::{Bytes, BytesMut};
 use tokio::{fs::{self, File}, io::{AsyncReadExt, AsyncSeekExt}};
 
 use crate::{Atom, HandlerError};
-use npwire::{put_stat, Qid, Stat, QTFILE};
+use npwire::{put_stat, Qid, Stat};
 
-use super::path::{MountTable, ROOT_QID, ROOT_STAT};
+use super::path::{MountTable, ROOT_QID, ROOT_STAT, RPC_STAT};
 
 #[derive(Debug)]
 enum OpenInner {
@@ -110,19 +110,7 @@ impl Open {
                 let mut buf = BytesMut::new();
                 while let Some(name) = rem.first() {
                     let stat = if name == "rpc" {
-                        Stat {
-                            type_: 0,
-                            dev: 0,
-                            qid: Qid { type_: QTFILE, version: 0, path: !0 },
-                            mode: 0o666,
-                            atime: 0,
-                            mtime: 0,
-                            length: 0,
-                            name: "rpc".into(),
-                            uid: "me".into(),
-                            gid: "me".into(),
-                            muid: "me".into()
-                        }
+                        RPC_STAT.clone()
                     } else {
                         let path = mnts.get(name).unwrap();
                         super::stat(name, &fs::metadata(path).await?)

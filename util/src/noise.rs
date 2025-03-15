@@ -7,7 +7,7 @@ use snow::TransportState;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
-// Layers a Noise_IK handshake and encrypted stream on an existing socket.
+// Layers a Noise_NK handshake and encrypted stream on an existing socket.
 // In the future, the cipher will be replaced with AES-OCB, and hfs will
 // be added with MLKEM768.
 
@@ -26,7 +26,7 @@ const MAX_PAYLOAD: usize = MAX_BUF - TAG_LEN;
 #[derive(Debug, Clone, Copy)]
 pub enum Side<'a> {
     Initiator { remote_public_key: &'a [u8] },
-    Responder
+    Responder { local_private_key: &'a [u8] }
 }
 
 impl<T> NoiseStream<T> {
@@ -36,20 +36,21 @@ impl<T> NoiseStream<T> {
 }
 
 impl<T: AsyncRead + AsyncWrite> NoiseStream<T> {
-    pub async fn new(inner: T, privkey: &[u8], side: Side<'_>) -> io::Result<Self> where T: Unpin {
+    pub async fn new(inner: T, side: Side<'_>) -> io::Result<Self> where T: Unpin {
         let mut inner = LengthDelimitedCodec::builder()
             .big_endian()
             .length_field_type::<u16>()
             .new_framed(inner);
 
-        let handshake = snow::Builder::new("Noise_IK_25519_AESGCM_SHA256".parse().unwrap())
-            .local_private_key(privkey).map_err(io::Error::other)?;
+        let handshake = snow::Builder::new("Noise_NK_25519_AESGCM_SHA256".parse().unwrap());
 
         let mut handshake = match side {
             Side::Initiator { remote_public_key } => handshake
                 .remote_public_key(remote_public_key).map_err(io::Error::other)?
                 .build_initiator().map_err(io::Error::other)?,
-            Side::Responder => handshake.build_responder().map_err(io::Error::other)?
+            Side::Responder { local_private_key } => handshake
+                .local_private_key(local_private_key).map_err(io::Error::other)?
+                .build_responder().map_err(io::Error::other)?
         };
 
         while !handshake.is_handshake_finished() {

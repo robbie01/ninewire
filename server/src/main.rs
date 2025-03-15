@@ -146,6 +146,7 @@ impl<Fid: np::traits::Fid + Debug> Serve<Fid> for Handler<Fid> {
 
         if path.is_rpc() {
             todo!();
+            // return Err(HandlerError::Unimplemented.into());
         } else {
             if mode != 0 {
                 return Err(HandlerError::Unimplemented.into());

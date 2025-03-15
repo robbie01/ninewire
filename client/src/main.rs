@@ -2,7 +2,6 @@ use std::{io, net::Ipv4Addr, time::Duration};
 
 use bytestring::ByteString;
 use fs::{Directory, FileReader, Filesystem};
-use rand::random;
 use tokio::{io::AsyncReadExt as _, net::TcpStream, time};
 
 pub mod fs;
@@ -40,11 +39,9 @@ async fn tree(dir: &Directory) -> io::Result<()> {
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
     
-    let privkey = random::<[u8; 32]>();
     let sock = TcpStream::connect((Ipv4Addr::LOCALHOST, 64444)).await?;
     let noise = util::noise::NoiseStream::new(
         sock,
-        &privkey,
         util::noise::Side::Initiator { remote_public_key: &PUBLIC_KEY }
     ).await?;
 
