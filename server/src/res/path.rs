@@ -5,13 +5,13 @@ use crate::Atom;
 use npwire::{Qid, Stat, DMDIR, QTDIR, QTFILE};
 use tokio::fs;
 
-pub type MountTable = HashMap<Atom, PathBuf>;
+pub type ShareTable = HashMap<Atom, PathBuf>;
 
 #[derive(Debug, Clone)]
 pub(super) enum PathInner {
     Root,
     Rpc,
-    OnMount { mount: Atom, rem: Vec<Atom> }
+    OnShare { share: Atom, rem: Vec<Atom> }
 }
 
 #[derive(Debug, Clone)]
@@ -67,10 +67,10 @@ impl Path {
             PathInner::Rpc => {
                 self.0 = PathInner::Root
             },
-            PathInner::OnMount { mount: _, rem } if rem.is_empty() => {
+            PathInner::OnShare { share: _, rem } if rem.is_empty() => {
                 self.0 = PathInner::Root;
             },
-            PathInner::OnMount { mount: _, rem } => {
+            PathInner::OnShare { share: _, rem } => {
                 rem.pop();
             }
         }
@@ -82,31 +82,31 @@ impl Path {
                 if component[..] == *"rpc" {
                     self.0 = PathInner::Rpc
                 } else {
-                    self.0 = PathInner::OnMount { mount: component, rem: Vec::new() };
+                    self.0 = PathInner::OnShare { share: component, rem: Vec::new() };
                 }
                 true
             },
             PathInner::Rpc => {
                 false
             },
-            PathInner::OnMount { mount: _, rem } => {
+            PathInner::OnShare { share: _, rem } => {
                 rem.push(component);
                 true
             }
         }
     }
 
-    pub fn real_path(&self, mnts: &MountTable) -> Option<PathBuf> {
+    pub fn real_path(&self, mnts: &ShareTable) -> Option<PathBuf> {
         let (mnt, rem) = match &self.0 {
             PathInner::Root | PathInner::Rpc => return None,
-            PathInner::OnMount { mount, rem } => (mount, rem)
+            PathInner::OnShare { share, rem } => (share, rem)
         };
 
         let mpath = mnts.get(mnt)?;
         Some(mpath.join(rem.iter().map(|p| AsRef::<std::path::Path>::as_ref(&p[..])).collect::<PathBuf>()))
     }
 
-    async fn qid(&self, mnts: &MountTable) -> Option<Qid> {
+    async fn qid(&self, mnts: &ShareTable) -> Option<Qid> {
         match &self.0 {
             PathInner::Root => Some(ROOT_QID),
             PathInner::Rpc => Some(Qid { type_: QTFILE, version: 0, path: !0 }),
@@ -118,7 +118,7 @@ impl Path {
         }
     }
 
-    pub async fn walk_one(mut self, mnts: &MountTable, component: Atom) -> Option<(Self, Qid)> {
+    pub async fn walk_one(mut self, mnts: &ShareTable, component: Atom) -> Option<(Self, Qid)> {
         if component.contains('/') { return None; }
         if component == *"." { return None; }
 
@@ -136,14 +136,14 @@ impl Path {
         match &self.0 {
             PathInner::Root => "/".into(),
             PathInner::Rpc => "rpc".into(),
-            PathInner::OnMount { mount, rem } => match rem.last() {
+            PathInner::OnShare { share, rem } => match rem.last() {
                 Some(component) => component.clone(),
-                None => mount.clone()
+                None => share.clone()
             }
         }
     }
 
-    pub async fn stat(&self, mnts: &MountTable) -> Option<Stat> {
+    pub async fn stat(&self, mnts: &ShareTable) -> Option<Stat> {
         match &self.0 {
             PathInner::Root => Some(ROOT_STAT.clone()),
             _ => {

@@ -7,18 +7,18 @@ pub mod traits;
 mod client;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Fid {
+pub struct MuxFid {
     connection_id: Id,
     fid: u32
 }
 
-impl Fid {
+impl MuxFid {
     const fn new(connection_id: Id, fid: u32) -> Self {
         Self { connection_id, fid }
     }
 }
 
-impl traits::Fid for Fid {
+impl traits::Fid for MuxFid {
     fn is_nofid(self) -> bool {
         self.fid == !0
     }
@@ -26,7 +26,7 @@ impl traits::Fid for Fid {
 
 const PRIVATE_KEY: [u8; 32] = [127, 93, 161, 223, 213, 211, 245, 80, 69, 165, 77, 133, 169, 40, 130, 112, 218, 255, 225, 74, 78, 69, 83, 20, 154, 244, 58, 224, 51, 34, 61, 102];
 
-pub async fn serve<S: Serve<Fid>>(
+pub async fn serve_mux<S: Serve<Fid = MuxFid>>(
     handler: Arc<S>,
     listener: TcpListener,
 ) -> io::Result<Infallible> {

@@ -36,24 +36,25 @@ enum Resource {
     Open(res::open::Open)
 }
 
-type MountTable = StdHashMap<Atom, PathBuf>;
+type ShareTable = StdHashMap<Atom, PathBuf>;
 
 #[derive(Debug)]
 struct Handler<Fid:  np::traits::Fid + Debug> {
-    mounts: MountTable,
+    shares: ShareTable,
     fids: HashMap<Fid, Resource>
 }
 
 impl<Fid: np::traits::Fid + Debug> Handler<Fid> {
-    fn new(mounts: MountTable) -> Self {
+    fn new(shares: ShareTable) -> Self {
         Self {
-            mounts,
+            shares,
             fids: HashMap::new()
         }
     }
 }
 
-impl<Fid: np::traits::Fid + Debug> Serve<Fid> for Handler<Fid> {
+impl<Fid: np::traits::Fid + Debug> Serve for Handler<Fid> {
+    type Fid = Fid;
     type Error = anyhow::Error;
 
     async fn auth(&self, _afid: Fid, _uname: &str, _aname: &str) -> anyhow::Result<Qid> {
@@ -119,7 +120,7 @@ impl<Fid: np::traits::Fid + Debug> Serve<Fid> for Handler<Fid> {
         let mut qids = Vec::with_capacity(wname.len());
         for component in wname.iter().copied() {
             let component = component.into();
-            let Some((p, qid)) = path.take().unwrap().walk_one(&self.mounts, component).await else { break };
+            let Some((p, qid)) = path.take().unwrap().walk_one(&self.shares, component).await else { break };
             path = Some(p);
             qids.push(qid);
         }
@@ -153,9 +154,9 @@ impl<Fid: np::traits::Fid + Debug> Serve<Fid> for Handler<Fid> {
             }
 
             let open = if path.is_root() {
-                res::open::Open::root(&self.mounts)
+                res::open::Open::root(&self.shares)
             } else {
-                let real = path.real_path(&self.mounts).ok_or(HandlerError::Transient)?;
+                let real = path.real_path(&self.shares).ok_or(HandlerError::Transient)?;
                 res::open::Open::new(path.name(), real).await?
             };
             let qid = open.qid().await?;
@@ -197,7 +198,7 @@ impl<Fid: np::traits::Fid + Debug> Serve<Fid> for Handler<Fid> {
         let res = self.fids.get_async(&fid).await.ok_or(HandlerError::FidNotFound)?;
 
         match res.get() {
-            Resource::Path(path) => path.stat(&self.mounts).await.ok_or(HandlerError::Transient.into()),
+            Resource::Path(path) => path.stat(&self.shares).await.ok_or(HandlerError::Transient.into()),
             Resource::Open(o) => Ok(o.stat().await?)
         }
     }
@@ -217,7 +218,7 @@ async fn main() -> io::Result<Infallible> {
 
     let listener = TcpListener::bind((Ipv4Addr::UNSPECIFIED, 64444)).await?;
 
-    np::serve(Arc::new(Handler::new([
+    np::serve_mux(Arc::new(Handler::new([
         ("forfun".into(), "forfun".into()),
         ("ff2".into(), "forfun".into())
     ].into_iter().collect())), listener).await

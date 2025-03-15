@@ -6,12 +6,12 @@ use tokio::{fs::{self, File}, io::{AsyncReadExt, AsyncSeekExt}};
 use crate::{Atom, HandlerError};
 use npwire::{put_stat, Qid, Stat};
 
-use super::path::{MountTable, ROOT_QID, ROOT_STAT, RPC_STAT};
+use super::path::{ShareTable, ROOT_QID, ROOT_STAT, RPC_STAT};
 
 #[derive(Debug)]
 enum OpenInner {
     Root {
-        mnts: MountTable,
+        mnts: ShareTable,
         rem: Vec<Atom>,
         last_offset: u64
     },
@@ -28,7 +28,7 @@ enum OpenInner {
 pub struct Open(OpenInner);
 
 impl Open {
-    pub fn root(mnts: &MountTable) -> Self {
+    pub fn root(mnts: &ShareTable) -> Self {
         Self(OpenInner::Root {
             mnts: mnts.clone(),
             rem: Vec::new(),

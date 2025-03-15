@@ -7,7 +7,7 @@ use tokio_util::codec::LengthDelimitedCodec;
 use npwire::*;
 use util::noise::{NoiseStream, Side};
 
-use super::{Serve, Fid};
+use super::{Serve, MuxFid};
 
 const MAX_IN_FLIGHT: usize = 16;
 const MAX_MESSAGE_SIZE: u32 = 65535 - 16;
@@ -34,7 +34,7 @@ impl<T: Future> Future for TaggedJoinHandle<T> {
     }
 }
 
-async fn dispatch<S: Serve<Fid>>(
+async fn dispatch<S: Serve<Fid = MuxFid>>(
     handler: Arc<S>,
     connection_id: Id,
     request: TMessage,
@@ -45,24 +45,24 @@ async fn dispatch<S: Serve<Fid>>(
             unimplemented!()
         },
         TMessage::Tauth(Tauth { afid, uname, aname }) => {
-            let aqid = handler.auth(Fid::new(connection_id, afid), &uname, &aname).await?;
+            let aqid = handler.auth(MuxFid::new(connection_id, afid), &uname, &aname).await?;
             Ok(Rauth { aqid }.into())
         },
         TMessage::Tattach(Tattach { fid, afid, uname, aname }) => {
-            let qid = handler.attach(Fid::new(connection_id, fid), Fid::new(connection_id, afid), &uname, &aname).await?;
+            let qid = handler.attach(MuxFid::new(connection_id, fid), MuxFid::new(connection_id, afid), &uname, &aname).await?;
             Ok(Rattach { qid }.into())
         },
         TMessage::Twalk(Twalk { fid, newfid, wname }) => {
             let wname = wname.iter().map(|s| &s[..]).collect::<Vec<_>>();
-            let wqid = handler.walk(Fid::new(connection_id, fid), Fid::new(connection_id, newfid), &wname).await?;
+            let wqid = handler.walk(MuxFid::new(connection_id, fid), MuxFid::new(connection_id, newfid), &wname).await?;
             Ok(Rwalk { wqid: wqid.into_iter().collect() }.into())
         },
         TMessage::Topen(Topen { fid, mode }) => {
-            let (qid, iounit) = handler.open(Fid::new(connection_id, fid), mode).await?;
+            let (qid, iounit) = handler.open(MuxFid::new(connection_id, fid), mode).await?;
             Ok(Ropen { qid, iounit }.into())
         },
         TMessage::Tcreate(Tcreate { fid, name, perm, mode }) => {
-            let (qid, iounit) = handler.create(Fid::new(connection_id, fid), &name, perm, mode).await?;
+            let (qid, iounit) = handler.create(MuxFid::new(connection_id, fid), &name, perm, mode).await?;
             Ok(Rcreate { qid, iounit }.into())
         },
         TMessage::Tread(Tread { fid, offset, count }) => {
@@ -70,35 +70,35 @@ async fn dispatch<S: Serve<Fid>>(
             let maxcount = (maxlen - RREAD_OVERHEAD).try_into().unwrap_or(u32::MAX);
             let count = count.min(maxcount);
 
-            let fid = Fid::new(connection_id, fid);
+            let fid = MuxFid::new(connection_id, fid);
 
             let data = handler.read(fid, offset, count).await?;
             Ok(Rread { data }.into())
         },
         TMessage::Twrite(Twrite { fid, offset, data }) => {
-            let count = handler.write(Fid::new(connection_id, fid), offset, &data[..]).await?;
+            let count = handler.write(MuxFid::new(connection_id, fid), offset, &data[..]).await?;
             Ok(Rwrite { count }.into())
         },
         TMessage::Tclunk(Tclunk { fid }) => {
-            handler.clunk(Fid::new(connection_id, fid)).await?;
+            handler.clunk(MuxFid::new(connection_id, fid)).await?;
             Ok(Rclunk.into())
         },
         TMessage::Tremove(Tremove { fid }) => {
-            handler.remove(Fid::new(connection_id, fid)).await?;
+            handler.remove(MuxFid::new(connection_id, fid)).await?;
             Ok(Rremove.into())
         },
         TMessage::Tstat(Tstat { fid }) => {
-            let stat = handler.stat(Fid::new(connection_id, fid)).await?;
+            let stat = handler.stat(MuxFid::new(connection_id, fid)).await?;
             Ok(Rstat { stat }.into())
         },
         TMessage::Twstat(Twstat { fid, stat }) => {
-            handler.wstat(Fid::new(connection_id, fid), stat).await?;
+            handler.wstat(MuxFid::new(connection_id, fid), stat).await?;
             Ok(Rwstat.into())
         }
     }
 }
 
-pub async fn handle_client<S: Serve<Fid>>(
+pub async fn handle_client<S: Serve<Fid = MuxFid>>(
     peer: impl AsyncRead + AsyncWrite,
     id: Id,
     handler: Arc<S>
@@ -115,7 +115,6 @@ pub async fn handle_client<S: Serve<Fid>>(
 
     loop {
         tokio::select! {
-            biased;
             Some(incoming) = framed.next(), if inflight.len() < MAX_IN_FLIGHT => {
                 let incoming = incoming?;
 
