@@ -120,6 +120,8 @@ pub async fn handle_client<S: Serve<Fid = MuxFid>>(
     loop {
         if inflight.is_empty() {
             if let Some(Tversion { msize, version }) = next_session.take() {
+                // in-flight requests have been completely flushed out
+
                 handler.clunk_where(|fid| fid.connection_id == id).await;
 
                 let msize = msize.min(MAX_MESSAGE_SIZE);
@@ -146,12 +148,13 @@ pub async fn handle_client<S: Serve<Fid = MuxFid>>(
                     Ok((tag, req)) => {
                         match req {
                             TMessage::Tversion(tversion) => {
-                                if tag != !0 {
+                                if tag == !0 {
+                                    next_session = Some(tversion);
+                                } else {
                                     framed.send(Rerror {
                                         ename: "expected NOTAG".into()
                                     }.serialize(tag).unwrap()).await?;
                                 }
-                                next_session = Some(tversion);
                             },
                             TMessage::Tflush(Tflush { oldtag }) => {
                                 if let Some(flushes) = inflight.iter_mut().find_map(|h| (h.tag == oldtag).then_some(&mut h.flushes)) {

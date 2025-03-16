@@ -47,8 +47,9 @@ impl FidHandle {
     }
 
     pub fn is_of(&self, pool: &FidPool) -> bool {
-        let Some(parent) = self.parent.upgrade() else { return false };
-        Arc::ptr_eq(&parent, &pool.inner)
+        self.parent.upgrade()
+            .is_some_and(|parent|
+                Arc::ptr_eq(&parent, &pool.inner))
     }
 }
 
