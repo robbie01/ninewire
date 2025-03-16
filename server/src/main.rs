@@ -1,5 +1,6 @@
 use std::{collections::HashMap as StdHashMap, convert::Infallible, fmt::Debug, io, net::Ipv4Addr, path::PathBuf, sync::Arc};
 
+use anyhow::bail;
 use bytes::Bytes;
 use np::Serve;
 use npwire::{Qid, Stat};
@@ -7,7 +8,8 @@ use res::path::ROOT_QID;
 use scc::{hash_map::Entry, HashMap};
 use thiserror::Error;
 use tokio::net::TcpListener;
-use string_cache::DefaultAtom as Atom;
+
+type Atom = Arc<str>;
 
 mod np;
 mod res;
@@ -39,12 +41,12 @@ enum Resource {
 type ShareTable = StdHashMap<Atom, PathBuf>;
 
 #[derive(Debug)]
-struct Handler<Fid:  np::traits::Fid + Debug> {
+struct Handler<Fid: np::traits::Fid> {
     shares: ShareTable,
     fids: HashMap<Fid, Resource>
 }
 
-impl<Fid: np::traits::Fid + Debug> Handler<Fid> {
+impl<Fid: np::traits::Fid> Handler<Fid> {
     fn new(shares: ShareTable) -> Self {
         Self {
             shares,
@@ -53,7 +55,7 @@ impl<Fid: np::traits::Fid + Debug> Handler<Fid> {
     }
 }
 
-impl<Fid: np::traits::Fid + Debug> Serve for Handler<Fid> {
+impl<Fid: np::traits::Fid> Serve for Handler<Fid> {
     type Fid = Fid;
     type Error = anyhow::Error;
 
@@ -62,12 +64,16 @@ impl<Fid: np::traits::Fid + Debug> Serve for Handler<Fid> {
     }
 
     async fn attach(&self, fid: Fid, afid: Fid, _uname: &str, aname: &str) -> anyhow::Result<Qid> {
-        if fid.is_nofid() || !afid.is_nofid() {
-            return Err(HandlerError::InvalidArgument.into());
+        if fid.is_nofid() {
+            bail!(HandlerError::InvalidArgument);
+        }
+
+        if !afid.is_nofid() {
+            bail!(HandlerError::FidNotFound);
         }
 
         if !aname.is_empty() {
-            return Err(HandlerError::NoEnt.into());
+            bail!(HandlerError::NoEnt);
         }
 
         match self.fids.entry_async(fid).await {
@@ -81,7 +87,7 @@ impl<Fid: np::traits::Fid + Debug> Serve for Handler<Fid> {
 
     async fn walk(&self, fid: Fid, newfid: Fid, wname: &[&str]) -> anyhow::Result<impl IntoIterator<Item = Qid>> {
         if newfid.is_nofid() {
-            return Err(HandlerError::InvalidArgument.into());
+            bail!(HandlerError::InvalidArgument);
         }
 
         // Hacking around avoiding a potential deadlock
@@ -100,12 +106,12 @@ impl<Fid: np::traits::Fid + Debug> Serve for Handler<Fid> {
             None => match &newres {
                 Entry::Occupied(o) => match o.get() {
                     Resource::Path(path) => path.clone(),
-                    _ => return Err(HandlerError::InvalidArgument.into())
+                    _ => bail!(HandlerError::InvalidArgument)
                 },
-                Entry::Vacant(_) => return Err(HandlerError::FidNotFound.into())
+                Entry::Vacant(_) => bail!(HandlerError::FidNotFound)
             },
             Some(path) => match newres {
-                Entry::Occupied(_) => return Err(HandlerError::FidInUse.into()),
+                Entry::Occupied(_) => bail!(HandlerError::FidInUse),
                 Entry::Vacant(_) => path
             }
         };
@@ -142,15 +148,15 @@ impl<Fid: np::traits::Fid + Debug> Serve for Handler<Fid> {
 
         let path = match &*res {
             Resource::Path(path) => path,
-            _ => return Err(HandlerError::InvalidArgument.into())
+            _ => bail!(HandlerError::InvalidArgument)
         };
 
         if path.is_rpc() {
             todo!();
-            // return Err(HandlerError::Unimplemented.into());
+            // bail!(HandlerError::Unimplemented);
         } else {
             if mode != 0 {
-                return Err(HandlerError::Unimplemented.into());
+                bail!(HandlerError::Unimplemented);
             }
 
             let open = if path.is_root() {

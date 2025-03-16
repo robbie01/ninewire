@@ -109,7 +109,7 @@ impl Open {
 
                 let mut buf = BytesMut::new();
                 while let Some(name) = rem.first() {
-                    let stat = if name == "rpc" {
+                    let stat = if **name == *"rpc" {
                         RPC_STAT.clone()
                     } else {
                         let path = mnts.get(name).unwrap();

@@ -13,14 +13,14 @@ const MAX_IN_FLIGHT: usize = 16;
 const MAX_MESSAGE_SIZE: u32 = 65535 - 16;
 
 #[pin_project]
-struct TaggedJoinHandle<T> {
+struct TaggedFuture<T> {
     tag: u16,
     flushes: Option<u16>,
     #[pin]
     hdl: T
 }
 
-impl<T: Future> Future for TaggedJoinHandle<T> {
+impl<T: Future> Future for TaggedFuture<T> {
     type Output = (u16, Option<u16>, T::Output);
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
@@ -109,24 +109,49 @@ pub async fn handle_client<S: Serve<Fid = MuxFid>>(
         .little_endian()
         .length_field_type::<u32>()
         .length_adjustment(-4)
+        .max_frame_length(MAX_MESSAGE_SIZE as usize - 4)
         .new_framed(peer);
 
-    let mut inflight = FuturesUnordered::<TaggedJoinHandle<_>>::new();
+    let mut inflight = FuturesUnordered::<TaggedFuture<_>>::new();
+
+    let mut initialized = false;
+    let mut next_session = None;
 
     loop {
+        if inflight.is_empty() {
+            if let Some(Tversion { msize, version }) = next_session.take() {
+                handler.clunk_where(|fid| fid.connection_id == id).await;
+
+                let msize = msize.min(MAX_MESSAGE_SIZE);
+                let version = if version == "9P2000" { "9P2000" } else { "unknown" };
+                framed.codec_mut().set_max_frame_length(msize.checked_sub(4).unwrap() as usize);
+                framed.send(Rversion { msize, version: version.into() }.serialize(!0).unwrap()).await?;
+
+                initialized = true;
+            }
+        }
+
         tokio::select! {
-            Some(incoming) = framed.next(), if inflight.len() < MAX_IN_FLIGHT => {
+            Some(incoming) = framed.next(), if inflight.len() < MAX_IN_FLIGHT && next_session.is_none() => {
                 let incoming = incoming?;
 
                 let des = deserialize_t(incoming.freeze());
+
+                if !initialized && !matches!(des, Ok((_, TMessage::Tversion(_)))) {
+                    // just throw out any messages before the first Tversion
+                    continue;
+                }
+
                 match des {
                     Ok((tag, req)) => {
                         match req {
-                            TMessage::Tversion(Tversion { msize, version }) => {
-                                let msize = msize.min(MAX_MESSAGE_SIZE);
-                                let version = if version == "9P2000" { "9P2000" } else { "unknown" };
-                                framed.codec_mut().set_max_frame_length(msize.checked_sub(4).unwrap() as usize);
-                                framed.send(Rversion { msize, version: version.into() }.serialize(tag).unwrap()).await?;
+                            TMessage::Tversion(tversion) => {
+                                if tag != !0 {
+                                    framed.send(Rerror {
+                                        ename: "expected NOTAG".into()
+                                    }.serialize(tag).unwrap()).await?;
+                                }
+                                next_session = Some(tversion);
                             },
                             TMessage::Tflush(Tflush { oldtag }) => {
                                 if let Some(flushes) = inflight.iter_mut().find_map(|h| (h.tag == oldtag).then_some(&mut h.flushes)) {
@@ -138,7 +163,7 @@ pub async fn handle_client<S: Serve<Fid = MuxFid>>(
                                 }
                             },
                             req => {
-                                inflight.push(TaggedJoinHandle {
+                                inflight.push(TaggedFuture {
                                     tag,
                                     flushes: None,
                                     hdl: tokio::spawn(dispatch(

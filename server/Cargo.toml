@@ -17,5 +17,4 @@ thiserror.workspace = true
 
 console-subscriber = "0.4"
 cfg-if = "1"
-string_cache = "0.8"
 scc = "2.3"

@@ -120,9 +120,9 @@ impl Path {
 
     pub async fn walk_one(mut self, mnts: &ShareTable, component: Atom) -> Option<(Self, Qid)> {
         if component.contains('/') { return None; }
-        if component == *"." { return None; }
+        if *component == *"." { return None; }
 
-        if component == *".." {
+        if *component == *".." {
             self.ascend();
         } else if !self.descend(component) {
             return None
