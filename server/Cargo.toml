@@ -14,8 +14,6 @@ tokio = { workspace = true, features = ["rt", "macros", "net", "io-util", "fs", 
 tokio-util.workspace = true
 futures.workspace = true
 pin-project.workspace = true
-thiserror.workspace = true
 
 console-subscriber = "0.4"
 cfg-if = "1"
-scc = "2.3"

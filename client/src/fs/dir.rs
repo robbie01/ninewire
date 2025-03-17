@@ -11,6 +11,8 @@ pub struct Directory {
     pub(super) fid: FidHandle
 }
 
+const MAXWELEM: usize = 16;
+
 impl Filesystem {
     pub async fn attach(&self, uname: &str, aname: &str) -> io::Result<Directory> {
         let dir = Directory {
@@ -54,26 +56,37 @@ impl Directory {
             fid: self.fsys.get_fid().unwrap()
         };
 
-        let wname = path.as_ref()
+        let mut wname = path.as_ref()
             .split('/')
             .filter(|&c| !(c.is_empty() || c == "."))
             .map(|c| c.into())
             .collect::<Vec<_>>();
 
-        let nc = wname.len();
+        let mut wqid = Vec::new();
 
-        let wqid = self.fsys.walk(
-            &self.fid,
-            &dir.fid,
-            wname
-        ).await?;
+        loop {
+            let nc = wname.len().min(MAXWELEM);
 
-        if wqid.len() < nc {
-            return Err(io::ErrorKind::NotFound.into());
-        }
-        
-        if wqid.len() > nc {
-            return Err(io::Error::other("invalid response from server"));
+            let z = wname.split_off(nc);
+            let wname_sub = mem::replace(&mut wname, z);
+
+            let wqid_sub = self.fsys.walk(
+                &self.fid,
+                &dir.fid,
+                wname_sub
+            ).await?;
+    
+            if wqid_sub.len() < nc {
+                return Err(io::ErrorKind::NotFound.into());
+            }
+            
+            if wqid_sub.len() > nc {
+                return Err(io::Error::other("invalid response from server"));
+            }
+
+            wqid.extend_from_slice(&wqid_sub);
+
+            if wname.is_empty() { break }
         }
 
         if wqid.last().is_some_and(|qid| qid.type_ & QTDIR != QTDIR) {

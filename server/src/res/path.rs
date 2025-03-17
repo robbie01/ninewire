@@ -52,7 +52,6 @@ impl PathResource {
         Some(mpath.join(rem.iter().map(|p| AsRef::<std::path::Path>::as_ref(&p[..])).collect::<PathBuf>()))
     }
 
-    // TODO: this is jank as hell
     async fn walk_one(mut self, component: &str) -> anyhow::Result<Self> {
         if component == ".." {
             match self.inner {
@@ -87,7 +86,10 @@ impl PathResource {
                 PathInner::Rpc => bail!("No such file or directory"),
                 PathInner::OnShare { share: _, ref mut rem } => {
                     rem.push(component.into());
-                    let meta = fs::metadata(self.real_path().unwrap()).await?;
+                    let meta = fs::symlink_metadata(self.real_path().unwrap()).await?;
+                    if meta.is_symlink() {
+                        bail!("No such file or directory");
+                    }
                     self.qid = qid(&meta);
                 }
             }
