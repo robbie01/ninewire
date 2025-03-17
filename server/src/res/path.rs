@@ -5,7 +5,9 @@ use npwire::Qid;
 use tokio::fs;
 
 use super::*;
-use crate::{np::traits::{self, Resource}, Atom};
+use crate::np::traits::{self, Resource};
+
+type Atom = Arc<str>;
 
 #[derive(Debug, Clone)]
 enum PathInner {
@@ -51,7 +53,7 @@ impl PathResource {
     }
 
     // TODO: this is jank as hell
-    async fn walk_one(&mut self, component: &str) -> anyhow::Result<()> {
+    async fn walk_one(mut self, component: &str) -> anyhow::Result<Self> {
         if component == ".." {
             match self.inner {
                 PathInner::Root | PathInner::Rpc => {
@@ -91,7 +93,7 @@ impl PathResource {
             }
         }
 
-        Ok(())
+        Ok(self)
     }
 }
 
@@ -149,30 +151,30 @@ impl traits::PathResource for PathResource {
     }
 
     async fn walk(&self, wname: &[&str]) -> Result<(Vec<Qid>, Option<Self>), Self::Error> {
-        let mut new = self.clone();
-
-        if wname.is_empty() {
-            return Ok((Vec::new(), Some(new)));
-        }
+        let mut new = Some(self.clone());
 
         let mut wqid = Vec::new();
 
         for &component in wname {
-            match new.walk_one(component).await {
-                Ok(()) => wqid.push(new.qid()),
-                Err(e) => if wqid.is_empty() {
-                    return Err(e);
-                } else {
-                    break;
+            if let Some(path) = new.take() {
+                match path.walk_one(component).await {
+                    Ok(path) => {
+                        wqid.push(path.qid());
+                        new = Some(path);
+                    },
+                    Err(e) => if wqid.is_empty() {
+                        return Err(e);
+                    } else {
+                        break;
+                    }
                 }
             }
         }
 
-        if wqid.len() == wname.len() {
+        if new.is_some() {
             wqid.pop();
-            Ok((wqid, Some(new)))
-        } else {
-            Ok((wqid, None))
         }
+
+        Ok((wqid, new))
     }
 }

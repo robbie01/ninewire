@@ -26,7 +26,7 @@ pub trait OpenResource: Resource + Send + Sync {
     fn write(&self, offset: u64, data: &[u8]) -> impl Future<Output = Result<u32, Self::Error>> + Send;
 }
 
-pub trait Serve2: Send + Sync + 'static {
+pub trait Serve: Send + Sync + 'static {
     type Error: Display;
 
     type PathResource: PathResource<Error = Self::Error, OpenResource = Self::OpenResource>;

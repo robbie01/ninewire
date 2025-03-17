@@ -5,8 +5,6 @@ use bytestring::ByteString;
 use np::traits;
 use tokio::net::TcpListener;
 
-type Atom = Arc<str>;
-
 mod np;
 mod res;
 
@@ -33,7 +31,7 @@ impl Handler {
     }
 }
 
-impl traits::Serve2 for Handler {
+impl traits::Serve for Handler {
     type Error = anyhow::Error;
     type PathResource = res::path::PathResource;
     type OpenResource = res::open::OpenResource;

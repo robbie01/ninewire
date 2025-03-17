@@ -7,18 +7,18 @@ use tokio_util::codec::LengthDelimitedCodec;
 use npwire::*;
 use util::noise::{NoiseStream, Side};
 
-use super::{traits::{OpenResource as _, PathResource as _, Resource as _}, Serve2};
+use super::{traits::{OpenResource as _, PathResource as _, Resource as _}, Serve};
 
 const MAX_IN_FLIGHT: usize = 16;
 const MAX_MESSAGE_SIZE: u32 = 65535 - 16;
 
 #[derive(Debug)]
-enum Resource<S: Serve2> {
+enum Resource<S: Serve> {
     Path(S::PathResource),
     Open(S::OpenResource)
 }
 
-struct ResourceManager<S: Serve2> {
+struct ResourceManager<S: Serve> {
     resources: RwLock<HashMap<u32, Resource<S>>>,
     handler: Arc<S>,
 }
@@ -45,7 +45,7 @@ impl<T: Future> Future for TaggedFuture<T> {
     }
 }
 
-async fn dispatch<S: Serve2>(
+async fn dispatch<S: Serve>(
     resource_mgr: Arc<ResourceManager<S>>,
     request: TMessage,
     _maxlen: usize
@@ -228,7 +228,7 @@ async fn dispatch<S: Serve2>(
     }
 }
 
-pub async fn handle_client<S: Serve2>(
+pub async fn handle_client<S: Serve>(
     peer: impl AsyncRead + AsyncWrite,
     handler: Arc<S>
 ) -> io::Result<()> {
