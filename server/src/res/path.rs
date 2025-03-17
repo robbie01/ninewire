@@ -1,156 +1,178 @@
-use std::{collections::HashMap, path::PathBuf, sync::LazyLock};
+use std::{path::PathBuf, sync::Arc};
 
-use crate::Atom;
-
-use npwire::{Qid, Stat, DMDIR, QTDIR, QTFILE};
+use anyhow::bail;
+use npwire::Qid;
 use tokio::fs;
 
-pub type ShareTable = HashMap<Atom, PathBuf>;
+use super::*;
+use crate::{np::traits::{self, Resource}, Atom};
 
 #[derive(Debug, Clone)]
-pub(super) enum PathInner {
+enum PathInner {
     Root,
     Rpc,
     OnShare { share: Atom, rem: Vec<Atom> }
 }
 
 #[derive(Debug, Clone)]
-pub struct Path(pub(super) PathInner);
+pub struct PathResource {
+    handler: Arc<crate::HandlerInner>,
+    session: Arc<crate::Session>,
+    qid: Qid,
+    inner: PathInner
+}
 
-pub const ROOT_QID: Qid = Qid { type_: QTDIR, version: 0, path: 0 };
-pub const RPC_QID: Qid = Qid { type_: QTFILE, version: 0, path: !0 };
-
-pub static ROOT_STAT: LazyLock<Stat> = LazyLock::new(|| Stat {
-    type_: 0,
-    dev: 0,
-    qid: ROOT_QID,
-    mode: DMDIR | 0o555,
-    atime: 0,
-    mtime: 0,
-    length: 0,
-    name: "/".into(),
-    uid: "me".into(),
-    gid: "me".into(),
-    muid: "me".into()
-});
-
-pub static RPC_STAT: LazyLock<Stat> = LazyLock::new(|| Stat {
-    type_: 0,
-    dev: 0,
-    qid: RPC_QID,
-    mode: 0o666,
-    atime: 0,
-    mtime: 0,
-    length: 0,
-    name: "rpc".into(),
-    uid: "me".into(),
-    gid: "me".into(),
-    muid: "me".into()
-});
-
-impl Path {
-    pub const fn root() -> Self {
-        Self(PathInner::Root)
-    }
-
-    pub const fn is_root(&self) -> bool {
-        matches!(self.0, PathInner::Root)
-    }
-
-    pub const fn is_rpc(&self) -> bool {
-        matches!(self.0, PathInner::Rpc)
-    }
-
-    fn ascend(&mut self) {
-        match &mut self.0 {
-            PathInner::Root => (),
-            PathInner::Rpc => {
-                self.0 = PathInner::Root
-            },
-            PathInner::OnShare { share: _, rem } if rem.is_empty() => {
-                self.0 = PathInner::Root;
-            },
-            PathInner::OnShare { share: _, rem } => {
-                rem.pop();
-            }
+impl PathResource {
+    pub fn root(handler: &crate::Handler, session: Arc<crate::Session>) -> Self {
+        PathResource {
+            handler: handler.inner.clone(),
+            session,
+            qid: ROOT_QID,
+            inner: PathInner::Root
         }
     }
 
-    fn descend(&mut self, component: Atom) -> bool {
-        match &mut self.0 {
-            PathInner::Root => {
-                if component[..] == *"rpc" {
-                    self.0 = PathInner::Rpc
-                } else {
-                    self.0 = PathInner::OnShare { share: component, rem: Vec::new() };
-                }
-                true
-            },
-            PathInner::Rpc => {
-                false
-            },
-            PathInner::OnShare { share: _, rem } => {
-                rem.push(component);
-                true
-            }
+    fn name(&self) -> &str {
+        match &self.inner {
+            PathInner::Root => "/",
+            PathInner::Rpc => "rpc",
+            PathInner::OnShare { share, rem } => rem.last().unwrap_or(share)
         }
     }
 
-    pub fn real_path(&self, mnts: &ShareTable) -> Option<PathBuf> {
-        let (mnt, rem) = match &self.0 {
+    fn real_path(&self) -> Option<PathBuf> {
+        let (mnt, rem) = match &self.inner {
             PathInner::Root | PathInner::Rpc => return None,
             PathInner::OnShare { share, rem } => (share, rem)
         };
 
-        let mpath = mnts.get(mnt)?;
+        let mpath = self.handler.shares.get(mnt)?;
         Some(mpath.join(rem.iter().map(|p| AsRef::<std::path::Path>::as_ref(&p[..])).collect::<PathBuf>()))
     }
 
-    pub async fn qid(&self, mnts: &ShareTable) -> Option<Qid> {
-        match &self.0 {
-            PathInner::Root => Some(ROOT_QID),
-            PathInner::Rpc => Some(Qid { type_: QTFILE, version: 0, path: !0 }),
-            _ => {
-                let path = self.real_path(mnts)?;
-                let meta = fs::metadata(path).await.ok()?;
-                Some(super::qid(&meta))
+    // TODO: this is jank as hell
+    async fn walk_one(&mut self, component: &str) -> anyhow::Result<()> {
+        if component == ".." {
+            match self.inner {
+                PathInner::Root | PathInner::Rpc => {
+                    self.inner = PathInner::Root;
+                    self.qid = ROOT_QID;
+                },
+                PathInner::OnShare { share: _, ref mut rem } => {
+                    if rem.pop().is_none() {
+                        self.inner = PathInner::Root;
+                        self.qid = ROOT_QID;
+                    } else {
+                        let meta = fs::metadata(self.real_path().unwrap()).await?;
+                        self.qid = qid(&meta);
+                    }
+                }
+            }
+        } else {
+            match self.inner {
+                PathInner::Root => if component == "rpc" {
+                    self.inner = PathInner::Rpc;
+                    self.qid = RPC_QID;
+                } else {
+                    if let Some((share, _)) = self.handler.shares.get_key_value(component) {
+                        self.inner = PathInner::OnShare { share: share.clone(), rem: Vec::new() };
+                        let meta = fs::metadata(self.real_path().unwrap()).await?;
+                        self.qid = qid(&meta);
+                    } else {
+                        bail!("No such file or directory");
+                    }
+                },
+                PathInner::Rpc => bail!("No such file or directory"),
+                PathInner::OnShare { share: _, ref mut rem } => {
+                    rem.push(component.into());
+                    let meta = fs::metadata(self.real_path().unwrap()).await?;
+                    self.qid = qid(&meta);
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl traits::Resource for PathResource {
+    type Error = anyhow::Error;
+    
+    fn qid(&self) -> Qid {
+        self.qid
+    }
+
+    async fn remove(self) -> Result<(), Self::Error> {
+        bail!("Permission denied");
+    }
+
+    async fn stat(&self) -> Result<npwire::Stat, Self::Error> {
+        match &self.inner {
+            PathInner::Root => Ok(root_stat(&self.session)),
+            PathInner::Rpc => Ok(rpc_stat(&self.session)),
+            PathInner::OnShare { .. } => {
+                let meta = fs::metadata(self.real_path().unwrap()).await?;
+                Ok(stat(&self.session, self.name(), &meta))
             }
         }
     }
 
-    pub async fn walk_one(mut self, mnts: &ShareTable, component: Atom) -> Option<(Self, Qid)> {
-        if component.contains('/') { return None; }
-        if *component == *"." { return None; }
+    async fn wstat(&self, _stat: npwire::Stat) -> Result<(), Self::Error> {
+        bail!("Permission denied");
+    }
+}
 
-        if *component == *".." {
-            self.ascend();
-        } else if !self.descend(component) {
-            return None
-        }
+impl traits::PathResource for PathResource {
+    type OpenResource = super::open::OpenResource;
 
-        let qid = self.qid(mnts).await?;
-        Some((self, qid))
+    async fn create(&self, _name: &str, _perm: u32, _mode: u8) -> Result<Self::OpenResource, Self::Error> {
+        bail!("Permission denied");
     }
 
-    pub fn name(&self) -> Atom {
-        match &self.0 {
-            PathInner::Root => "/".into(),
-            PathInner::Rpc => "rpc".into(),
-            PathInner::OnShare { share, rem } => match rem.last() {
-                Some(component) => component.clone(),
-                None => share.clone()
-            }
+    async fn open(&self, mode: u8) -> Result<Self::OpenResource, Self::Error> {
+        if mode != 0 {
+            bail!("Permission denied");
         }
+
+        let res = match &self.inner {
+            PathInner::Root => open::OpenResource::root(self.handler.clone(), self.session.clone()),
+            PathInner::Rpc => todo!(),
+            PathInner::OnShare { .. } => open::OpenResource::new(
+                self.handler.clone(),
+                self.session.clone(),
+                self.name().to_owned(),
+                self.real_path().unwrap(),
+                self.qid
+            )?
+        };
+        Ok(res)
     }
 
-    pub async fn stat(&self, mnts: &ShareTable) -> Option<Stat> {
-        match &self.0 {
-            PathInner::Root => Some(ROOT_STAT.clone()),
-            _ => {
-                let path = self.real_path(mnts)?;
-                let meta = fs::metadata(path).await.ok()?;
-                Some(super::stat(&self.name(), &meta))
+    async fn walk(&self, wname: &[&str]) -> Result<(Vec<Qid>, Option<Self>), Self::Error> {
+        let mut new = self.clone();
+
+        if wname.is_empty() {
+            return Ok((Vec::new(), Some(new)));
+        }
+
+        let mut wqid = Vec::new();
+
+        for &component in wname {
+            match new.walk_one(component).await {
+                Ok(()) => wqid.push(new.qid()),
+                Err(e) => if wqid.is_empty() {
+                    return Err(e);
+                } else {
+                    break;
+                }
             }
+        }
+
+        if wqid.len() == wname.len() {
+            wqid.pop();
+            Ok((wqid, Some(new)))
+        } else {
+            Ok((wqid, None))
         }
     }
 }
