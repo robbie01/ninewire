@@ -106,7 +106,7 @@ impl Path {
         Some(mpath.join(rem.iter().map(|p| AsRef::<std::path::Path>::as_ref(&p[..])).collect::<PathBuf>()))
     }
 
-    async fn qid(&self, mnts: &ShareTable) -> Option<Qid> {
+    pub async fn qid(&self, mnts: &ShareTable) -> Option<Qid> {
         match &self.0 {
             PathInner::Root => Some(ROOT_QID),
             PathInner::Rpc => Some(Qid { type_: QTFILE, version: 0, path: !0 }),

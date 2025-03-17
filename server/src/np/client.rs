@@ -112,7 +112,7 @@ pub async fn handle_client<S: Serve<Fid = MuxFid>>(
         .max_frame_length(MAX_MESSAGE_SIZE as usize - 4)
         .new_framed(peer);
 
-    let mut inflight = FuturesUnordered::<TaggedFuture<_>>::new();
+    let mut inflight = pin!(FuturesUnordered::<TaggedFuture<_>>::new());
 
     let mut initialized = false;
     let mut next_session = None;
@@ -157,7 +157,7 @@ pub async fn handle_client<S: Serve<Fid = MuxFid>>(
                                 }
                             },
                             TMessage::Tflush(Tflush { oldtag }) => {
-                                if let Some(flushes) = inflight.iter_mut().find_map(|h| (h.tag == oldtag).then_some(&mut h.flushes)) {
+                                if let Some(flushes) = inflight.as_mut().iter_pin_mut().find_map(|h| (h.tag == oldtag).then_some(h.project().flushes)) {
                                     // https://9fans.github.io/plan9port/man/man9/flush.html
                                     // "it need respond only to the last flush"
                                     *flushes = Some(tag);

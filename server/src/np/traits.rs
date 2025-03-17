@@ -33,55 +33,34 @@ pub trait Serve: Send + Sync + 'static {
     fn clunk_where(&self, matcher: impl FnMut(Self::Fid) -> bool + Send) -> impl Future<Output = ()> + Send;
 }
 
-impl<S: Serve> Serve for Arc<S> {
-    type Fid = S::Fid;
-    type Error = S::Error;
+pub trait Resource: Send {
+    type Error: Display;
 
-    fn auth(&self, afid: Self::Fid, uname: &str, aname: &str) -> impl Future<Output = Result<Qid, Self::Error>> + Send {
-        S::auth(self, afid, uname, aname)
-    }
+    fn qid(&self) -> Qid;
+    fn remove(self) -> impl Future<Output = Result<(), Self::Error>> + Send;
+    fn stat(&self) -> impl Future<Output = Result<Stat, Self::Error>> + Send;
+    fn wstat(&self, stat: Stat) -> impl Future<Output = Result<(), Self::Error>> + Send;
+}
 
-    fn attach(&self, fid: Self::Fid, afid: Self::Fid, uname: &str, aname: &str) -> impl Future<Output = Result<Qid, Self::Error>> + Send {
-        S::attach(self, fid, afid, uname, aname)
-    }
+pub trait PathResource: Resource + Sized + Send {
+    type OpenResource: OpenResource;
 
-    fn walk(&self, fid: Self::Fid, newfid: Self::Fid, wname: &[&str]) -> impl Future<Output = Result<impl IntoIterator<Item = Qid>, Self::Error>> + Send {
-        S::walk(self, fid, newfid, wname)
-    }
+    fn walk(&self, wname: &[&str]) -> impl Future<Output = Result<(Vec<Qid>, Self), Self::Error>> + Send;
+    fn open(&mut self, mode: u8) -> impl Future<Output = Result<Self::OpenResource, Self::Error>> + Send;
+    fn create(&self, name: &str, perm: u32, mode: u8) -> impl Future<Output = Result<Self::OpenResource, Self::Error>> + Send;
+}
 
-    fn open(&self, fid: Self::Fid, mode: u8) -> impl Future<Output = Result<(Qid, u32), Self::Error>> + Send {
-        S::open(self, fid, mode)
-    }
+pub trait OpenResource: Resource + Send {
+    fn read(&self, offset: u64, count: u32) -> impl Future<Output = Result<Bytes, Self::Error>> + Send;
+    fn write(&self, offset: u64, data: &[u8]) -> impl Future<Output = Result<u32, Self::Error>> + Send;
+}
 
-    fn create(&self, fid: Self::Fid, name: &str, perm: u32, mode: u8) -> impl Future<Output = Result<(Qid, u32), Self::Error>> + Send {
-        S::create(self, fid, name, perm, mode)
-    }
+pub trait Serve2: Send + Sync + 'static {
+    type Error: Display;
 
-    fn read(&self, fid: Self::Fid, offset: u64, count: u32) -> impl Future<Output = Result<Bytes, Self::Error>> + Send {
-        S::read(self, fid, offset, count)
-    }
+    type PathResource<'a>: PathResource<Error = Self::Error, OpenResource = Self::OpenResource<'a>> + 'a;
+    type OpenResource<'a>: OpenResource<Error = Self::Error> + 'a;
 
-    fn write(&self, fid: Self::Fid, offset: u64, data: &[u8]) -> impl Future<Output = Result<u32, Self::Error>> + Send {
-        S::write(self, fid, offset, data)
-    }
-
-    fn clunk(&self, fid: Self::Fid) -> impl Future<Output = Result<(), Self::Error>> + Send {
-        S::clunk(self, fid)
-    }
-
-    fn remove(&self, fid: Self::Fid) -> impl Future<Output = Result<(), Self::Error>> + Send {
-        S::remove(self, fid)
-    }
-
-    fn stat(&self, fid: Self::Fid) -> impl Future<Output = Result<Stat, Self::Error>> + Send {
-        S::stat(self, fid)
-    }
-
-    fn wstat(&self, fid: Self::Fid, stat: Stat) -> impl Future<Output = Result<(), Self::Error>> + Send {
-        S::wstat(self, fid, stat)
-    }
-
-    fn clunk_where(&self, matcher: impl FnMut(Self::Fid) -> bool + Send) -> impl Future<Output = ()> + Send {
-        S::clunk_where(self, matcher)
-    }
+    fn auth<'a>(&'a self, uname: &str, aname: &str) -> impl Future<Output = Result<Self::OpenResource<'a>, Self::Error>>;
+    fn attach<'a>(&'a self, ares: Option<&Self::OpenResource<'a>>, uname: &str, aname: &str) -> impl Future<Output = Result<Self::PathResource<'a>, Self::Error>>;
 }

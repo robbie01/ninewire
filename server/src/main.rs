@@ -13,6 +13,7 @@ type Atom = Arc<str>;
 
 mod np;
 mod res;
+mod main2;
 
 #[derive(Debug, Error)]
 enum HandlerError {
@@ -217,6 +218,7 @@ impl<Fid: np::traits::Fid> Serve for Handler<Fid> {
         self.fids.retain_async(|&k, _| !matcher(k)).await;
     }
 }
+
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> io::Result<Infallible> {
