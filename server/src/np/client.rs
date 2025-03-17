@@ -56,13 +56,13 @@ async fn dispatch<S: Serve>(
         },
         TMessage::Tauth(Tauth { afid, uname, aname }) => {
             if afid == !0 {
-                return Err(Rerror { ename: "Invalid argument".into() });
+                return Err(Rerror { ename: "fid invalid".into() });
             }
 
             let mut resources = resource_mgr.resources.write().await;
 
             if resources.contains_key(&afid) {
-                return Err(Rerror { ename: "Fid in use".into() });
+                return Err(Rerror { ename: "fid in use".into() });
             }
 
             let res = resource_mgr.handler.auth(&uname, &aname).await?;
@@ -74,13 +74,13 @@ async fn dispatch<S: Serve>(
         },
         TMessage::Tattach(Tattach { fid, afid, uname, aname }) => {
             if fid == !0 {
-                return Err(Rerror { ename: "Invalid argument".into() });
+                return Err(Rerror { ename: "fid invalid".into() });
             }
 
             let mut resources = resource_mgr.resources.write().await;
 
             if resources.contains_key(&fid) {
-                return Err(Rerror { ename: "Fid in use".into() });
+                return Err(Rerror { ename: "fid in use".into() });
             }
 
             let ares = if afid != !0 {
@@ -88,10 +88,10 @@ async fn dispatch<S: Serve>(
                     if let Resource::Open(res) = res {
                         Some(res)
                     } else {
-                        return Err(Rerror { ename: "Invalid argument".into() });
+                        return Err(Rerror { ename: "fid invalid".into() });
                     }
                 } else {
-                    return Err(Rerror { ename: "Fid not found".into() });
+                    return Err(Rerror { ename: "fid invalid".into() });
                 }
             } else {
                 None
@@ -112,7 +112,7 @@ async fn dispatch<S: Serve>(
             let mut resources = resource_mgr.resources.write().await;
 
             if resources.contains_key(&newfid) {
-                return Err(Rerror { ename: "Fid in use".into() });
+                return Err(Rerror { ename: "fid in use".into() });
             }
             let resource = resources.get(&fid).ok_or_else(|| Rerror { ename: "Fid not".into() })?;
             
@@ -129,12 +129,12 @@ async fn dispatch<S: Serve>(
                 
                 Ok(Rwalk { wqid }.into())
             } else {
-                Err(Rerror { ename: "Invalid argument".into() })
+                Err(Rerror { ename: "fid open for I/O".into() })
             }
         },
         TMessage::Topen(Topen { fid, mode }) => {
             let mut resources = resource_mgr.resources.write().await;
-            let resource = resources.get_mut(&fid).ok_or_else(|| Rerror { ename: "Fid not found".into() })?;
+            let resource = resources.get_mut(&fid).ok_or_else(|| Rerror { ename: "fid invalid".into() })?;
             
             if let Resource::Path(path_resource) = resource {
                 let open_resource = path_resource.open(mode).await?;
@@ -144,12 +144,12 @@ async fn dispatch<S: Serve>(
                 
                 Ok(Ropen { qid, iounit: 0 }.into())
             } else {
-                Err(Rerror { ename: "Invalid argument".into() })
+                Err(Rerror { ename: "fid open for I/O".into() })
             }
         },
         TMessage::Tcreate(Tcreate { fid, name, perm, mode }) => {
             let mut resources = resource_mgr.resources.write().await;
-            let resource = resources.get_mut(&fid).ok_or_else(|| Rerror { ename: "Fid not found".into() })?;
+            let resource = resources.get_mut(&fid).ok_or_else(|| Rerror { ename: "fid invalid".into() })?;
             
             if let Resource::Path(resource) = resource {
                 let open_resource = resource.create(&name, perm, mode).await?;
@@ -159,29 +159,29 @@ async fn dispatch<S: Serve>(
                 
                 Ok(Rcreate { qid, iounit: 0 }.into())
             } else {
-            Err(Rerror { ename: "Invalid argument".into() })
+            Err(Rerror { ename: "fid open for I/O".into() })
             }
         },
         TMessage::Tread(Tread { fid, offset, count }) => {
             let resources = resource_mgr.resources.read().await;
-            let resource = resources.get(&fid).ok_or_else(|| Rerror { ename: "unknown fid".into() })?;
+            let resource = resources.get(&fid).ok_or_else(|| Rerror { ename: "fid invalid".into() })?;
             
             if let Resource::Open(resource) = resource {
                 let data = resource.read(offset, count).await?;
                 Ok(Rread { data }.into())
             } else {
-                Err(Rerror { ename: "Invalid argument".into() })
+                Err(Rerror { ename: "fid not open for read".into() })
             }
         },
         TMessage::Twrite(Twrite { fid, offset, data }) => {
             let resources = resource_mgr.resources.read().await;
-            let resource = resources.get(&fid).ok_or_else(|| Rerror { ename: "unknown fid".into() })?;
+            let resource = resources.get(&fid).ok_or_else(|| Rerror { ename: "fid invalid".into() })?;
             
             if let Resource::Open(resource) = resource {
             let count = resource.write(offset, &data).await?;
-            Ok(Rwrite { count }.into())
+                Ok(Rwrite { count }.into())
             } else {
-            Err(Rerror { ename: "Invalid argument".into() })
+                Err(Rerror { ename: "fid not open for write".into() })
             }
         },
         TMessage::Tclunk(Tclunk { fid }) => {
@@ -189,12 +189,12 @@ async fn dispatch<S: Serve>(
             if resources.remove(&fid).is_some() {
                 Ok(Rclunk.into())
             } else {
-                Err(Rerror { ename: "Fid not found".into() })
+                Err(Rerror { ename: "fid invalid".into() })
             }
         },
         TMessage::Tremove(Tremove { fid }) => {
             let mut resources = resource_mgr.resources.write().await;
-            let resource = resources.remove(&fid).ok_or_else(|| Rerror { ename: "Fid not found".into() })?;
+            let resource = resources.remove(&fid).ok_or_else(|| Rerror { ename: "fid invalid".into() })?;
             
             match resource {
                 Resource::Path(res) => res.remove().await?,
@@ -205,7 +205,7 @@ async fn dispatch<S: Serve>(
         },
         TMessage::Tstat(Tstat { fid }) => {
             let resources = resource_mgr.resources.read().await;
-            let resource = resources.get(&fid).ok_or_else(|| Rerror { ename: "Fid not found".into() })?;
+            let resource = resources.get(&fid).ok_or_else(|| Rerror { ename: "fid invalid".into() })?;
             
             let stat = match resource {
                 Resource::Path(res) => res.stat().await?,
@@ -216,7 +216,7 @@ async fn dispatch<S: Serve>(
         },
         TMessage::Twstat(Twstat { fid, stat }) => {
             let resources = resource_mgr.resources.read().await;
-            let resource = resources.get(&fid).ok_or_else(|| Rerror { ename: "unknown fid".into() })?;
+            let resource = resources.get(&fid).ok_or_else(|| Rerror { ename: "fid invalid".into() })?;
             
             match resource {
                 Resource::Path(res) => res.wstat(stat).await?,
@@ -255,15 +255,20 @@ pub async fn handle_client<S: Serve>(
         if inflight.is_empty() {
             if let Some(Tversion { msize, version }) = next_session.take() {
                 // in-flight requests have been completely flushed out
-
                 resource_mgr.resources.write().await.clear();
 
-                let msize = msize.min(MAX_MESSAGE_SIZE);
-                let version = if version == "9P2000" { "9P2000" } else { "unknown" };
-                framed.codec_mut().set_max_frame_length(msize.checked_sub(4).unwrap() as usize);
-                framed.send(Rversion { msize, version: version.into() }.serialize(!0).unwrap()).await?;
-
-                initialized = true;
+                if msize < 256 {
+                    framed.send(Rerror {
+                        ename: "Tversion: invalid tag".into()
+                    }.serialize(!0).unwrap()).await?;
+                } else {
+                    let msize = msize.min(MAX_MESSAGE_SIZE);
+                    let version = if version == "9P2000" { "9P2000" } else { "unknown" };
+                    framed.codec_mut().set_max_frame_length(msize.checked_sub(4).unwrap() as usize);
+                    framed.send(Rversion { msize, version: version.into() }.serialize(!0).unwrap()).await?;
+    
+                    initialized = true;
+                }
             }
         }
 
@@ -286,7 +291,7 @@ pub async fn handle_client<S: Serve>(
                                     next_session = Some(tversion);
                                 } else {
                                     framed.send(Rerror {
-                                        ename: "expected NOTAG".into()
+                                        ename: "Tversion: invalid tag".into()
                                     }.serialize(tag).unwrap()).await?;
                                 }
                             },

@@ -105,7 +105,7 @@ impl traits::Resource for PathResource {
     }
 
     async fn remove(self) -> Result<(), Self::Error> {
-        bail!("Permission denied");
+        bail!("permission denied");
     }
 
     async fn stat(&self) -> Result<npwire::Stat, Self::Error> {
@@ -120,7 +120,7 @@ impl traits::Resource for PathResource {
     }
 
     async fn wstat(&self, _stat: npwire::Stat) -> Result<(), Self::Error> {
-        bail!("Permission denied");
+        bail!("permission denied");
     }
 }
 
@@ -128,12 +128,12 @@ impl traits::PathResource for PathResource {
     type OpenResource = super::open::OpenResource;
 
     async fn create(&self, _name: &str, _perm: u32, _mode: u8) -> Result<Self::OpenResource, Self::Error> {
-        bail!("Permission denied");
+        bail!("permission denied");
     }
 
     async fn open(&self, mode: u8) -> Result<Self::OpenResource, Self::Error> {
         if mode != 0 {
-            bail!("Permission denied");
+            bail!("permission denied");
         }
 
         let res = match &self.inner {

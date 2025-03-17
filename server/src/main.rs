@@ -42,7 +42,7 @@ impl traits::Serve for Handler {
 
     async fn attach(&self, ares: Option<&Self::OpenResource>, uname: &str, aname: &str) -> Result<Self::PathResource, Self::Error> {
         if ares.is_some() {
-            bail!("Permission denied");
+            bail!("permission denied");
         }
 
         if !aname.is_empty() {

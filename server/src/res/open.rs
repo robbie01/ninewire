@@ -2,21 +2,27 @@ use std::{fs::File, io, os::unix::fs::FileExt, path::PathBuf, sync::Arc};
 
 use anyhow::bail;
 use bytes::BytesMut;
-use npwire::{Qid, QTDIR};
-use tokio::{sync::Mutex, task};
+use npwire::{put_stat, Qid, QTDIR};
+use tokio::{fs, sync::Mutex, task};
 
 use super::*;
 use crate::np::traits;
 
 #[derive(Debug, Default)]
-struct DirState {
+struct RootState {
     rem: Vec<Arc<str>>,
+    last_offset: u64
+}
+
+#[derive(Debug, Default)]
+struct DirState {
+    rem: Vec<(Arc<str>, Metadata)>,
     last_offset: u64
 }
 
 #[derive(Debug)]
 enum OpenInner {
-    Root(Mutex<DirState>),
+    Root(Mutex<RootState>),
     File(File),
     Dir {
         path: PathBuf,
@@ -89,8 +95,7 @@ impl traits::Resource for OpenResource {
                 Ok(stat(&self.session, &self.name, &meta))
             },
             OpenInner::Dir { path, .. } => {
-                let path = path.clone();
-                let meta = task::spawn_blocking(move || std::fs::metadata(path)).await??;
+                let meta = fs::metadata(path).await?;
                 Ok(stat(&self.session, &self.name, &meta))
             }
         }
@@ -114,55 +119,38 @@ impl traits::OpenResource for OpenResource {
                 }).await??)
             },
             OpenInner::Dir { path, dir_state } => {
-                let mut state = dir_state.lock().await;
-                
-                if offset == 0 {
-                    state.rem.clear();
-                    state.last_offset = 0;
-                    
-                    let path = path.clone();
+                let DirState { ref mut rem, ref mut last_offset } = *dir_state.lock().await;
 
-                    let entries = task::spawn_blocking(move || {
-                        let mut entries = Vec::new();
-                        let readdir = std::fs::read_dir(path)?;
-                        for entry in readdir {
-                            let entry = entry?;
-                            let name = entry.file_name();
-                            let meta = entry.metadata()?;
-                            if meta.is_symlink() { continue } // Skip symlinks
-                            if let Some(name) = name.to_str() {
-                                entries.push(name.into());
-                            }
-                        }
-                        Ok::<_, io::Error>(entries)
-                    }).await??;
-                    
-                    state.rem = entries;
-                } else if offset != state.last_offset {
-                    bail!("Invalid offset for directory read");
+                if offset == 0 {
+                    rem.clear();
+                    let mut readdir = fs::read_dir(path).await?;
+                    while let Some(dent) = readdir.next_entry().await? {
+                        let name = dent.file_name();
+                        let meta = dent.metadata().await?;
+                        if meta.is_symlink() { continue } // Too easy to break, no justifiable use case
+                        let Some(name) = name.to_str() else { continue };
+                        rem.push((name.into(), meta));
+                    }
+                } else if offset != *last_offset {
+                    bail!("Invalid argument");
                 }
-                
+
                 let mut buf = BytesMut::new();
-                
-                while let Some(name) = state.rem.first() {
-                    let file_path = path.join(&**name);
-                    let meta = task::spawn_blocking(move || {
-                        std::fs::metadata(file_path)
-                    }).await??;
-                    
-                    let stat = stat(&self.session, &name, &meta);
-                    
+                while let Some((name, meta)) = rem.first() {
+                    let stat = stat(&self.session, name, meta);
+
                     let oldlen = buf.len();
-                    npwire::put_stat(&mut buf, &stat)?;
+                    put_stat(&mut buf, &stat)?;
                     if buf.len() > count as usize {
                         buf.truncate(oldlen);
                         break;
                     }
-                    
-                    state.rem.remove(0);
+
+                    rem.remove(0);
                 }
-                
-                state.last_offset += buf.len() as u64;
+
+                *last_offset += buf.len() as u64;
+
                 Ok(buf.freeze())
             },
             OpenInner::Root(dir_state) => {
@@ -173,9 +161,7 @@ impl traits::OpenResource for OpenResource {
                     state.last_offset = 0;
                     
                     state.rem.push("rpc".into());
-                    for share in self.handler.shares.keys() {
-                        state.rem.push(share.clone());
-                    }
+                    state.rem.extend(self.handler.shares.keys().cloned());
                 } else if offset != state.last_offset {
                     bail!("Invalid offset for root directory read");
                 }
@@ -186,10 +172,8 @@ impl traits::OpenResource for OpenResource {
                     let stat = if *name == *"rpc" {
                         rpc_stat(&self.session)
                     } else {
-                        let path = self.handler.shares.get(&name).unwrap().clone();
-                        let meta = task::spawn_blocking(move || {
-                            std::fs::metadata(path)
-                        }).await??;
+                        let path = self.handler.shares.get(&name).unwrap();
+                        let meta = fs::metadata(path).await?;
                         stat(&self.session, &name, &meta)
                     };
                     
@@ -211,9 +195,10 @@ impl traits::OpenResource for OpenResource {
 
     async fn write(&self, _offset: u64, _data: &[u8]) -> Result<u32, Self::Error> {
         match &self.inner {
-            OpenInner::File(_) => {
-                bail!("Permission denied");
+            OpenInner::File(..) | OpenInner::Dir { .. } | OpenInner::Root(..) => {
+                bail!("fid not open for write");
             }
+            #[allow(unreachable_patterns)]
             _ => {
                 bail!("Function not implemented");
             }
