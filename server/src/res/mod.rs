@@ -40,8 +40,8 @@ fn stat(session: &super::Session, name: &str, meta: &Metadata) -> Stat {
     }
 }
 
-pub const ROOT_QID: Qid = Qid { type_: QTDIR, version: 0, path: 0 };
-pub const RPC_QID: Qid = Qid { type_: QTFILE, version: 0, path: !0 };
+const ROOT_QID: Qid = Qid { type_: QTDIR, version: 0, path: 0 };
+const RPC_QID: Qid = Qid { type_: QTFILE, version: 0, path: !0 };
 
 fn root_stat(session: &super::Session) -> Stat {
     Stat {

@@ -34,6 +34,7 @@ impl Rerror {
 }
 
 impl Rflush {
+    #[allow(clippy::needless_pass_by_value)]
     fn deserialize(buf: Bytes, tag: u16) -> Result<Self, DeserializeError> {
         if !buf.is_empty() {
             return Err(DeserializeError::TooLong { tag });
@@ -126,6 +127,7 @@ impl Rwrite {
 }
 
 impl Rclunk {
+    #[allow(clippy::needless_pass_by_value)]
     fn deserialize(buf: Bytes, tag: u16) -> Result<Self, DeserializeError> {
         if !buf.is_empty() {
             return Err(DeserializeError::TooLong { tag });
@@ -135,6 +137,7 @@ impl Rclunk {
 }
 
 impl Rremove {
+    #[allow(clippy::needless_pass_by_value)]
     fn deserialize(buf: Bytes, tag: u16) -> Result<Self, DeserializeError> {
         if !buf.is_empty() {
             return Err(DeserializeError::TooLong { tag });
@@ -158,6 +161,7 @@ impl Rstat {
 }
 
 impl Rwstat {
+    #[allow(clippy::needless_pass_by_value)]
     fn deserialize(buf: Bytes, tag: u16) -> Result<Self, DeserializeError> {
         if !buf.is_empty() {
             return Err(DeserializeError::TooLong { tag });

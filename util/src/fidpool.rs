@@ -18,10 +18,12 @@ pub struct FidHandle {
 }
 
 impl FidPool {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
+    #[must_use]
     pub fn get(&self) -> Option<FidHandle> {
         let mut inner = self.inner.lock().ok()?;
 
@@ -38,14 +40,17 @@ impl FidPool {
 }
 
 impl FidHandle {
+    #[must_use]
     pub fn fid(&self) -> u32 {
         self.fid
     }
 
+    #[must_use]
     pub fn is_nofid(&self) -> bool {
         self.fid == !0
     }
 
+    #[must_use]
     pub fn is_of(&self, pool: &FidPool) -> bool {
         self.parent.upgrade()
             .is_some_and(|parent|

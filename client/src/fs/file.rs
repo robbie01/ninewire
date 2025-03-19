@@ -1,6 +1,6 @@
 use std::{future::pending, io, mem, pin::Pin, sync::Arc, task::{ready, Context, Poll}};
 
-use bytes::{Buf, Bytes};
+use bytes::{Buf as _, Bytes};
 use npwire::{RMessage, Rerror, Rread, Rwrite, Tread, Twrite, QTDIR};
 use tokio::io::{AsyncRead, AsyncSeek, AsyncWrite, ReadBuf};
 use tokio_util::sync::ReusableBoxFuture;
@@ -24,7 +24,7 @@ impl Directory {
         let wname = path.as_ref()
             .split('/')
             .filter(|&c| !(c.is_empty() || c == "."))
-            .map(|c| c.into())
+            .map(Into::into)
             .collect::<Vec<_>>();
 
         if wname.is_empty() {
@@ -71,7 +71,7 @@ impl File {
         }).await?;
 
         match resp {
-            RMessage::Rerror(Rerror { ename }) => Err(io::Error::other(&ename[..])),
+            RMessage::Rerror(Rerror { ename }) => Err(io::Error::other(&*ename)),
             RMessage::Rread(Rread { data }) => Ok(data),
             _ => Err(io::Error::other("unexpected message type"))
         }
@@ -85,7 +85,7 @@ impl File {
         }).await?;
 
         match resp {
-            RMessage::Rerror(Rerror { ename }) => Err(io::Error::other(&ename[..])),
+            RMessage::Rerror(Rerror { ename }) => Err(io::Error::other(&*ename)),
             RMessage::Rwrite(Rwrite { count }) => Ok(count),
             _ => Err(io::Error::other("unexpected message type"))
         }
@@ -111,6 +111,7 @@ pub struct FileReader<'a> {
 }
 
 impl<'a> FileReader<'a> {
+    #[must_use]
     pub fn new(file: &'a File) -> Self {
         Self {
             file,
@@ -142,7 +143,7 @@ impl AsyncRead for FileReader<'_> {
         self.fut_valid = false;
         let n = res.len().min(buf.remaining());
         buf.put_slice(&res[..n]);
-        self.offset += n as u64;
+        self.offset += u64::try_from(n).map_err(io::Error::other)?;
 
         Poll::Ready(Ok(()))
     }
@@ -186,6 +187,7 @@ pub struct FileWriter<'a> {
 }
 
 impl<'a> FileWriter<'a> {
+    #[must_use]
     pub fn new(file: &'a File) -> Self {
         Self {
             file,
@@ -218,7 +220,7 @@ impl AsyncWrite for FileWriter<'_> {
     
             let res = ready!(self.fut.poll(cx))?;
             self.fut_valid = false;
-            self.buffer.advance(res as usize);
+            self.buffer.advance(res.try_into().map_err(io::Error::other)?);
             self.offset += u64::from(res);
         }
 

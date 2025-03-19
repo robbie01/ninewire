@@ -35,7 +35,7 @@ impl FilesystemInner {
         }).await?;
 
         match resp {
-            RMessage::Rerror(Rerror { ename }) => Err(io::Error::other(&ename[..])),
+            RMessage::Rerror(Rerror { ename }) => Err(io::Error::other(&*ename)),
             RMessage::Ropen(Ropen { qid, iounit: _ }) => Ok(qid),
             _ => Err(io::Error::other("unexpected message type"))
         }
@@ -49,7 +49,7 @@ impl FilesystemInner {
         }).await?;
 
         match resp {
-            RMessage::Rerror(Rerror { ename }) => Err(io::Error::other(&ename[..])),
+            RMessage::Rerror(Rerror { ename }) => Err(io::Error::other(&*ename)),
             RMessage::Rwalk(Rwalk { wqid }) => Ok(wqid),
             _ => Err(io::Error::other("unexpected message type"))
         }
@@ -63,7 +63,7 @@ impl FilesystemInner {
         }).await?;
 
         match resp {
-            RMessage::Rerror(Rerror { ename }) => Err(io::Error::other(&ename[..])),
+            RMessage::Rerror(Rerror { ename }) => Err(io::Error::other(&*ename)),
             RMessage::Rclunk(Rclunk) => Ok(()),
             _ => Err(io::Error::other("unexpected message type"))
         }

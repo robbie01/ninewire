@@ -1,5 +1,6 @@
 use std::{collections::HashMap, future::Future, pin::{pin, Pin}, sync::Arc, task::{Context, Poll}};
 
+use bytestring::ByteString;
 use futures::{io, stream::FuturesUnordered, SinkExt, StreamExt};
 use pin_project::pin_project;
 use tokio::{io::{AsyncRead, AsyncWrite}, sync::RwLock};
@@ -45,10 +46,14 @@ impl<T: Future> Future for TaggedFuture<T> {
     }
 }
 
+const fn rerror(ename: &'static str) -> Rerror {
+    Rerror { ename: ByteString::from_static(ename) }
+}
+
 async fn dispatch<S: Serve>(
     resource_mgr: Arc<ResourceManager<S>>,
     request: TMessage,
-    _maxlen: usize
+    maxlen: usize
 ) -> Result<RMessage, Rerror> {
     match request {
         TMessage::Tversion(..) | TMessage::Tflush(..) => {
@@ -56,13 +61,13 @@ async fn dispatch<S: Serve>(
         },
         TMessage::Tauth(Tauth { afid, uname, aname }) => {
             if afid == !0 {
-                return Err(Rerror { ename: "fid invalid".into() });
+                return Err(rerror("fid invalid"));
             }
 
             let mut resources = resource_mgr.resources.write().await;
 
             if resources.contains_key(&afid) {
-                return Err(Rerror { ename: "fid in use".into() });
+                return Err(rerror("fid in use"));
             }
 
             let res = resource_mgr.handler.auth(&uname, &aname).await?;
@@ -74,27 +79,21 @@ async fn dispatch<S: Serve>(
         },
         TMessage::Tattach(Tattach { fid, afid, uname, aname }) => {
             if fid == !0 {
-                return Err(Rerror { ename: "fid invalid".into() });
+                return Err(rerror("fid invalid"));
             }
 
             let mut resources = resource_mgr.resources.write().await;
 
             if resources.contains_key(&fid) {
-                return Err(Rerror { ename: "fid in use".into() });
+                return Err(rerror("fid in use"));
             }
 
-            let ares = if afid != !0 {
-                if let Some(res) = resources.get(&afid) {
-                    if let Resource::Open(res) = res {
-                        Some(res)
-                    } else {
-                        return Err(Rerror { ename: "fid invalid".into() });
-                    }
-                } else {
-                    return Err(Rerror { ename: "fid invalid".into() });
-                }
-            } else {
+            let ares = if afid == !0 {
                 None
+            } else if let Some(Resource::Open(res)) = resources.get(&afid) {
+                Some(res)
+            } else {
+                return Err(rerror("fid invalid"));
             };
             
             let res = resource_mgr.handler.attach(ares, &uname, &aname).await?;
@@ -106,15 +105,15 @@ async fn dispatch<S: Serve>(
         },
         TMessage::Twalk(Twalk { fid, newfid, wname }) => {
             if newfid == !0 {
-                return Err(Rerror { ename: "Invalid argument".into() });
+                return Err(rerror("Invalid argument"));
             }
 
             let mut resources = resource_mgr.resources.write().await;
 
             if resources.contains_key(&newfid) {
-                return Err(Rerror { ename: "fid in use".into() });
+                return Err(rerror("fid in use"));
             }
-            let resource = resources.get(&fid).ok_or_else(|| Rerror { ename: "Fid not".into() })?;
+            let resource = resources.get(&fid).ok_or_else(|| rerror("Fid not"))?;
             
             if let Resource::Path(resource) = resource {
                 let wname = wname.iter().map(|s| &s[..]).collect::<Vec<_>>();
@@ -129,12 +128,12 @@ async fn dispatch<S: Serve>(
                 
                 Ok(Rwalk { wqid }.into())
             } else {
-                Err(Rerror { ename: "fid open for I/O".into() })
+                Err(rerror("fid open for I/O"))
             }
         },
         TMessage::Topen(Topen { fid, mode }) => {
             let mut resources = resource_mgr.resources.write().await;
-            let resource = resources.get_mut(&fid).ok_or_else(|| Rerror { ename: "fid invalid".into() })?;
+            let resource = resources.get_mut(&fid).ok_or_else(|| rerror("fid invalid"))?;
             
             if let Resource::Path(path_resource) = resource {
                 let open_resource = path_resource.open(mode).await?;
@@ -144,12 +143,12 @@ async fn dispatch<S: Serve>(
                 
                 Ok(Ropen { qid, iounit: 0 }.into())
             } else {
-                Err(Rerror { ename: "fid open for I/O".into() })
+                Err(rerror("fid open for I/O"))
             }
         },
         TMessage::Tcreate(Tcreate { fid, name, perm, mode }) => {
             let mut resources = resource_mgr.resources.write().await;
-            let resource = resources.get_mut(&fid).ok_or_else(|| Rerror { ename: "fid invalid".into() })?;
+            let resource = resources.get_mut(&fid).ok_or_else(|| rerror("fid invalid"))?;
             
             if let Resource::Path(resource) = resource {
                 let open_resource = resource.create(&name, perm, mode).await?;
@@ -159,29 +158,30 @@ async fn dispatch<S: Serve>(
                 
                 Ok(Rcreate { qid, iounit: 0 }.into())
             } else {
-            Err(Rerror { ename: "fid open for I/O".into() })
+            Err(rerror("fid open for I/O"))
             }
         },
         TMessage::Tread(Tread { fid, offset, count }) => {
             let resources = resource_mgr.resources.read().await;
-            let resource = resources.get(&fid).ok_or_else(|| Rerror { ename: "fid invalid".into() })?;
+            let resource = resources.get(&fid).ok_or_else(|| rerror("fid invalid"))?;
             
             if let Resource::Open(resource) = resource {
-                let data = resource.read(offset, count).await?;
+                let mut data = resource.read(offset, count).await?;
+                data.truncate(maxlen - RREAD_OVERHEAD);
                 Ok(Rread { data }.into())
             } else {
-                Err(Rerror { ename: "fid not open for read".into() })
+                Err(rerror("fid not open for read"))
             }
         },
         TMessage::Twrite(Twrite { fid, offset, data }) => {
             let resources = resource_mgr.resources.read().await;
-            let resource = resources.get(&fid).ok_or_else(|| Rerror { ename: "fid invalid".into() })?;
+            let resource = resources.get(&fid).ok_or_else(|| rerror("fid invalid"))?;
             
             if let Resource::Open(resource) = resource {
             let count = resource.write(offset, &data).await?;
                 Ok(Rwrite { count }.into())
             } else {
-                Err(Rerror { ename: "fid not open for write".into() })
+                Err(rerror("fid not open for write"))
             }
         },
         TMessage::Tclunk(Tclunk { fid }) => {
@@ -189,12 +189,12 @@ async fn dispatch<S: Serve>(
             if resources.remove(&fid).is_some() {
                 Ok(Rclunk.into())
             } else {
-                Err(Rerror { ename: "fid invalid".into() })
+                Err(rerror("fid invalid"))
             }
         },
         TMessage::Tremove(Tremove { fid }) => {
             let mut resources = resource_mgr.resources.write().await;
-            let resource = resources.remove(&fid).ok_or_else(|| Rerror { ename: "fid invalid".into() })?;
+            let resource = resources.remove(&fid).ok_or_else(|| rerror("fid invalid"))?;
             
             match resource {
                 Resource::Path(res) => res.remove().await?,
@@ -205,7 +205,7 @@ async fn dispatch<S: Serve>(
         },
         TMessage::Tstat(Tstat { fid }) => {
             let resources = resource_mgr.resources.read().await;
-            let resource = resources.get(&fid).ok_or_else(|| Rerror { ename: "fid invalid".into() })?;
+            let resource = resources.get(&fid).ok_or_else(|| rerror("fid invalid"))?;
             
             let stat = match resource {
                 Resource::Path(res) => res.stat().await?,
@@ -216,7 +216,7 @@ async fn dispatch<S: Serve>(
         },
         TMessage::Twstat(Twstat { fid, stat }) => {
             let resources = resource_mgr.resources.read().await;
-            let resource = resources.get(&fid).ok_or_else(|| Rerror { ename: "fid invalid".into() })?;
+            let resource = resources.get(&fid).ok_or_else(|| rerror("fid invalid"))?;
             
             match resource {
                 Resource::Path(res) => res.wstat(stat).await?,
@@ -258,14 +258,14 @@ pub async fn handle_client<S: Serve>(
                 resource_mgr.resources.write().await.clear();
 
                 if msize < 256 {
-                    framed.send(Rerror {
-                        ename: "Tversion: invalid tag".into()
-                    }.serialize(!0).unwrap()).await?;
+                    framed.send(rerror(
+                        "Tversion: message size too small"
+                    ).serialize(!0).unwrap()).await?;
                 } else {
                     let msize = msize.min(MAX_MESSAGE_SIZE);
                     let version = if version == "9P2000" { "9P2000" } else { "unknown" };
                     framed.codec_mut().set_max_frame_length(msize.checked_sub(4).unwrap() as usize);
-                    framed.send(Rversion { msize, version: version.into() }.serialize(!0).unwrap()).await?;
+                    framed.send(Rversion { msize, version: ByteString::from_static(version) }.serialize(!0).unwrap()).await?;
     
                     initialized = true;
                 }
@@ -290,9 +290,9 @@ pub async fn handle_client<S: Serve>(
                                 if tag == !0 {
                                     next_session = Some(tversion);
                                 } else {
-                                    framed.send(Rerror {
-                                        ename: "Tversion: invalid tag".into()
-                                    }.serialize(tag).unwrap()).await?;
+                                    framed.send(rerror(
+                                        "Tversion: invalid tag"
+                                    ).serialize(tag).unwrap()).await?;
                                 }
                             },
                             TMessage::Tflush(Tflush { oldtag }) => {

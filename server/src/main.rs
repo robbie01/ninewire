@@ -1,4 +1,4 @@
-use std::{collections::HashMap, convert::Infallible, fmt::Debug, io, net::Ipv4Addr, path::PathBuf, sync::Arc};
+use std::{collections::HashMap, convert::Infallible, fmt::Debug, io, net::Ipv4Addr, path::PathBuf, sync::{atomic::{AtomicU64, Ordering}, Arc}};
 
 use anyhow::bail;
 use bytestring::ByteString;
@@ -11,23 +11,29 @@ mod res;
 type ShareTable = HashMap<Arc<str>, PathBuf>;
 
 #[derive(Debug)]
-struct HandlerInner {
+struct Config {
     shares: ShareTable
 }
 
 #[derive(Debug)]
 struct Handler {
-    inner: Arc<HandlerInner>
+    session_ctr: AtomicU64,
+    inner: Arc<Config>
 }
 
 #[derive(Debug)]
 struct Session {
+    #[allow(unused)]
+    id: u64,
     uname: ByteString
 }
 
 impl Handler {
     fn new(shares: ShareTable) -> Self {
-        Self { inner: Arc::new(HandlerInner { shares }) }
+        Self { 
+            session_ctr: AtomicU64::new(1),
+            inner: Arc::new(Config { shares })
+        }
     }
 }
 
@@ -50,6 +56,7 @@ impl traits::Serve for Handler {
         }
 
         let session = Arc::new(Session {
+            id: self.session_ctr.fetch_add(1, Ordering::Relaxed),
             uname: uname.into()
         });
 

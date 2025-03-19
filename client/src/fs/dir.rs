@@ -28,13 +28,13 @@ impl Filesystem {
         }).await?;
 
         match resp {
-            RMessage::Rerror(Rerror { ename }) => Err(io::Error::other(&ename[..])),
+            RMessage::Rerror(Rerror { ename }) => Err(io::Error::other(&*ename)),
             RMessage::Rattach(Rattach { qid }) => {
-                if qid.type_ & QTDIR != QTDIR {
-                    Err(io::ErrorKind::NotADirectory.into())
-                } else {
+                if qid.type_ & QTDIR == QTDIR {
                     Ok(dir)
-                }                
+                } else {
+                    Err(io::ErrorKind::NotADirectory.into())
+                }
             },
             _ => Err(io::Error::other("unexpected message type"))
         }
@@ -59,7 +59,7 @@ impl Directory {
         let mut wname = path.as_ref()
             .split('/')
             .filter(|&c| !(c.is_empty() || c == "."))
-            .map(|c| c.into())
+            .map(Into::into)
             .collect::<Vec<_>>();
 
         let mut wqid = Vec::new();

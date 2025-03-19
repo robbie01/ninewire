@@ -70,6 +70,7 @@ size[4] Twstat tag[2] fid[4] stat[n]
 size[4] Rwstat tag[2] 
  */
 
+pub const RERROR_OVERHEAD: usize = 5;
 pub const RREAD_OVERHEAD: usize = 7;
 pub const TWRITE_OVERHEAD: usize = 19;
 
@@ -93,7 +94,7 @@ pub struct Qid {
     pub path: u64
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Stat {
     pub type_: u16,
     pub dev: u32,

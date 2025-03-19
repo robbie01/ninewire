@@ -37,13 +37,14 @@ pub enum DeserializeError {
 }
 
 impl DeserializeError {
+    #[must_use]
     pub fn tag(self) -> Option<u16> {
         match self {
             DeserializeError::TooShort { tag } => tag,
-            DeserializeError::TooLong { tag } => Some(tag),
-            DeserializeError::UnknownType { tag, .. } => Some(tag),
-            DeserializeError::UnsupportedType { tag, .. } => Some(tag),
-            DeserializeError::InvalidUTF8 { tag } => Some(tag),
+            DeserializeError::TooLong { tag } |
+                DeserializeError::UnknownType { tag, .. } |
+                DeserializeError::UnsupportedType { tag, .. } |
+                DeserializeError::InvalidUTF8 { tag } => Some(tag),
         }
     }
 }

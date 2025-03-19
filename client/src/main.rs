@@ -13,7 +13,7 @@ async fn tree(dir: &Directory) -> io::Result<()> {
         let mut read_dir = dir.try_clone().await?.read_dir().await?;
         while let Some(x) = read_dir.next_entry().await? {
             for _ in 0..indent {
-                print!("  ")
+                print!("  ");
             }
             if x.mode & npwire::DMDIR == npwire::DMDIR {
                 println!("{}/", x.name);
@@ -28,7 +28,7 @@ async fn tree(dir: &Directory) -> io::Result<()> {
 
     let mut name = dir.stat().await?.name;
     if name == "/" {
-        name = ByteString::new()
+        name = ByteString::new();
     }
 
     println!("{name}/");

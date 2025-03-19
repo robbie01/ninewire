@@ -123,7 +123,7 @@ impl Filesystem {
         Self {
             fsys: Arc::new(FilesystemInner {
                 sender,
-                fids: Default::default()
+                fids: FidPool::default()
             })
         }
     }

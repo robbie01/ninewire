@@ -26,7 +26,7 @@ impl Rwalk {
         buf.put_u8(TypeId::Rwalk.into());
         buf.put_u16_le(tag);
         buf.put_u16_le(self.wqid.len().try_into().map_err(|_| SerializeError)?);
-        for qid in self.wqid.iter() {
+        for qid in &self.wqid {
             buf.put_slice(&<[u8; 13]>::from(*qid));
         }
         Ok(buf.freeze())

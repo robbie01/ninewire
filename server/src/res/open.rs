@@ -3,7 +3,7 @@ use std::{fs::File, io, os::unix::fs::FileExt, path::PathBuf, sync::Arc};
 use anyhow::bail;
 use bytes::BytesMut;
 use npwire::{put_stat, Qid, QTDIR};
-use tokio::{fs, sync::Mutex, task};
+use tokio::{fs, io::{AsyncReadExt, AsyncWriteExt, Empty}, sync::Mutex, task};
 
 use super::*;
 use crate::np::traits;
@@ -27,12 +27,13 @@ enum OpenInner {
     Dir {
         path: PathBuf,
         dir_state: Mutex<DirState>
-    }
+    },
+    Rpc(Mutex<Empty>)
 }
 
 #[derive(Debug)]
 pub struct OpenResource {
-    handler: Arc<crate::HandlerInner>,
+    handler: Arc<crate::Config>,
     session: Arc<crate::Session>,
     qid: Qid,
     name: String,
@@ -40,7 +41,7 @@ pub struct OpenResource {
 }
 
 impl OpenResource {
-    pub fn root(handler: Arc<crate::HandlerInner>, session: Arc<crate::Session>) -> Self {
+    pub fn root(handler: Arc<crate::Config>, session: Arc<crate::Session>) -> Self {
         Self {
             handler,
             session,
@@ -50,7 +51,17 @@ impl OpenResource {
         }
     }
 
-    pub fn new(handler: Arc<crate::HandlerInner>, session: Arc<crate::Session>, name: String, path: PathBuf, qid: Qid) -> io::Result<Self> {
+    pub fn rpc(handler: Arc<crate::Config>, session: Arc<crate::Session>) -> Self {
+        Self {
+            handler,
+            session,
+            qid: RPC_QID,
+            name: String::from("rpc"),
+            inner: OpenInner::Rpc(Mutex::new(tokio::io::empty()))
+        }
+    }
+
+    pub fn new(handler: Arc<crate::Config>, session: Arc<crate::Session>, name: String, path: PathBuf, qid: Qid) -> io::Result<Self> {
         if qid.type_ & QTDIR == QTDIR {
             Ok(Self {
                 handler,
@@ -97,12 +108,21 @@ impl traits::Resource for OpenResource {
             OpenInner::Dir { path, .. } => {
                 let meta = fs::metadata(path).await?;
                 Ok(stat(&self.session, &self.name, &meta))
-            }
+            },
+            OpenInner::Rpc(..) => Ok(rpc_stat(&self.session))
         }
     }
 
-    async fn wstat(&self, _stat: npwire::Stat) -> Result<(), Self::Error> {
-        bail!("Function not implemented");
+    async fn wstat(&self, stat: npwire::Stat) -> Result<(), Self::Error> {
+        match self.inner {
+            OpenInner::Rpc(..) => {
+                if stat.qid.type_ != !0 || stat.qid.version != !0 || stat.qid.path != !0 || stat.mode != !0 || !stat.name.is_empty() || !stat.uid.is_empty() || !stat.gid.is_empty() || !stat.muid.is_empty() {
+                    bail!("permission denied")
+                }
+                Ok(())
+            },
+            _ => bail!("permission denied")
+        }
     }
 }
 
@@ -172,7 +192,7 @@ impl traits::OpenResource for OpenResource {
                     let stat = if *name == *"rpc" {
                         rpc_stat(&self.session)
                     } else {
-                        let path = self.handler.shares.get(&name).unwrap();
+                        let path = &self.handler.shares[&name];
                         let meta = fs::metadata(path).await?;
                         stat(&self.session, &name, &meta)
                     };
@@ -187,20 +207,26 @@ impl traits::OpenResource for OpenResource {
                     state.rem.remove(0);
                 }
                 
-                state.last_offset += buf.len() as u64;
+                state.last_offset += u64::try_from(buf.len())?;
+                Ok(buf.freeze())
+            },
+            OpenInner::Rpc(rpc) => {
+                let mut buf = BytesMut::zeroed(count.try_into()?);
+                let n = rpc.lock().await.read(&mut buf).await?;
+                buf.truncate(n);
                 Ok(buf.freeze())
             }
         }
     }
 
-    async fn write(&self, _offset: u64, _data: &[u8]) -> Result<u32, Self::Error> {
+    async fn write(&self, _offset: u64, data: &[u8]) -> Result<u32, Self::Error> {
         match &self.inner {
             OpenInner::File(..) | OpenInner::Dir { .. } | OpenInner::Root(..) => {
                 bail!("fid not open for write");
             }
-            #[allow(unreachable_patterns)]
-            _ => {
-                bail!("Function not implemented");
+            OpenInner::Rpc(rpc) => {
+                let n = rpc.lock().await.write(data).await?;
+                Ok(n.try_into()?)
             }
         }
     }

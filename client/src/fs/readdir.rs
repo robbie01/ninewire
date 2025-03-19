@@ -39,7 +39,7 @@ impl ReadDir {
         }
         
         let mut data = self.file.read_at(u32::MAX, self.offset).await?;
-        self.offset += data.len() as u64;
+        self.offset += u64::try_from(data.len()).map_err(io::Error::other)?;
         
         while !data.is_empty() {
             let stat = yank_stat(&mut data, !0).map_err(io::Error::other)?;
