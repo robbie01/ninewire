@@ -1,9 +1,11 @@
-use std::{collections::HashMap, convert::Infallible, fmt::Debug, io, net::Ipv4Addr, path::PathBuf, sync::{atomic::{AtomicU64, Ordering}, Arc}};
+use std::{collections::HashMap, convert::Infallible, fmt::Debug, io, net::{Ipv4Addr, SocketAddrV6}, path::PathBuf, sync::{atomic::{AtomicU64, Ordering}, Arc}, task::{ready, Context, Poll}};
 
 use anyhow::bail;
 use bytestring::ByteString;
+use libutp_rs2::{Transport, UtpContext, UtpStream};
 use np::traits;
 use tokio::net::TcpListener;
+use tokio_util::{net::Listener, sync::ReusableBoxFuture};
 
 mod np;
 mod res;
@@ -61,6 +63,35 @@ impl traits::Serve for Handler {
         });
 
         Ok(res::path::PathResource::root(self, session))
+    }
+}
+
+struct UtpListener<T> {
+    ctx: Arc<UtpContext<T>>,
+    accept: ReusableBoxFuture<'static, anyhow::Result<UtpStream<T>>>
+}
+
+impl<T: Transport> UtpListener<T> {
+    pub fn new(ctx: Arc<UtpContext<T>>) -> Self {
+        Self {
+            accept: ReusableBoxFuture::new({
+                let ctx = ctx.clone();
+                async move { ctx.accept().await }
+            }),
+            ctx
+        }
+    }
+}
+
+impl<T: Transport> Listener for UtpListener<T> {
+    type Addr = SocketAddrV6;
+    type Io = UtpStream<T>;
+
+    fn poll_accept(&mut self, cx: &mut Context<'_>) -> Poll<io::Result<(Self::Io, Self::Addr)>> {
+        let con = ready!(self.accept.poll(cx)).map_err(io::Error::other)?;
+        con.
+
+        todo!()
     }
 }
 

@@ -5,8 +5,14 @@ edition = "2024"
 
 [dependencies]
 bytes.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["time"] }
+tokio-util.workspace = true
+utp-sys.workspace = true
 
+os_socketaddr = "0.2"
+parking_lot = "0.12"
+pin-weak = "1.1"
 rand = "0.9"
 ringbuf = "0.4"
+rsevents = "0.3"
 weak-table = "0.3"

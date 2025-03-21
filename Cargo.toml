@@ -1,15 +1,17 @@
 [workspace]
 resolver = "2"
-members = [ "client", "noiseproxy", "npwire","server", "util", "utp"]
+members = [ "client", "noiseproxy", "npwire","server", "util", "utp", "utp-sys"]
 
 [workspace.dependencies]
 util.path = "./util"
+utp-sys.path = "./utp-sys"
 npwire.path = "./npwire"
 
 anyhow = "1"
 bytes = "1.10"
 bytestring = "1.4"
 futures = "0.3"
+libutp-rs2 = "0.1"
 pin-project = "1.1"
 thiserror = "2"
 tokio = "1.43"
