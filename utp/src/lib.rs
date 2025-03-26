@@ -94,7 +94,7 @@ extern "C" fn on_read(args: *mut utp_callback_arguments) -> u64 {
         socket.as_ref()
     };
 
-    let mut prod: ringbuf::wrap::direct::Direct<&ringbuf::SharedRb<ringbuf::storage::Heap<u8>>, true, false> = Prod::new(&socket.read_buffer);
+    let mut prod = Prod::new(&socket.read_buffer);
     let incoming = unsafe { slice::from_raw_parts((*args).buf, (*args).len) };
 
     if prod.vacant_len() > incoming.len() {
