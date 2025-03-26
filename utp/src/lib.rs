@@ -376,6 +376,7 @@ impl Connection {
         if !cons.is_empty() {
             let n = cons.pop_slice_uninit(unsafe { buf.unfilled_mut() });
             unsafe { buf.assume_init(n); }
+            buf.advance(n);
 
             return Ok(());
         }
