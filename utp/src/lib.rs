@@ -330,18 +330,27 @@ impl Drop for UtpSocket {
             utp_set_userdata(self.handle, ptr::null_mut());
         }
 
-        let handle = SendPtr(self.handle);
-        let ctx = self.ctx.clone();
+        match Handle::current().runtime_flavor() {
+            RuntimeFlavor::CurrentThread => {
+                let handle = SendPtr(self.handle);
+                let ctx = self.ctx.clone();
 
-        // I would've liked to use drop_in_place when possible, but for some
-        // bizarre reason it causes the task to linger and "lose its waker."
-
-        task::spawn_blocking(move || {
-            let _guard = API_LOCK.lock();
-            let _ctx = ctx;
-            let handle = handle;
-            unsafe { utp_close(handle.0); }
-        });
+                task::spawn_blocking(move || {
+                    let _guard = API_LOCK.lock();
+                    let _ctx = ctx;
+                    let handle = handle;
+                    unsafe { utp_close(handle.0); }
+                });
+            },
+            _ => {
+                // Executive decision: this is a valid use of block_in_place as we don't
+                // have a kernel to send FIN or RST messages for us
+                task::block_in_place(|| {
+                    let _guard = API_LOCK.lock();
+                    unsafe { utp_close(self.handle); }
+                });
+            }
+        }
     }
 }
 
