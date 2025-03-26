@@ -5,10 +5,12 @@ edition = "2024"
 
 [dependencies]
 cfg-if = "1"
-libc = "0.2"
 
 [build-dependencies]
 cc = "1.2"
 
+[target.'cfg(not(windows))'.dependencies]
+libc = "0.2"
+
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_Networking_WinSock"] }
+winapi = { version = "0.3", features = ["winsock2", "ws2def", "ws2tcpip"] }

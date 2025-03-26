@@ -1,4 +1,4 @@
-use std::{ffi::c_int, io, marker::PhantomPinned, net::SocketAddr, os::raw::c_void, pin::Pin, ptr::{self, NonNull}, slice, sync::{atomic::{AtomicBool, Ordering}, Arc}, task::{ready, Context, Poll}, time::Duration};
+use std::{ffi::c_int, io, marker::PhantomPinned, net::SocketAddr, os::raw::c_void, pin::{pin, Pin}, ptr::{self, NonNull}, slice, sync::{atomic::{AtomicBool, Ordering}, Arc}, task::{ready, Context, Poll}, time::Duration};
 
 use bytes::BytesMut;
 use crossbeam::{atomic::AtomicCell, queue::ArrayQueue};
@@ -7,7 +7,7 @@ use os_socketaddr::OsSocketAddr;
 use parking_lot::{Condvar, Mutex, ReentrantMutex};
 use pin_weak::sync::PinWeak;
 use ringbuf::{traits::{Consumer, Observer, Producer}, Cons, HeapRb, Prod};
-use tokio::{io::{AsyncRead, AsyncWrite, ReadBuf}, net::UdpSocket, runtime::Handle, sync::Notify, task::{self, JoinHandle}, time::{interval, MissedTickBehavior}};
+use tokio::{io::{AsyncRead, AsyncWrite, ReadBuf}, net::UdpSocket, runtime::{Handle, RuntimeFlavor}, sync::Notify, task::{self, JoinHandle}, time::{interval, MissedTickBehavior}};
 use tokio_util::net::Listener;
 use utp_sys::*;
 
@@ -53,7 +53,8 @@ struct UtpContext {
     socket: Arc<UdpSocket>,
     backlog: Option<ArrayQueue<(OsSocketAddr, Pin<Arc<UtpSocket>>)>>,
     backlog_waker: AtomicWaker,
-    backlog_cvar: Notify
+    backlog_cvar: Notify,
+    dropped: Arc<Notify>
 }
 
 unsafe impl Send for UtpContext {}
@@ -81,7 +82,7 @@ extern "C" fn sendto(args: *mut utp_callback_arguments) -> u64 {
 
     let Some(addr) = unsafe { OsSocketAddr::copy_from_raw((*args).u0.address, (*args).u1.address_len) }.into_addr() else { return 0 };
     let buf = unsafe { slice::from_raw_parts((*args).buf, (*args).len) };
-    let _ = Handle::current().block_on(ctx.socket.send_to(&buf, addr));
+    let _ = Handle::current().block_on(ctx.socket.send_to(buf, addr));
     
     0
 }
@@ -93,12 +94,12 @@ extern "C" fn on_read(args: *mut utp_callback_arguments) -> u64 {
         socket.as_ref()
     };
 
-    let mut prod = Prod::new(&socket.read_buffer);
+    let mut prod: ringbuf::wrap::direct::Direct<&ringbuf::SharedRb<ringbuf::storage::Heap<u8>>, true, false> = Prod::new(&socket.read_buffer);
     let incoming = unsafe { slice::from_raw_parts((*args).buf, (*args).len) };
 
-
     if prod.vacant_len() > incoming.len() {
-        prod.push_slice(incoming);
+        let n = prod.push_slice(incoming);
+        assert_eq!(incoming.len(), n);
         socket.readable.wake();
         unsafe { utp_read_drained(socket.handle); }
     }
@@ -223,7 +224,8 @@ impl UtpContext {
             socket,
             backlog: (backlog > 0).then(|| ArrayQueue::new(backlog)),
             backlog_waker: AtomicWaker::new(),
-            backlog_cvar: Notify::new()
+            backlog_cvar: Notify::new(),
+            dropped: Arc::new(Notify::new())
         });
 
         let me = unsafe {
@@ -247,6 +249,8 @@ impl UtpContext {
 
 impl Drop for UtpContext {
     fn drop(&mut self) {
+        self.dropped.notify_waiters();
+
         let _guard = API_LOCK.lock();
 
         unsafe {
@@ -268,10 +272,10 @@ struct UtpSocket {
     readable: AtomicWaker,
     eof: AtomicBool,
     read_buffer: HeapRb<u8>,
-    writable: Arc<WaitHandle>,
+    writable: WaitHandle,
     connection_refused: AtomicBool,
     connected: Notify,
-    io_error: Arc<AtomicCell<Option<UtpError>>>
+    io_error: AtomicCell<Option<UtpError>>
 }
 
 unsafe impl Send for UtpSocket {}
@@ -297,10 +301,10 @@ impl UtpSocket {
             readable: AtomicWaker::new(),
             eof: AtomicBool::new(false),
             read_buffer: HeapRb::new(READ_BUFFER_SIZE),
-            writable: Arc::new(WaitHandle { state: Mutex::new(writable), cvar: Condvar::new() }),
+            writable: WaitHandle { state: Mutex::new(writable), cvar: Condvar::new() },
             connected: Notify::new(),
             connection_refused: AtomicBool::new(false),
-            io_error: Arc::new(AtomicCell::new(None))
+            io_error: AtomicCell::new(None)
         });
         unsafe {
             utp_setsockopt(me.handle, UTP_RCVBUF, READ_BUFFER_SIZE.try_into().unwrap());
@@ -317,15 +321,27 @@ impl Drop for UtpSocket {
             utp_set_userdata(self.handle, ptr::null_mut());
         }
 
-        let handle = SendPtr(self.handle);
-        let ctx = self.ctx.clone();
+        match Handle::current().runtime_flavor() {
+            RuntimeFlavor::CurrentThread => {
+                let handle = SendPtr(self.handle);
+                let ctx = self.ctx.clone();
 
-        task::spawn_blocking(move || {
-            let _guard = API_LOCK.lock();
-            let _ctx = ctx;
-            let handle = handle;
-            unsafe { utp_close(handle.0); }
-        });
+                task::spawn_blocking(move || {
+                    let _guard = API_LOCK.lock();
+                    let _ctx = ctx;
+                    let handle = handle;
+                    unsafe { utp_close(handle.0); }
+                });
+            },
+            _ => {
+                // Executive decision: this is a valid use of block_in_place as we don't
+                // have a kernel to send FIN or RST messages for us
+                task::block_in_place(|| {
+                    let _guard = API_LOCK.lock();
+                    unsafe { utp_close(self.handle); }
+                });
+            }
+        }
     }
 }
 
@@ -333,25 +349,6 @@ pub struct Connection {
     socket: Pin<Arc<UtpSocket>>,
     write: Option<JoinHandle<io::Result<()>>>,
     shutdown: Option<JoinHandle<()>>
-}
-
-impl Drop for Connection {
-    fn drop(&mut self) {
-        let socket = self.socket.clone();
-        let write = self.write.take();
-        let shutdown = self.shutdown.take();
-        tokio::spawn(async move {
-            let _socket = socket;
-
-            if let Some(write) = write {
-                let _ = write.await;
-            }
-
-            if let Some(shutdown) = shutdown {
-                let _ = shutdown.await;
-            }
-        });
-    }
 }
 
 impl Connection {
@@ -368,6 +365,31 @@ impl Connection {
         }
         addr.into_addr()
     }
+
+    fn try_read(&self, buf: &mut ReadBuf<'_>) -> io::Result<()> {
+        if buf.remaining() == 0 {
+            return Ok(());
+        }
+
+        let mut cons = Cons::new(&self.socket.read_buffer);
+
+        if !cons.is_empty() {
+            let n = cons.pop_slice_uninit(unsafe { buf.unfilled_mut() });
+            unsafe { buf.assume_init(n); }
+
+            return Ok(());
+        }
+
+        if self.socket.eof.load(Ordering::Relaxed) {
+            return Ok(());
+        }
+
+        if let Some(err) = self.socket.io_error.load() {
+            return Err(err.into());
+        }
+
+        Err(io::ErrorKind::WouldBlock.into())
+    }
 }
 
 impl AsyncRead for Connection {
@@ -376,40 +398,22 @@ impl AsyncRead for Connection {
         cx: &mut Context<'_>,
         buf: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
-        if buf.remaining() == 0 {
-            return Poll::Ready(Ok(()));
-        }
-
-        if let Some(err) = self.socket.io_error.load() {
-            return Poll::Ready(Err(err.into()));
+        match self.try_read(buf) {
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => (),
+            res => return Poll::Ready(res)
         }
 
         self.socket.readable.register(cx.waker());
 
         // check again after registration
-        if let Some(err) = self.socket.io_error.load() {
-            return Poll::Ready(Err(err.into()));
+        match self.try_read(buf) {
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => Poll::Pending,
+            res => Poll::Ready(res)
         }
-
-        let mut cons = Cons::new(&self.socket.read_buffer);
-        if cons.is_empty() && !self.socket.eof.load(Ordering::Relaxed) {
-            return Poll::Pending;
-        }
-
-        let n = buf.remaining();
-
-        let (l, r) = cons.as_slices();
-        let nl = l.len().min(n);
-        let nr = r.len().min(n - nl);
-        buf.put_slice(&l[..nl]);
-        buf.put_slice(&r[..nr]);
-        cons.skip(nl + nr);
-        Poll::Ready(Ok(()))
     }
 }
 
-// I'm sure there's a much more efficient way to implement this using a ring buffer,
-// but just ingesting all of the bytes at once works well enough.
+// Someday: implement a ring buffer for this too
 impl AsyncWrite for Connection {
     fn poll_write(
         mut self: Pin<&mut Self>,
@@ -417,32 +421,32 @@ impl AsyncWrite for Connection {
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
         ready!(self.as_mut().poll_flush(cx))?;
+
+        if let Some(err) = self.socket.io_error.load() {
+            return Poll::Ready(Err(err.into()));
+        }
         
         let buflen = buf.len();
         let buf = buf.to_vec();
-        let handle = SendPtr(self.socket.handle);
-        let writable = self.socket.writable.clone();
-        let io_error = self.socket.io_error.clone();
+        let socket = self.socket.clone();
         
         self.write = Some(task::spawn_blocking(move || {
             let mut _guard = API_LOCK.lock();
-            let handle = handle;
             let mut slice = &buf[..];
 
             unsafe {
+                let mut state = socket.writable.state.lock();
                 while !slice.is_empty() {
-                    let mut state = writable.state.lock();
-
-                    if let Some(err) = io_error.load() {
+                    if let Some(err) = socket.io_error.load() {
                         return Err(err.into());
                     }
 
-                    let res = utp_write(handle.0, slice.as_ptr() as *mut c_void, slice.len());
+                    let res = utp_write(socket.handle, slice.as_ptr() as *mut c_void, slice.len());
                     let Ok(n) = usize::try_from(res) else { return Err(io::Error::other("utp_write returned -1")) };
                     if n == 0 {
                         *state = false;
                         drop(_guard);
-                        writable.cvar.wait_while(&mut state, |&mut able| !able);
+                        socket.writable.cvar.wait_while(&mut state, |&mut able| !able);
                         _guard = API_LOCK.lock();
                     } else {
                         slice = &slice[n..];
@@ -470,18 +474,18 @@ impl AsyncWrite for Connection {
     fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         ready!(self.as_mut().poll_flush(cx))?;
         
-        let handle = SendPtr(self.socket.handle);
+        let socket = self.socket.clone();
 
         let shutdown = self.shutdown.get_or_insert_with(move || task::spawn_blocking(move || {
-            let handle = handle;
             let _guard = API_LOCK.lock();
             
-            unsafe { utp_shutdown(handle.0, SHUT_WR); }
+            unsafe { utp_shutdown(socket.handle, SHUT_WR); }
         }));
 
         let res = ready!(Pin::new(shutdown).poll(cx));
         self.shutdown = None;
-        Poll::Ready(Ok(res.unwrap()))
+        res.unwrap();
+        Poll::Ready(Ok(()))
     }
 }
  
@@ -506,12 +510,24 @@ impl Endpoint {
 
         let _read_task = {
             let socket = ctx.socket.clone();
+            let dropped = ctx.dropped.clone();
+
             let ctx = PinWeak::downgrade(ctx.clone());
             task::spawn(async move {
+                let mut drop_notification = pin!(dropped.notified());
+
+                if ctx.strong_count() == 0 { return Ok(()) }
+
+                // This is by far the worst use of both allocation and a mutex here.
+                // It's so pointless, but it's needed to make spawn_blocking work :/
                 let read_buf = Arc::new(Mutex::new(BytesMut::with_capacity(65535)));
 
                 loop {
-                    socket.readable().await?;
+                    tokio::select! {
+                        res = socket.readable() => { res?; },
+                        () = &mut drop_notification => {}
+                    };
+
                     let Some(ctx) = ctx.upgrade() else { break };
 
                     let socket = socket.clone();
@@ -540,12 +556,20 @@ impl Endpoint {
         };
 
         let _timeout_task = {
+            let dropped = ctx.dropped.clone();
             let ctx = PinWeak::downgrade(ctx.clone());
             task::spawn(async move {
+                let mut drop_notification = pin!(dropped.notified());
+
+                if ctx.strong_count() == 0 { return }
+
                 let mut int = interval(Duration::from_millis(500));
                 int.set_missed_tick_behavior(MissedTickBehavior::Delay);
                 loop {
-                    int.tick().await;
+                    tokio::select! {
+                        _ = int.tick() => {}
+                        () = &mut drop_notification => {}
+                    };
                     let Some(ctx) = ctx.upgrade() else { break };
 
                     let handle = SendPtr(ctx.handle);

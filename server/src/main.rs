@@ -65,7 +65,7 @@ impl traits::Serve for Handler {
 }
 
 
-#[tokio::main(flavor = "current_thread")]
+#[tokio::main]
 async fn main() -> io::Result<Infallible> {
     console_subscriber::init();
 
