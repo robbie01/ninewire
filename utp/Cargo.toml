@@ -5,13 +5,14 @@ edition = "2024"
 
 [dependencies]
 bytes.workspace = true
+crossbeam.workspace = true
 futures.workspace = true
 tokio = { workspace = true, features = ["time", "rt", "io-util", "net", "macros", "rt-multi-thread"] }
 tokio-util = { workspace = true, features = ["net"] }
 tracing.workspace = true
+util.workspace = true
 utp-sys.workspace = true
 
-crossbeam = "0.8"
 os_socketaddr = "0.2"
 parking_lot = "0.12"
 pin-weak = "1.1"

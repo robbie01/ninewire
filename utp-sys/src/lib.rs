@@ -61,7 +61,7 @@ pub struct utp_context {
 }
 
 unsafe extern "C" {
-    pub static utp_state_names: [*const ffi::c_char; 4];
+    pub static utp_state_names: [*const ffi::c_char; 5];
     pub static utp_error_code_names: [*const ffi::c_char; 3];
     pub static utp_callback_names: [*const ffi::c_char; 16];
 }

@@ -1281,6 +1281,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rsevents"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e8e29769fda0194d58e06d876d82337aac382415df547f073f44ffea0bb0c651"
+dependencies = [
+ "parking_lot_core",
+]
+
+[[package]]
 name = "rustc-demangle"
 version = "0.1.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1730,8 +1739,10 @@ name = "util"
 version = "0.1.0"
 dependencies = [
  "bytes",
+ "crossbeam",
  "futures",
  "pin-project",
+ "rsevents",
  "snow",
  "tokio",
  "tokio-util",
@@ -1751,6 +1762,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+ "util",
  "utp-sys",
 ]
 

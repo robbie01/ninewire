@@ -4,12 +4,13 @@ use bytes::BytesMut;
 use crossbeam::{atomic::AtomicCell, queue::ArrayQueue};
 use futures::task::AtomicWaker;
 use os_socketaddr::OsSocketAddr;
-use parking_lot::{Condvar, Mutex, ReentrantMutex};
+use parking_lot::{Mutex, ReentrantMutex};
 use pin_weak::sync::PinWeak;
 use ringbuf::{traits::{Consumer, Observer, Producer}, wrap::{FrozenCons, FrozenProd}, HeapRb};
 use tokio::{io::{AsyncRead, AsyncWrite, ReadBuf}, net::UdpSocket, runtime::{Handle, RuntimeFlavor}, sync::Notify, task::{self, JoinHandle}, time::{interval, MissedTickBehavior}};
 use tokio_util::net::Listener;
 use tracing::warn;
+use util::{atomic_unparker::AtomicUnparker, parker::Parker};
 use utp_sys::*;
 
 static API_LOCK: ReentrantMutex<()> = ReentrantMutex::new(());
@@ -112,7 +113,10 @@ extern "C" fn on_read(args: *mut utp_callback_arguments) -> u64 {
 extern "C" fn on_state_change(args: *mut utp_callback_arguments) -> u64 {
     let _guard = API_LOCK.lock(); // is this really necessary?
     let socket = unsafe { 
-        let Some(socket) = socket_userdata((*args).socket) else { return 0 };
+        let Some(socket) = socket_userdata((*args).socket) else {
+            assert_eq!(UTP_STATE_DESTROYING, (*args).u0.state);
+            return 0;
+        };
         socket.as_ref()
     };
 
@@ -121,13 +125,12 @@ extern "C" fn on_state_change(args: *mut utp_callback_arguments) -> u64 {
             socket.connected.notify_waiters();
         }
         UTP_STATE_WRITABLE => {
-            let mut state = socket.writable.state.lock();
-            *state = true;
-            socket.writable.cvar.notify_all();
+            socket.writable.wake();
         },
         UTP_STATE_EOF => {
             socket.eof.store(true, Ordering::Relaxed);
             socket.readable.wake();
+            socket.writable.wake();
         },
         _ => ()
     }
@@ -156,7 +159,7 @@ extern "C" fn on_accept(args: *mut utp_callback_arguments) -> u64 {
         Arc::increment_strong_count(ctx);
         let socket = {
             let ctx = Pin::new_unchecked(Arc::from_raw(ctx));
-            UtpSocket::from_raw_parts(ctx, (*args).socket, false)
+            UtpSocket::from_raw_parts(ctx, (*args).socket)
         };
 
         (
@@ -193,13 +196,10 @@ extern "C" fn on_error(args: *mut utp_callback_arguments) -> u64 {
         e@(UTP_ECONNRESET | UTP_ETIMEDOUT) => {
             let err = if e == UTP_ECONNRESET { UtpError::ConnectionReset } else { UtpError::TimedOut };
 
-            let mut writable = socket.writable.state.lock();
-
             socket.io_error.store(Some(err));
 
             socket.readable.wake();
-            *writable = true;
-            socket.writable.cvar.notify_all();
+            socket.writable.wake();
         },
         _ => ()
     }
@@ -264,11 +264,6 @@ impl Drop for UtpContext {
     }
 }
 
-struct WaitHandle {
-    state: Mutex<bool>,
-    cvar: Condvar
-}
-
 const _: () = assert!(AtomicCell::<Option<UtpError>>::is_lock_free());
 struct UtpSocket {
     _pin: PhantomPinned,
@@ -277,7 +272,7 @@ struct UtpSocket {
     readable: AtomicWaker,
     eof: AtomicBool,
     read_buffer: HeapRb<u8>,
-    writable: WaitHandle,
+    writable: AtomicUnparker,
     connection_refused: AtomicBool,
     connected: Notify,
     io_error: AtomicCell<Option<UtpError>>
@@ -287,16 +282,16 @@ unsafe impl Send for UtpSocket {}
 unsafe impl Sync for UtpSocket {}
 
 impl UtpSocket {
-    fn new(ctx: Pin<Arc<UtpContext>>, writable: bool) -> Pin<Arc<Self>> {
+    fn new(ctx: Pin<Arc<UtpContext>>) -> Pin<Arc<Self>> {
         let _guard = API_LOCK.lock();
 
         unsafe {
             let raw = utp_create_socket(ctx.handle);
-            Self::from_raw_parts(ctx, raw, writable)
+            Self::from_raw_parts(ctx, raw)
         }
     }
 
-    unsafe fn from_raw_parts(ctx: Pin<Arc<UtpContext>>, handle: *mut utp_socket, writable: bool) -> Pin<Arc<Self>> {
+    unsafe fn from_raw_parts(ctx: Pin<Arc<UtpContext>>, handle: *mut utp_socket) -> Pin<Arc<Self>> {
         let _guard = API_LOCK.lock();
 
         let me = Arc::new(Self {
@@ -306,7 +301,7 @@ impl UtpSocket {
             readable: AtomicWaker::new(),
             eof: AtomicBool::new(false),
             read_buffer: HeapRb::new(READ_BUFFER_SIZE),
-            writable: WaitHandle { state: Mutex::new(writable), cvar: Condvar::new() },
+            writable: AtomicUnparker::new(),
             connected: Notify::new(),
             connection_refused: AtomicBool::new(false),
             io_error: AtomicCell::new(None)
@@ -436,11 +431,11 @@ impl AsyncWrite for Connection {
         let socket = self.socket.clone();
         
         self.write = Some(task::spawn_blocking(move || {
+            let parker = Parker::new();
             let mut _guard = API_LOCK.lock();
             let mut slice = &buf[..];
 
             unsafe {
-                let mut state = socket.writable.state.lock();
                 while !slice.is_empty() {
                     if let Some(err) = socket.io_error.load() {
                         return Err(err.into());
@@ -448,14 +443,27 @@ impl AsyncWrite for Connection {
 
                     let res = utp_write(socket.handle, slice.as_ptr() as *mut c_void, slice.len());
                     let Ok(n) = usize::try_from(res) else { return Err(io::Error::other("utp_write returned -1")) };
-                    if n == 0 {
-                        *state = false;
-                        drop(_guard);
-                        socket.writable.cvar.wait_while(&mut state, |&mut able| !able);
-                        _guard = API_LOCK.lock();
-                    } else {
+                    if n > 0 {
                         slice = &slice[n..];
+                        continue;
                     }
+
+                    socket.writable.register(parker.unparker());
+
+                    if let Some(err) = socket.io_error.load() {
+                        return Err(err.into());
+                    }
+
+                    let res = utp_write(socket.handle, slice.as_ptr() as *mut c_void, slice.len());
+                    let Ok(n) = usize::try_from(res) else { return Err(io::Error::other("utp_write returned -1")) };
+                    if n > 0 {
+                        slice = &slice[n..];
+                        continue;
+                    }
+
+                    drop(_guard);
+                    parker.park();
+                    _guard = API_LOCK.lock();
                 }
             }
 
@@ -519,6 +527,9 @@ impl Endpoint {
 
             let ctx = PinWeak::downgrade(ctx.clone());
             task::spawn(async move {
+                // The chance of ctx being dropped before registration is astronomically minimal.
+                // Not even worth the effort to copy and paste the check.
+
                 let mut drop_notification = pin!(dropped.notified());
 
                 if ctx.strong_count() == 0 { return Ok(()) }
@@ -564,6 +575,9 @@ impl Endpoint {
             let dropped = ctx.dropped.clone();
             let ctx = PinWeak::downgrade(ctx.clone());
             task::spawn(async move {
+                // The chance of ctx being dropped before registration is astronomically minimal.
+                // Not even worth the effort to copy and paste the check.
+                
                 let mut drop_notification = pin!(dropped.notified());
 
                 if ctx.strong_count() == 0 { return }
@@ -620,7 +634,7 @@ impl Endpoint {
     }
 
     pub async fn connect(&self, peer: impl Into<SocketAddr>) -> io::Result<Connection> {
-        let socket = UtpSocket::new(self.ctx.clone(), true);
+        let socket = UtpSocket::new(self.ctx.clone());
         let addr = OsSocketAddr::from(peer.into());
 
         let connected = socket.connected.notified();
