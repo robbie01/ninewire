@@ -7,7 +7,7 @@ use os_socketaddr::OsSocketAddr;
 use parking_lot::{Condvar, Mutex, ReentrantMutex};
 use pin_weak::sync::PinWeak;
 use ringbuf::{traits::{Consumer, Observer, Producer}, Cons, HeapRb, Prod};
-use tokio::{io::{AsyncRead, AsyncWrite, ReadBuf}, net::UdpSocket, runtime::{Handle, RuntimeFlavor}, sync::Notify, task::{self, JoinHandle}, time::{interval, MissedTickBehavior}};
+use tokio::{io::{AsyncRead, AsyncWrite, ReadBuf}, net::UdpSocket, runtime::Handle, sync::Notify, task::{self, JoinHandle}, time::{interval, MissedTickBehavior}};
 use tokio_util::net::Listener;
 use utp_sys::*;
 
@@ -321,27 +321,18 @@ impl Drop for UtpSocket {
             utp_set_userdata(self.handle, ptr::null_mut());
         }
 
-        match Handle::current().runtime_flavor() {
-            RuntimeFlavor::CurrentThread => {
-                let handle = SendPtr(self.handle);
-                let ctx = self.ctx.clone();
+        let handle = SendPtr(self.handle);
+        let ctx = self.ctx.clone();
 
-                task::spawn_blocking(move || {
-                    let _guard = API_LOCK.lock();
-                    let _ctx = ctx;
-                    let handle = handle;
-                    unsafe { utp_close(handle.0); }
-                });
-            },
-            _ => {
-                // Executive decision: this is a valid use of block_in_place as we don't
-                // have a kernel to send FIN or RST messages for us
-                task::block_in_place(|| {
-                    let _guard = API_LOCK.lock();
-                    unsafe { utp_close(self.handle); }
-                });
-            }
-        }
+        // I would've liked to use drop_in_place when possible, but for some
+        // bizarre reason it causes the task to linger and "lose its waker."
+
+        task::spawn_blocking(move || {
+            let _guard = API_LOCK.lock();
+            let _ctx = ctx;
+            let handle = handle;
+            unsafe { utp_close(handle.0); }
+        });
     }
 }
 
