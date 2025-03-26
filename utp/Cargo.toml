@@ -8,6 +8,7 @@ bytes.workspace = true
 futures.workspace = true
 tokio = { workspace = true, features = ["time", "rt", "io-util", "net", "macros", "rt-multi-thread"] }
 tokio-util = { workspace = true, features = ["net"] }
+tracing.workspace = true
 utp-sys.workspace = true
 
 crossbeam = "0.8"

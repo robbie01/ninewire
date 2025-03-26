@@ -1750,6 +1750,7 @@ dependencies = [
  "ringbuf",
  "tokio",
  "tokio-util",
+ "tracing",
  "utp-sys",
 ]
 

@@ -12,15 +12,18 @@ cfg_if::cfg_if! {
 
 use std::ffi;
 
-pub const UTP_IOV_MAX: ffi::c_int = 1024;
-pub const UTP_UDP_DONTFRAG: ffi::c_int = 2;
+pub const UTP_IOV_MAX: usize = 1024;
+pub const UTP_UDP_DONTFRAG: u32 = 2;
+
 pub const UTP_STATE_CONNECT: ffi::c_int = 1;
 pub const UTP_STATE_WRITABLE: ffi::c_int = 2;
 pub const UTP_STATE_EOF: ffi::c_int = 3;
 pub const UTP_STATE_DESTROYING: ffi::c_int = 4;
+
 pub const UTP_ECONNREFUSED: ffi::c_int = 0;
 pub const UTP_ECONNRESET: ffi::c_int = 1;
 pub const UTP_ETIMEDOUT: ffi::c_int = 2;
+
 pub const UTP_ON_FIREWALL: ffi::c_int = 0;
 pub const UTP_ON_ACCEPT: ffi::c_int = 1;
 pub const UTP_ON_CONNECT: ffi::c_int = 2;
@@ -37,13 +40,15 @@ pub const UTP_GET_MICROSECONDS: ffi::c_int = 12;
 pub const UTP_GET_RANDOM: ffi::c_int = 13;
 pub const UTP_LOG: ffi::c_int = 14;
 pub const UTP_SENDTO: ffi::c_int = 15;
+
 pub const UTP_LOG_NORMAL: ffi::c_int = 16;
 pub const UTP_LOG_MTU: ffi::c_int = 17;
 pub const UTP_LOG_DEBUG: ffi::c_int = 18;
 pub const UTP_SNDBUF: ffi::c_int = 19;
 pub const UTP_RCVBUF: ffi::c_int = 20;
 pub const UTP_TARGET_DELAY: ffi::c_int = 21;
-pub const UTP_ARRAY_SIZE: ffi::c_int = 22;
+
+pub const UTP_ARRAY_SIZE: usize = 22;
 
 #[repr(C)]
 pub struct utp_socket {
