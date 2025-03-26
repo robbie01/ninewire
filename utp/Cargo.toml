@@ -10,10 +10,10 @@ futures.workspace = true
 tokio = { workspace = true, features = ["time", "rt", "io-util", "net", "macros", "rt-multi-thread"] }
 tokio-util = { workspace = true, features = ["net"] }
 tracing.workspace = true
-util.workspace = true
 utp-sys.workspace = true
 
 os_socketaddr = "0.2"
 parking_lot = "0.12"
 pin-weak = "1.1"
 ringbuf = "0.4"
+rsevents = "0.3"

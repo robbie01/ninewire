@@ -7,10 +7,10 @@ use os_socketaddr::OsSocketAddr;
 use parking_lot::{Mutex, ReentrantMutex};
 use pin_weak::sync::PinWeak;
 use ringbuf::{traits::{Consumer, Observer, Producer}, wrap::{FrozenCons, FrozenProd}, HeapRb};
+use rsevents::{AutoResetEvent, Awaitable};
 use tokio::{io::{AsyncRead, AsyncWrite, ReadBuf}, net::UdpSocket, runtime::{Handle, RuntimeFlavor}, sync::Notify, task::{self, JoinHandle}, time::{interval, MissedTickBehavior}};
 use tokio_util::net::Listener;
 use tracing::warn;
-use util::{atomic_unparker::AtomicUnparker, parker::Parker};
 use utp_sys::*;
 
 static API_LOCK: ReentrantMutex<()> = ReentrantMutex::new(());
@@ -125,12 +125,12 @@ extern "C" fn on_state_change(args: *mut utp_callback_arguments) -> u64 {
             socket.connected.notify_waiters();
         }
         UTP_STATE_WRITABLE => {
-            socket.writable.wake();
+            socket.writable.set();
         },
         UTP_STATE_EOF => {
             socket.eof.store(true, Ordering::Relaxed);
             socket.readable.wake();
-            socket.writable.wake();
+            socket.writable.set();
         },
         _ => ()
     }
@@ -155,15 +155,16 @@ extern "C" fn on_accept(args: *mut utp_callback_arguments) -> u64 {
 
     let (ctx, socket, addr) = unsafe {
         let Some(ctx) = ctx_userdata((*args).context) else { return 0 };
-        let ctx = ctx.as_ptr();
-        Arc::increment_strong_count(ctx);
+        
         let socket = {
+            let ctx = ctx.as_ptr();
+            Arc::increment_strong_count(ctx);
             let ctx = Pin::new_unchecked(Arc::from_raw(ctx));
             UtpSocket::from_raw_parts(ctx, (*args).socket)
         };
 
         (
-            &*ctx,
+            ctx.as_ref(),
             socket,
             OsSocketAddr::copy_from_raw((*args).u0.address, (*args).u1.address_len)
         )
@@ -199,7 +200,7 @@ extern "C" fn on_error(args: *mut utp_callback_arguments) -> u64 {
             socket.io_error.store(Some(err));
 
             socket.readable.wake();
-            socket.writable.wake();
+            socket.writable.set();
         },
         _ => ()
     }
@@ -272,7 +273,7 @@ struct UtpSocket {
     readable: AtomicWaker,
     eof: AtomicBool,
     read_buffer: HeapRb<u8>,
-    writable: AtomicUnparker,
+    writable: AutoResetEvent,
     connection_refused: AtomicBool,
     connected: Notify,
     io_error: AtomicCell<Option<UtpError>>
@@ -301,7 +302,7 @@ impl UtpSocket {
             readable: AtomicWaker::new(),
             eof: AtomicBool::new(false),
             read_buffer: HeapRb::new(READ_BUFFER_SIZE),
-            writable: AtomicUnparker::new(),
+            writable: AutoResetEvent::new(rsevents::EventState::Unset),
             connected: Notify::new(),
             connection_refused: AtomicBool::new(false),
             io_error: AtomicCell::new(None)
@@ -431,7 +432,6 @@ impl AsyncWrite for Connection {
         let socket = self.socket.clone();
         
         self.write = Some(task::spawn_blocking(move || {
-            let parker = Parker::new();
             let mut _guard = API_LOCK.lock();
             let mut slice = &buf[..];
 
@@ -448,21 +448,8 @@ impl AsyncWrite for Connection {
                         continue;
                     }
 
-                    socket.writable.register(parker.unparker());
-
-                    if let Some(err) = socket.io_error.load() {
-                        return Err(err.into());
-                    }
-
-                    let res = utp_write(socket.handle, slice.as_ptr() as *mut c_void, slice.len());
-                    let Ok(n) = usize::try_from(res) else { return Err(io::Error::other("utp_write returned -1")) };
-                    if n > 0 {
-                        slice = &slice[n..];
-                        continue;
-                    }
-
                     drop(_guard);
-                    parker.park();
+                    socket.writable.wait();
                     _guard = API_LOCK.lock();
                 }
             }

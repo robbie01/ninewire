@@ -5,11 +5,9 @@ edition = "2024"
 
 [dependencies]
 bytes.workspace = true
-crossbeam.workspace = true
 tokio.workspace = true
 tokio-util = { workspace = true, features = ["io"] }
 futures.workspace = true
 pin-project.workspace = true
 
-rsevents = "0.3"
 snow = "0.10.0-alpha.1"

@@ -918,6 +918,7 @@ version = "0.1.0"
 dependencies = [
  "tokio",
  "util",
+ "utp",
 ]
 
 [[package]]
@@ -1739,10 +1740,8 @@ name = "util"
 version = "0.1.0"
 dependencies = [
  "bytes",
- "crossbeam",
  "futures",
  "pin-project",
- "rsevents",
  "snow",
  "tokio",
  "tokio-util",
@@ -1759,10 +1758,10 @@ dependencies = [
  "parking_lot",
  "pin-weak",
  "ringbuf",
+ "rsevents",
  "tokio",
  "tokio-util",
  "tracing",
- "util",
  "utp-sys",
 ]
 
