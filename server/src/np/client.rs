@@ -158,7 +158,7 @@ async fn dispatch<S: Serve>(
                 
                 Ok(Rcreate { qid, iounit: 0 }.into())
             } else {
-            Err(rerror("fid open for I/O"))
+                Err(rerror("fid open for I/O"))
             }
         },
         TMessage::Tread(Tread { fid, offset, count }) => {
@@ -178,7 +178,7 @@ async fn dispatch<S: Serve>(
             let resource = resources.get(&fid).ok_or_else(|| rerror("fid invalid"))?;
             
             if let Resource::Open(resource) = resource {
-            let count = resource.write(offset, &data).await?;
+                let count = resource.write(offset, &data).await?;
                 Ok(Rwrite { count }.into())
             } else {
                 Err(rerror("fid not open for write"))

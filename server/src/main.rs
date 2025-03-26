@@ -1,11 +1,9 @@
-use std::{collections::HashMap, convert::Infallible, fmt::Debug, io, net::{Ipv4Addr, SocketAddrV6}, path::PathBuf, sync::{atomic::{AtomicU64, Ordering}, Arc}, task::{ready, Context, Poll}};
+use std::{collections::HashMap, convert::Infallible, future::Future, io, net::{Ipv6Addr, SocketAddr}, path::PathBuf, sync::{atomic::{AtomicU64, Ordering}, Arc}};
 
 use anyhow::bail;
 use bytestring::ByteString;
-use libutp_rs2::{Transport, UtpContext, UtpStream};
 use np::traits;
-use tokio::net::TcpListener;
-use tokio_util::{net::Listener, sync::ReusableBoxFuture};
+use tokio::net::UdpSocket;
 
 mod np;
 mod res;
@@ -66,40 +64,22 @@ impl traits::Serve for Handler {
     }
 }
 
-struct UtpListener<T> {
-    ctx: Arc<UtpContext<T>>,
-    accept: ReusableBoxFuture<'static, anyhow::Result<UtpStream<T>>>
-}
+impl traits::Listener for utp::Endpoint {
+    type Io = utp::Connection;
+    type Addr = SocketAddr;
 
-impl<T: Transport> UtpListener<T> {
-    pub fn new(ctx: Arc<UtpContext<T>>) -> Self {
-        Self {
-            accept: ReusableBoxFuture::new({
-                let ctx = ctx.clone();
-                async move { ctx.accept().await }
-            }),
-            ctx
-        }
+     fn accept(&mut self) -> impl Future<Output = io::Result<(Self::Io, Self::Addr)>> {
+        utp::Endpoint::accept(&*self)
     }
 }
 
-impl<T: Transport> Listener for UtpListener<T> {
-    type Addr = SocketAddrV6;
-    type Io = UtpStream<T>;
-
-    fn poll_accept(&mut self, cx: &mut Context<'_>) -> Poll<io::Result<(Self::Io, Self::Addr)>> {
-        let con = ready!(self.accept.poll(cx)).map_err(io::Error::other)?;
-        con.
-
-        todo!()
-    }
-}
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> io::Result<Infallible> {
     console_subscriber::init();
 
-    let listener = TcpListener::bind((Ipv4Addr::UNSPECIFIED, 64444)).await?;
+    let sock = Arc::new(UdpSocket::bind((Ipv6Addr::UNSPECIFIED, 64444)).await?);
+    let listener = utp::Endpoint::new(sock, 16);
 
     np::serve_mux(Arc::new(Handler::new([
         ("forfun".into(), "forfun".into()),

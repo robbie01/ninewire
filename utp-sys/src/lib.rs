@@ -117,7 +117,7 @@ pub struct utp_iovec {
 }
 
 unsafe extern "C" {
-    pub fn utp_init(version: libc::c_int) -> *mut utp_context;
+    pub safe fn utp_init(version: libc::c_int) -> *mut utp_context;
     pub fn utp_destroy(ctx: *mut utp_context);
     pub fn utp_set_callback(
         ctx: *mut utp_context,

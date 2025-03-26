@@ -1,16 +1,17 @@
 fn main() {
     let mut cc = cc::Build::new();
 
-    cc.files([
-        "libutp/utp_api.cpp",
-        "libutp/utp_callbacks.cpp",
-        "libutp/utp_hash.cpp",
-        "libutp/utp_internal.cpp",
-        "libutp/utp_packedsockaddr.cpp",
-        "libutp/utp_utils.cpp"
-    ]);
-
-    cc.warnings(false);
+    cc
+        .cpp(true)
+        .warnings(false)
+        .files([
+            "libutp/utp_api.cpp",
+            "libutp/utp_callbacks.cpp",
+            "libutp/utp_hash.cpp",
+            "libutp/utp_internal.cpp",
+            "libutp/utp_packedsockaddr.cpp",
+            "libutp/utp_utils.cpp"
+        ]);
 
     if std::env::var_os("CARGO_CFG_WINDOWS").is_some() {
         cc.define("WIN32", None);

@@ -1,0 +1,12 @@
+[package]
+name = "utp-example"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow.workspace = true
+futures.workspace = true
+tokio = { workspace = true, features = ["rt", "macros", "net", "io-util", "fs", "full", "tracing"] }
+utp.workspace = true
+
+console-subscriber = "0.4"
