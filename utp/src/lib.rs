@@ -1,7 +1,7 @@
 use std::{ffi::c_int, io, marker::PhantomPinned, net::SocketAddr, os::raw::c_void, pin::{pin, Pin}, ptr::{self, NonNull}, slice, sync::{atomic::{AtomicBool, Ordering}, Arc}, task::{ready, Context, Poll}, time::Duration};
 
 use bytes::BytesMut;
-use crossbeam::{atomic::AtomicCell, queue::ArrayQueue, sync::Unparker};
+use crossbeam::{atomic::AtomicCell, queue::ArrayQueue};
 use futures::task::AtomicWaker;
 use os_socketaddr::OsSocketAddr;
 use parking_lot::{Condvar, Mutex, ReentrantMutex};
@@ -270,8 +270,6 @@ struct WaitHandle {
 }
 
 const _: () = assert!(AtomicCell::<Option<UtpError>>::is_lock_free());
-const _: () = assert!(AtomicCell::<Option<Unparker>>::is_lock_free());
-
 struct UtpSocket {
     _pin: PhantomPinned,
     ctx: Pin<Arc<UtpContext>>,
@@ -280,7 +278,6 @@ struct UtpSocket {
     eof: AtomicBool,
     read_buffer: HeapRb<u8>,
     writable: WaitHandle,
-    writable2: AtomicCell<Option<Unparker>>,
     connection_refused: AtomicBool,
     connected: Notify,
     io_error: AtomicCell<Option<UtpError>>
@@ -310,7 +307,6 @@ impl UtpSocket {
             eof: AtomicBool::new(false),
             read_buffer: HeapRb::new(READ_BUFFER_SIZE),
             writable: WaitHandle { state: Mutex::new(writable), cvar: Condvar::new() },
-            writable2: AtomicCell::new(None),
             connected: Notify::new(),
             connection_refused: AtomicBool::new(false),
             io_error: AtomicCell::new(None)
