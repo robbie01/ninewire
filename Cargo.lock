@@ -1749,6 +1749,7 @@ dependencies = [
  "pin-weak",
  "ringbuf",
  "tokio",
+ "tokio-util",
  "utp-sys",
 ]
 

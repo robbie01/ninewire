@@ -1,9 +1,8 @@
-use std::{fmt::Display, future::Future, io, net::SocketAddr};
+use std::{fmt::Display, future::Future};
 
 use bytes::Bytes;
 
 use npwire::{Qid, Stat};
-use tokio::{io::{AsyncRead, AsyncWrite}, net::{TcpListener, TcpStream}};
 
 pub trait Resource: Send {
     type Error: Display;
@@ -35,20 +34,4 @@ pub trait Serve: Send + Sync + 'static {
 
     fn auth(&self, uname: &str, aname: &str) -> impl Future<Output = Result<Self::OpenResource, Self::Error>> + Send;
     fn attach(&self, ares: Option<&Self::OpenResource>, uname: &str, aname: &str) -> impl Future<Output = Result<Self::PathResource, Self::Error>> + Send;
-}
-
-pub trait Listener {
-    type Io: AsyncRead + AsyncWrite;
-    type Addr;
-
-    async fn accept(&mut self) -> io::Result<(Self::Io, Self::Addr)>;
-}
-
-impl Listener for TcpListener {
-    type Io = TcpStream;
-    type Addr = SocketAddr;
-
-     fn accept(&mut self) -> impl Future<Output = io::Result<(Self::Io, Self::Addr)>> {
-        TcpListener::accept(&*self)
-    }
 }

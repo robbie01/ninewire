@@ -8,6 +8,7 @@ use parking_lot::{Condvar, Mutex, ReentrantMutex};
 use pin_weak::sync::PinWeak;
 use ringbuf::{traits::{Consumer, Observer, Producer}, Cons, HeapRb, Prod};
 use tokio::{io::{AsyncRead, AsyncWrite, ReadBuf}, net::UdpSocket, runtime::Handle, sync::Notify, task::{self, JoinHandle}, time::{interval, MissedTickBehavior}};
+use tokio_util::net::Listener;
 use utp_sys::*;
 
 static API_LOCK: ReentrantMutex<()> = ReentrantMutex::new(());
@@ -51,6 +52,7 @@ struct UtpContext {
     handle: *mut utp_context,
     socket: Arc<UdpSocket>,
     backlog: Option<ArrayQueue<(OsSocketAddr, Pin<Arc<UtpSocket>>)>>,
+    backlog_waker: AtomicWaker,
     backlog_cvar: Notify
 }
 
@@ -163,6 +165,7 @@ extern "C" fn on_accept(args: *mut utp_callback_arguments) -> u64 {
 
     if let Some(ref backlog) = ctx.backlog {
         let _ = backlog.push((addr, socket));
+        ctx.backlog_waker.wake();
         ctx.backlog_cvar.notify_waiters();
     }
     
@@ -219,6 +222,7 @@ impl UtpContext {
             handle: utp_init(2),
             socket,
             backlog: (backlog > 0).then(|| ArrayQueue::new(backlog)),
+            backlog_waker: AtomicWaker::new(),
             backlog_cvar: Notify::new()
         });
 
@@ -487,6 +491,17 @@ pub struct Endpoint {
     timeout_task: JoinHandle<()>
 }
 
+fn con_from_backlog((addr, socket): (OsSocketAddr, Pin<Arc<UtpSocket>>)) -> (Connection, SocketAddr) {
+    (
+        Connection {
+            socket,
+            write: None,
+            shutdown: None
+        },
+        addr.into_addr().unwrap()
+    )
+}
+
 impl Endpoint {
     pub fn new(socket: Arc<UdpSocket>, backlog: usize) -> Self {
         let ctx = UtpContext::new(socket, backlog);
@@ -548,17 +563,32 @@ impl Endpoint {
         Self { ctx, read_task, timeout_task }
     }
 
+    pub fn poll_accept(&self, cx: &mut Context<'_>) -> Poll<io::Result<(Connection, SocketAddr)>> {
+        let Some(ref backlog) = self.ctx.backlog else { return Poll::Ready(Err(io::ErrorKind::InvalidInput.into())) };
+
+        // hot path
+        if let Some(con) = backlog.pop() {
+            return Poll::Ready(Ok(con_from_backlog(con)));
+        }
+
+        self.ctx.backlog_waker.register(cx.waker());
+
+        match backlog.pop() {
+            None => Poll::Pending,
+            Some(con) => Poll::Ready(Ok(con_from_backlog(con)))
+        }
+    }
+
     pub async fn accept(&self) -> io::Result<(Connection, SocketAddr)> {
         let Some(ref backlog) = self.ctx.backlog else { return Err(io::ErrorKind::InvalidInput.into()) };
 
         loop {
+            if let Some(con) = backlog.pop() {
+                break Ok(con_from_backlog(con));
+            }
             let notified = self.ctx.backlog_cvar.notified();
-            if let Some((addr, socket)) = backlog.pop() {
-                break Ok((Connection {
-                    socket,
-                    write: None,
-                    shutdown: None
-                }, addr.into_addr().unwrap()));
+            if let Some(con) = backlog.pop() {
+                break Ok(con_from_backlog(con));
             }
             notified.await;
         }
@@ -599,5 +629,18 @@ impl Drop for Endpoint {
     fn drop(&mut self) {
         self.read_task.abort();
         self.timeout_task.abort();
+    }
+}
+
+impl Listener for Endpoint {
+    type Io = Connection;
+    type Addr = SocketAddr;
+
+    fn poll_accept(&mut self, cx: &mut Context<'_>) -> Poll<io::Result<(Self::Io, Self::Addr)>> {
+        Endpoint::poll_accept(&*self, cx)
+    }
+
+    fn local_addr(&self) -> io::Result<Self::Addr> {
+        self.ctx.socket.local_addr()
     }
 }

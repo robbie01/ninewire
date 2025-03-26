@@ -1,4 +1,4 @@
-use std::{collections::HashMap, convert::Infallible, future::Future, io, net::{Ipv6Addr, SocketAddr}, path::PathBuf, sync::{atomic::{AtomicU64, Ordering}, Arc}};
+use std::{collections::HashMap, convert::Infallible, io, net::Ipv6Addr, path::PathBuf, sync::{atomic::{AtomicU64, Ordering}, Arc}};
 
 use anyhow::bail;
 use bytestring::ByteString;
@@ -61,15 +61,6 @@ impl traits::Serve for Handler {
         });
 
         Ok(res::path::PathResource::root(self, session))
-    }
-}
-
-impl traits::Listener for utp::Endpoint {
-    type Io = utp::Connection;
-    type Addr = SocketAddr;
-
-     fn accept(&mut self) -> impl Future<Output = io::Result<(Self::Io, Self::Addr)>> {
-        utp::Endpoint::accept(&*self)
     }
 }
 

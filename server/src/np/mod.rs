@@ -1,7 +1,8 @@
 use std::{convert::Infallible, fmt::Debug, io, sync::Arc};
 
 use tokio::{io::{AsyncRead, AsyncWrite}, task::{id, JoinSet}};
-use traits::{Listener, Serve};
+use tokio_util::net::Listener;
+use traits::Serve;
 
 pub mod traits;
 mod client;
