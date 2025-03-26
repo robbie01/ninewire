@@ -486,9 +486,7 @@ impl AsyncWrite for Connection {
 }
  
 pub struct Endpoint {
-    ctx: Pin<Arc<UtpContext>>,
-    read_task: JoinHandle<io::Result<()>>,
-    timeout_task: JoinHandle<()>
+    ctx: Pin<Arc<UtpContext>>
 }
 
 fn con_from_backlog((addr, socket): (OsSocketAddr, Pin<Arc<UtpSocket>>)) -> (Connection, SocketAddr) {
@@ -506,7 +504,7 @@ impl Endpoint {
     pub fn new(socket: Arc<UdpSocket>, backlog: usize) -> Self {
         let ctx = UtpContext::new(socket, backlog);
 
-        let read_task = {
+        let _read_task = {
             let socket = ctx.socket.clone();
             let ctx = PinWeak::downgrade(ctx.clone());
             task::spawn(async move {
@@ -541,7 +539,7 @@ impl Endpoint {
             })
         };
 
-        let timeout_task = {
+        let _timeout_task = {
             let ctx = PinWeak::downgrade(ctx.clone());
             task::spawn(async move {
                 let mut int = interval(Duration::from_millis(500));
@@ -560,7 +558,7 @@ impl Endpoint {
             })
         };
 
-        Self { ctx, read_task, timeout_task }
+        Self { ctx }
     }
 
     pub fn poll_accept(&self, cx: &mut Context<'_>) -> Poll<io::Result<(Connection, SocketAddr)>> {
@@ -622,13 +620,6 @@ impl Endpoint {
             write: None,
             shutdown: None
         })
-    }
-}
-
-impl Drop for Endpoint {
-    fn drop(&mut self) {
-        self.read_task.abort();
-        self.timeout_task.abort();
     }
 }
 
