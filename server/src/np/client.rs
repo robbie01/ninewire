@@ -1,7 +1,7 @@
-use std::{collections::HashMap, future::{ready, Future}, pin::{pin, Pin}, sync::Arc, task::{Context, Poll}};
+use std::{collections::HashMap, future::{ready, Future}, pin::{pin, Pin}, sync::Arc, task::{Context, Poll, Waker}};
 
 use bytestring::ByteString;
-use futures::{io, stream::FuturesUnordered, FutureExt as _, SinkExt as _, StreamExt as _};
+use futures::{io, stream::FuturesUnordered, FutureExt as _, SinkExt as _, Stream, StreamExt as _};
 use pin_project::pin_project;
 use tokio::{io::{AsyncRead, AsyncWrite}, sync::RwLock};
 use tokio_util::codec::LengthDelimitedCodec;
@@ -228,6 +228,10 @@ async fn dispatch<S: Serve>(
     }
 }
 
+fn poll_no_context<S: Stream + Unpin>(stream: &mut S) -> Poll<Option<S::Item>> {
+    stream.poll_next_unpin(&mut Context::from_waker(Waker::noop()))
+}
+
 pub async fn handle_client<S: Serve>(
     peer: impl AsyncRead + AsyncWrite,
     handler: Arc<S>
@@ -340,15 +344,27 @@ pub async fn handle_client<S: Serve>(
                     }
                 }
             },
-            Some((tag, flushes, resp)) = inflight.next() => {
-                let resp = resp
-                    .serialize(tag)
-                    .unwrap_or_else(|e| Rerror::from(e).serialize(tag).unwrap());
+            Some((mut tag, mut flushes, mut resp)) = inflight.next() => {
+                // Desperate attempt to replicate the behavior of StreamExt::forward
+                // (Maybe I should just implement my own buffered stream at this point?)
+                loop {
+                    let serialized = resp
+                        .serialize(tag)
+                        .unwrap_or_else(|e| Rerror::from(e).serialize(tag).unwrap());
 
-                framed.feed(resp).await?;
+                    framed.feed(serialized).await?;
 
-                if let Some(flush) = flushes {
-                    framed.feed(Rflush.serialize(flush).unwrap()).await?;
+                    if let Some(flush) = flushes {
+                        framed.feed(Rflush.serialize(flush).unwrap()).await?;
+                    }
+
+                    if let Poll::Ready(Some(tfr)) = poll_no_context(&mut inflight) {
+                        tag = tfr.0;
+                        flushes = tfr.1;
+                        resp = tfr.2;
+                    } else {
+                        break;
+                    }
                 }
 
                 framed.flush().await?;
