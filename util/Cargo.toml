@@ -9,5 +9,7 @@ tokio.workspace = true
 tokio-util = { workspace = true, features = ["io"] }
 futures.workspace = true
 pin-project.workspace = true
+rand.workspace = true
 
+polymur-hash = "0.2"
 snow = "0.10.0-alpha.1"

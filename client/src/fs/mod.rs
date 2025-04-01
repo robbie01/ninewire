@@ -18,7 +18,7 @@ pub use dir::*;
 pub use readdir::*;
 pub use file::*;
 use tracing::trace;
-use util::fidpool::{FidHandle, FidPool};
+use util::{fidpool::{FidHandle, FidPool}, polymur};
 
 #[derive(Debug)]
 struct Request {
@@ -82,7 +82,7 @@ impl Filesystem {
 
             let mut tags = TagPool::default();
 
-            let mut replies = HashMap::new();
+            let mut replies = HashMap::<_, _, polymur::RandomState>::default();
 
             loop {
                 tokio::select! {

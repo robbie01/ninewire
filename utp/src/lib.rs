@@ -6,8 +6,8 @@ use futures::task::AtomicWaker;
 use os_socketaddr::OsSocketAddr;
 use parking_lot::{Mutex, ReentrantMutex};
 use pin_weak::sync::PinWeak;
-use ringbuf::{traits::{Consumer, Observer, Producer}, wrap::{FrozenCons, FrozenProd}, HeapRb};
-use rsevents::{AutoResetEvent, Awaitable};
+use ringbuf::{traits::{Consumer as _, Observer as _, Producer as _}, wrap::{FrozenCons, FrozenProd}, HeapRb};
+use rsevents::{AutoResetEvent, Awaitable as _};
 use tokio::{io::{AsyncRead, AsyncWrite, ReadBuf}, net::UdpSocket, runtime::{Handle, RuntimeFlavor}, sync::Notify, task::{self, JoinHandle}, time::{interval, MissedTickBehavior}};
 use tokio_util::net::Listener;
 use tracing::warn;
@@ -68,8 +68,8 @@ unsafe fn socket_userdata(handle: *mut utp_socket) -> Option<NonNull<UtpSocket>>
     NonNull::new(unsafe { utp_get_userdata(handle) }.cast())
 }
 
-// The single most problematic callback here. It ruins EVERYTHING and makes the
-// entire API blocking.
+// The single most problematic callback here. It ruins EVERYTHING and makes
+// almost the entire API blocking.
 // The alternative is to queue up writes, but there's no clean way to apply backpressure
 // on that front.
 extern "C" fn sendto(args: *mut utp_callback_arguments) -> u64 {
@@ -155,7 +155,7 @@ extern "C" fn on_accept(args: *mut utp_callback_arguments) -> u64 {
 
     let (ctx, socket, addr) = unsafe {
         let Some(ctx) = ctx_userdata((*args).context) else { return 0 };
-        
+
         let socket = {
             let ctx = ctx.as_ptr();
             Arc::increment_strong_count(ctx);
@@ -521,14 +521,15 @@ impl Endpoint {
 
                 if ctx.strong_count() == 0 { return Ok(()) }
 
-                // This is by far the worst use of both allocation and a mutex here.
+                // This is by far the worst use a mutex here.
                 // It's so pointless, but it's needed to make spawn_blocking work :/
                 let read_buf = Arc::new(Mutex::new(BytesMut::with_capacity(65535)));
 
                 loop {
                     tokio::select! {
-                        res = socket.readable() => { res?; },
-                        () = &mut drop_notification => {}
+                        biased;
+                        () = &mut drop_notification => {},
+                        res = socket.readable() => { res?; }
                     };
 
                     let Some(ctx) = ctx.upgrade() else { break };
@@ -573,8 +574,9 @@ impl Endpoint {
                 int.set_missed_tick_behavior(MissedTickBehavior::Delay);
                 loop {
                     tokio::select! {
+                        biased;
+                        () = &mut drop_notification => {},
                         _ = int.tick() => {}
-                        () = &mut drop_notification => {}
                     };
                     let Some(ctx) = ctx.upgrade() else { break };
 

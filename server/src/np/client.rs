@@ -1,12 +1,12 @@
-use std::{collections::HashMap, future::Future, pin::{pin, Pin}, sync::Arc, task::{Context, Poll}};
+use std::{collections::HashMap, future::{ready, Future}, pin::{pin, Pin}, sync::Arc, task::{Context, Poll}};
 
 use bytestring::ByteString;
-use futures::{io, stream::FuturesUnordered, SinkExt, StreamExt};
+use futures::{io, stream::FuturesUnordered, FutureExt as _, SinkExt as _, StreamExt as _};
 use pin_project::pin_project;
 use tokio::{io::{AsyncRead, AsyncWrite}, sync::RwLock};
 use tokio_util::codec::LengthDelimitedCodec;
 use npwire::*;
-use util::noise::{NoiseStream, Side};
+use util::{noise::{NoiseStream, Side}, polymur};
 
 use super::{traits::{OpenResource as _, PathResource as _, Resource as _}, Serve};
 
@@ -20,7 +20,7 @@ enum Resource<S: Serve> {
 }
 
 struct ResourceManager<S: Serve> {
-    resources: RwLock<HashMap<u32, Resource<S>>>,
+    resources: RwLock<HashMap<u32, Resource<S>, polymur::RandomState>>,
     handler: Arc<S>,
 }
 
@@ -51,7 +51,7 @@ const fn rerror(ename: &'static str) -> Rerror {
 }
 
 async fn dispatch<S: Serve>(
-    resource_mgr: Arc<ResourceManager<S>>,
+    resource_mgr: &ResourceManager<S>,
     request: TMessage,
     maxlen: usize
 ) -> Result<RMessage, Rerror> {
@@ -232,10 +232,10 @@ pub async fn handle_client<S: Serve>(
     peer: impl AsyncRead + AsyncWrite,
     handler: Arc<S>
 ) -> io::Result<()> {
-    let resource_mgr = Arc::new(ResourceManager {
+    let resource_mgr = ResourceManager {
         resources: RwLock::default(),
         handler: handler.clone(),
-    });
+    };
 
     let peer = pin!(peer);
     let peer = NoiseStream::new(peer, Side::Responder { local_private_key: &super::PRIVATE_KEY }).await?;
@@ -246,7 +246,7 @@ pub async fn handle_client<S: Serve>(
         .max_frame_length(MAX_MESSAGE_SIZE as usize - 4)
         .new_framed(peer);
 
-    let mut inflight = pin!(FuturesUnordered::<TaggedFuture<_>>::new());
+    let mut inflight = pin!(FuturesUnordered::new());
 
     let mut initialized = false;
     let mut next_session = None;
@@ -272,7 +272,11 @@ pub async fn handle_client<S: Serve>(
             }
         }
 
+        // 2024-03-31: I have realized that I reinvented StreamExt::buffer_unordered
+        // from first principles. Luckily, that method doesn't actually work directly
+        // with what I need to do because of the flush stuff.
         tokio::select! {
+            biased;
             Some(incoming) = framed.next(), if inflight.len() < MAX_IN_FLIGHT && next_session.is_none() => {
                 let incoming = incoming?;
 
@@ -290,45 +294,53 @@ pub async fn handle_client<S: Serve>(
                                 if tag == !0 {
                                     next_session = Some(tversion);
                                 } else {
-                                    framed.send(rerror(
-                                        "Tversion: invalid tag"
-                                    ).serialize(tag).unwrap()).await?;
+                                    inflight.push(TaggedFuture {
+                                        tag,
+                                        flushes: None,
+                                        hdl: ready(rerror(
+                                            "Tversion: invalid tag"
+                                        ).into()).right_future()
+                                    });
                                 }
                             },
                             TMessage::Tflush(Tflush { oldtag }) => {
                                 if let Some(flushes) = inflight.as_mut().iter_pin_mut().find_map(|h| (h.tag == oldtag).then_some(h.project().flushes)) {
                                     *flushes = Some(tag);
                                 } else {
-                                    framed.send(Rflush.serialize(tag).unwrap()).await?;
+                                    inflight.push(TaggedFuture {
+                                        tag,
+                                        flushes: None,
+                                        hdl: ready(Rflush.into()).right_future()
+                                    });
                                 }
                             },
                             req => {
                                 inflight.push(TaggedFuture {
                                     tag,
                                     flushes: None,
-                                    hdl: tokio::spawn(dispatch(
-                                        resource_mgr.clone(),
+                                    hdl: dispatch(
+                                        &resource_mgr,
                                         req,
                                         framed.codec().max_frame_length()
-                                    ))
+                                    ).map(|resp| resp.unwrap_or_else(RMessage::from)).left_future()
                                 });
                             }
                         }
                     },
                     Err(e) => {
                         if let Some(tag) = e.tag() {
-                            framed.send(Rerror {
-                                ename: e.to_string().into()
-                            }.serialize(tag).unwrap()).await?;
+                            inflight.push(TaggedFuture {
+                                tag,
+                                flushes: None,
+                                hdl: ready(Rerror {
+                                    ename: e.to_string().into()
+                                }.into()).right_future()
+                            });
                         }
                     }
                 }
             },
             Some((tag, flushes, resp)) = inflight.next() => {
-                let resp = resp
-                    .unwrap_or_else(|e| Err(e.into()))
-                    .unwrap_or_else(RMessage::from);
-
                 let resp = resp
                     .serialize(tag)
                     .unwrap_or_else(|e| Rerror::from(e).serialize(tag).unwrap());
@@ -344,6 +356,8 @@ pub async fn handle_client<S: Serve>(
             else => break
         }
     }
+
+    framed.close().await?;
 
     Ok(())
 }
