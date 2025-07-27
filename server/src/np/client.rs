@@ -308,8 +308,8 @@ pub async fn handle_client<S: Serve>(
                                 }
                             },
                             TMessage::Tflush(Tflush { oldtag }) => {
-                                if let Some(flushes) = inflight.as_mut().iter_pin_mut().find_map(|h| (h.tag == oldtag).then_some(h.project().flushes)) {
-                                    *flushes = Some(tag);
+                                if let Some(fut) = inflight.as_mut().iter_pin_mut().find(|h| h.tag == oldtag) {
+                                    *fut.project().flushes = Some(tag);
                                 } else {
                                     inflight.push(TaggedFuture {
                                         tag,

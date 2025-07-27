@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = [ "client", "noiseproxy", "npwire","server", "util", "utp", "utp-example", "utp-sys"]
+members = [ "client", "noiseproxy", "npwire","server", "udt", "udt-example", "udt-sys", "ui", "ui2", "util", "utp", "utp-example", "utp-sys"]
 
 [workspace.dependencies]
 util.path = "./util"

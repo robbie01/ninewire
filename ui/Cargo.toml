@@ -1,0 +1,10 @@
+[package]
+name = "ui"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1"
+freetype-rs = "0.38"
+softbuffer = "0.4"
+winit = "0.30"
