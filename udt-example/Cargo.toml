@@ -6,3 +6,5 @@ edition = "2024"
 [dependencies]
 anyhow = "1"
 udt = { path = "../udt" }
+transport = { path = "../transport" }
+tokio = { workspace = true, features = ["macros", "rt", "time"] }

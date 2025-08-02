@@ -3456,6 +3456,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "range-set"
+version = "0.0.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7cbe9a626109ba0bb8c4e84b5b56fca85cfc92c02c209b756a95a0eeef7731eb"
+dependencies = [
+ "num-traits",
+ "smallvec",
+]
+
+[[package]]
 name = "raw-window-handle"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3862,16 +3872,15 @@ dependencies = [
 
 [[package]]
 name = "snow"
-version = "0.10.0-alpha.1"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e55510cf1cf5094776adcdc1141531281f3a7e3f4840c02f0495b489b766f7aa"
+checksum = "599b506ccc4aff8cf7844bc42cf783009a434c1e26c964432560fb6d6ad02d82"
 dependencies = [
  "aes-gcm",
  "blake2",
- "byteorder",
  "chacha20poly1305",
  "curve25519-dalek",
- "rand_core 0.6.4",
+ "getrandom 0.3.2",
  "ring",
  "rustc_version",
  "sha2",
@@ -4349,6 +4358,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "transport"
+version = "0.1.0"
+dependencies = [
+ "range-set",
+ "snow",
+ "udt",
+]
+
+[[package]]
 name = "triomphe"
 version = "0.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4399,6 +4417,7 @@ dependencies = [
  "cfg-if",
  "libc",
  "os_socketaddr",
+ "tokio",
  "udt-sys",
 ]
 
@@ -4407,6 +4426,8 @@ name = "udt-example"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "tokio",
+ "transport",
  "udt",
 ]
 

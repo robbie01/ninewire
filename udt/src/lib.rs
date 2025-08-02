@@ -1,3 +1,4 @@
+pub mod nb;
 mod instance;
 mod util;
 use std::{i32, io::{self, Read, Write}, mem, net::SocketAddr, ptr, time::Duration};
@@ -337,7 +338,7 @@ impl DatagramListener {
 }
 
 impl DatagramConnection {
-        fn local_addr_os(&self) -> io::Result<OsSocketAddr> {
+    fn local_addr_os(&self) -> io::Result<OsSocketAddr> {
         let mut addr = OsSocketAddr::new();
         let mut namelen = addr.len() as i32;
         let res = unsafe { udt_sys::getsockname(self.u, addr.as_mut_ptr().cast(), &mut namelen) };
@@ -390,6 +391,14 @@ impl DatagramConnection {
     pub fn send(&self, buf: &[u8]) -> io::Result<usize> {
         self.send_with(buf, None, true)
     }
+
+    pub fn flush(&self) -> io::Result<()> {
+        let res = unsafe { udt_sys::flush(self.u) };
+        if res == -1 {
+            return Err(udt_getlasterror());
+        }
+        Ok(())
+    }
 }
 
 impl Drop for Endpoint {
@@ -406,7 +415,18 @@ impl Drop for StreamListener {
 
 impl Drop for StreamConnection {
     fn drop(&mut self) {
-        unsafe { udt_sys::close(self.u) };
+        // Force a non-blocking close. UDT will send lingering data in a background thread.
+        let sndsyn = false;
+        unsafe {
+            udt_sys::setsockopt(
+                self.u,
+                0,
+                udt_sys::SocketOption::SendSyn,
+                (&sndsyn as *const bool).cast(),
+                mem::size_of::<bool>() as i32
+            );
+            udt_sys::close(self.u)
+        };
     }
 }
 
@@ -418,6 +438,17 @@ impl Drop for DatagramListener {
 
 impl Drop for DatagramConnection {
     fn drop(&mut self) {
-        unsafe { udt_sys::close(self.u) };
+        // Force a non-blocking close. UDT will send lingering data in a background thread.
+        let sndsyn = false;
+        unsafe {
+            udt_sys::setsockopt(
+                self.u,
+                0,
+                udt_sys::SocketOption::SendSyn,
+                (&sndsyn as *const bool).cast(),
+                mem::size_of::<bool>() as i32
+            );
+            udt_sys::close(self.u)
+        };
     }
 }

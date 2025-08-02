@@ -1,0 +1,106 @@
+use std::{io, net::SocketAddr, ops::RangeInclusive, sync::{atomic::{AtomicU64, Ordering}, Arc, Mutex}};
+
+use range_set::RangeSet;
+use snow::StatelessTransportState;
+use udt::{nb::{DatagramConnection, EndpointExt as _}, Endpoint};
+
+#[derive(Debug)]
+pub struct SecureTransport {
+    inner: DatagramConnection,
+    crypto: StatelessTransportState,
+    nonce_outgoing: AtomicU64,
+    // There's a potential DoS here. A malicious sender could only use non-consecutive nonces
+    // (i.e. all evens) and force the receiver to allocate a ton of memory here. We should
+    // terminate the connection if there's an unreasonable number of nonce gaps.
+    // This shouldn't affect well-behaved senders because we don't expire any messages.
+    nonce_incoming: Mutex<RangeSet<[RangeInclusive<u64>; 1]>>
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum Side<'a> {
+    Initiator { remote_public_key: &'a [u8] },
+    Responder { local_private_key: &'a [u8] }
+}
+
+impl SecureTransport {
+    // Feature: add support for 0/0.5 RTT data (e.g. a fast Tversion/Rversion)
+    // Of course, fast-open is a pipe dream considering the very nature of rendezvous sockets.
+    pub async fn connect(ep: &Arc<Endpoint>, addr: SocketAddr, side: Side<'_>) -> io::Result<Self> {
+        let inner = ep.connect_datagram_async(addr, true).await?;
+        let crypto = snow::Builder::new("Noise_NK_25519_AESGCM_SHA256".parse().unwrap());
+        let mut crypto = match side {
+            Side::Initiator { remote_public_key } => crypto
+                .remote_public_key(remote_public_key).unwrap()
+                .build_initiator().unwrap(),
+            Side::Responder { local_private_key } => crypto
+                .local_private_key(local_private_key).unwrap()
+                .build_responder().unwrap()
+        };
+
+        // Reasonable yet lean buffer size for pure handshake messages
+        let mut buf = [0; 64];
+        while !crypto.is_handshake_finished() {
+            if crypto.is_my_turn() {
+                let n = crypto.write_message(&[], &mut buf).map_err(io::Error::other)?;
+                inner.send(&buf[..n], None, true).await?;
+            } else {
+                let n = inner.recv(&mut buf).await?;
+                crypto.read_message(&buf[..n], &mut []).map_err(io::Error::other)?;
+            }
+        }
+
+        Ok(Self {
+            inner,
+            crypto: crypto.into_stateless_transport_mode().map_err(io::Error::other)?,
+            nonce_outgoing: AtomicU64::new(0),
+            nonce_incoming: RangeSet::new().into()
+        })
+    }
+
+    pub fn local_addr(&self) -> io::Result<SocketAddr> {
+        self.inner.local_addr()
+    }
+
+    pub fn remote_addr(&self) -> io::Result<SocketAddr> {
+        self.inner.remote_addr()
+    }
+
+    pub async fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
+        let mut tmp = vec![0; buf.len() + 8 + 16];
+
+        let (mut guard, nonce) = loop {
+            let n = self.inner.recv(&mut tmp).await?;
+            let nonce = u64::from_be_bytes(tmp[..8].try_into().unwrap());
+            
+            let guard = self.nonce_incoming.lock().unwrap();
+            if !guard.contains(nonce) {
+                tmp.truncate(n);
+                break (guard, nonce)
+            }
+        };
+
+        let res = self.crypto.read_message(nonce, &tmp[8..], buf).map_err(io::Error::other);
+        guard.insert(nonce);
+        res
+    }
+
+    pub async fn send_with(&self, buf: &[u8], inorder: bool) -> io::Result<usize> {
+        let nonce = self.nonce_outgoing.fetch_add(1, Ordering::Relaxed);
+
+        let mut tmp = vec![0; buf.len() + 8 + 16];
+        let n = self.crypto.write_message(nonce, buf, &mut tmp[8..]).map_err(io::Error::other)?;
+        assert_eq!(n, tmp.len() - 8);
+
+        tmp[..8].copy_from_slice(&nonce.to_be_bytes());
+
+        // Force inorder if the nonce is 0 so that transport messages aren't reordered behind handshake messages
+        let n = self.inner.send(&tmp, None, inorder || nonce == 0).await?;
+        assert_eq!(n, tmp.len());
+
+        Ok(buf.len())
+    }
+
+    pub fn flush(&self) -> impl Future<Output = io::Result<()>> {
+        self.inner.flush()
+    }
+}
