@@ -1,0 +1,40 @@
+syntax = "proto3";
+package ninewire.mediator;
+
+service Mediator {
+    rpc Register (stream RegisterRequest) returns (stream RegisterReply);
+    rpc Rendezvous (RendezvousRequest) returns (RendezvousReply);
+}
+
+message Endpoint {
+    bytes addr = 1;
+    uint32 port = 2;
+    bytes pubkey = 3;
+}
+
+message Registration {
+    string name = 1;
+    Endpoint endpoint = 2;
+}
+
+message RegisterRequest {
+    oneof req {
+        Registration registration = 1;
+        uint64 approve_id = 2;
+        uint64 deny_id = 3;
+    }
+}
+
+message RegisterReply {
+    uint64 request_id = 1;
+    Endpoint endpoint = 2;
+}
+
+message RendezvousRequest {
+    string name = 1;
+    Endpoint endpoint = 2;
+}
+
+message RendezvousReply {
+    Endpoint endpoint = 1;
+}

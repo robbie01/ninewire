@@ -1,0 +1,15 @@
+[package]
+name = "mediator"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow.workspace = true
+tonic = { version = "0.14", features = ["server"] }
+mediator-proto.path = "../mediator-proto"
+tonic-reflection = { version = "0.14", features = ["server"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync"] }
+tokio-util.workspace = true
+ctrlc = "3.4"
+scc = "2.3"
+tokio-stream = "0.1"

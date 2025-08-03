@@ -44,6 +44,18 @@ impl Rread {
     }
 }
 
+impl Rreads {
+    pub fn serialize(&self, tag: u16) -> Result<Bytes, SerializeError> {
+        let mut buf = BytesMut::with_capacity(15 + self.data.len());
+        buf.put_u8(TypeId::Rreads.into());
+        buf.put_u16_le(tag);
+        buf.put_u64_le(self.offset);
+        buf.put_u32_le(self.data.len().try_into().map_err(|_| SerializeError)?);
+        buf.put(&self.data[..]);
+        Ok(buf.freeze())
+    }
+}
+
 impl Rwrite {
     pub fn serialize(&self, tag: u16) -> Result<Bytes, SerializeError> {
         let mut buf = BytesMut::with_capacity(7);
@@ -153,6 +165,7 @@ impl Rerror {
 impl RMessage {
     pub fn serialize(&self, tag: u16) -> Result<Bytes, SerializeError> {
         match self {
+            RMessage::Rreads(v) => v.serialize(tag),
             RMessage::Rversion(v) => v.serialize(tag),
             RMessage::Rauth(v) => v.serialize(tag),
             RMessage::Rflush(v) => v.serialize(tag),

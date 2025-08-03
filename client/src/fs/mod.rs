@@ -26,7 +26,7 @@ struct Request {
     reply_to: oneshot::Sender<RMessage>
 }
 
-const MAX_MESSAGE_SIZE: u32 = 65535 - 16;
+const MAX_MESSAGE_SIZE: u32 = 1280 - 64 - 8 - 16;
 
 #[derive(Debug)]
 pub(crate) struct FilesystemInner {

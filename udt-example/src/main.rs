@@ -15,10 +15,10 @@ async fn main() -> anyhow::Result<()> {
         println!("A: bound to {:?}", l.local_addr()?);
         let r = SecureTransport::connect(&l, "[::1]:25584".parse()?, transport::Side::Responder { local_private_key: &PRIVATE_KEY }).await?;
         println!("A: connected to {:?}", r.remote_addr()?);
-        let mut msg = [0; 1024];
+        let mut msg = [0; 30000];
         let len = r.recv(&mut msg).await?;
         let msg = String::from_utf8_lossy(&msg[..len]);
-        println!("A: received message {:?}", msg);
+        println!("A: received message {:?}", msg.len());
         Ok::<(), anyhow::Error>(())
     });
 
@@ -28,13 +28,14 @@ async fn main() -> anyhow::Result<()> {
         println!("B: bound to {:?}", l.local_addr()?);
         let c = SecureTransport::connect(&l, "[::1]:25583".parse()?, transport::Side::Initiator { remote_public_key: &PUBLIC_KEY }).await?;
         println!("B: connected to {:?}", c.remote_addr()?);
-        c.send_with(b"Hello, world!", true).await?;
+        c.send_with(&[b'o'; 1192], false).await?;
+        c.send_with(&[b'a'; 1192], false).await?;
         c.flush().await?;
         // println!("B: sent {len} bytes");
         Ok::<(), anyhow::Error>(())
     });
         
-    js.join_all().await;
+    println!("{:?}", js.join_all().await);
     sleep(Duration::from_millis(10)).await;
     Ok(())
 }

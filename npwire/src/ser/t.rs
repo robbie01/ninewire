@@ -97,6 +97,18 @@ impl Tread {
     }
 }
 
+impl Treads {
+    pub fn serialize(&self, tag: u16) -> Result<Bytes, SerializeError> {
+        let mut buf = BytesMut::with_capacity(16);
+        buf.put_u8(TypeId::Tread.into());
+        buf.put_u16_le(tag);
+        buf.put_u32_le(self.fid);
+        buf.put_u64_le(self.offset);
+        buf.put_u32_le(self.count);
+        Ok(buf.freeze())
+    }
+}
+
 impl Twrite {
     pub fn serialize(&self, tag: u16) -> Result<Bytes, SerializeError> {
         let mut buf = BytesMut::with_capacity(16 + self.data.len());
@@ -161,6 +173,7 @@ impl Twstat {
 impl TMessage {
     pub fn serialize(&self, tag: u16) -> Result<Bytes, SerializeError> {
         match self {
+            TMessage::Treads(m) => m.serialize(tag),
             TMessage::Tversion(m) => m.serialize(tag),
             TMessage::Tauth(m) => m.serialize(tag),
             TMessage::Tflush(m) => m.serialize(tag),

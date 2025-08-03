@@ -12,10 +12,10 @@ bytes.workspace = true
 bytestring.workspace = true
 tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros", "net", "io-util", "fs", "full", "tracing"] }
 tokio-util = { workspace = true, features = ["net"] }
-utp.workspace = true
 futures.workspace = true
 pin-project.workspace = true
 rand.workspace = true
+udt.path = "../udt"
 
 console-subscriber = "0.4"
 cfg-if = "1"

@@ -11,7 +11,11 @@ use util::{noise::{NoiseStream, Side}, polymur};
 use super::{traits::{OpenResource as _, PathResource as _, Resource as _}, Serve};
 
 const MAX_IN_FLIGHT: usize = 16;
-const MAX_MESSAGE_SIZE: u32 = 65535 - 16;
+
+// 1280: IPv6 MTU
+// 64: UDT combined overhead (IP+UDP+UDT)
+// 8/16: nonce/tag
+const MAX_MESSAGE_SIZE: u32 = 1280 - 64 - 8 - 16;
 
 #[derive(Debug)]
 enum Resource<S: Serve> {
@@ -173,6 +177,9 @@ async fn dispatch<S: Serve>(
                 Err(rerror("fid not open for read"))
             }
         },
+        TMessage::Treads(_) => {
+            Err(rerror("not implemented"))
+        }
         TMessage::Twrite(Twrite { fid, offset, data }) => {
             let resources = resource_mgr.resources.read().await;
             let resource = resources.get(&fid).ok_or_else(|| rerror("fid invalid"))?;
@@ -276,7 +283,7 @@ pub async fn handle_client<S: Serve>(
             }
         }
 
-        // 2024-03-31: I have realized that I reinvented StreamExt::buffer_unordered
+        // 2025-03-31: I have realized that I reinvented StreamExt::buffer_unordered
         // from first principles. Luckily, that method doesn't actually work directly
         // with what I need to do because of the flush stuff.
         tokio::select! {

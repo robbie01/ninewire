@@ -52,6 +52,18 @@ impl Tread {
     }
 }
 
+impl Treads {
+    fn deserialize(mut buf: Bytes, tag: u16) -> Result<Self, DeserializeError> {
+        let fid = buf.try_get_u32_le().map_err(|_| DeserializeError::TooShort { tag: Some(tag) })?;
+        let offset = buf.try_get_u64_le().map_err(|_| DeserializeError::TooShort { tag: Some(tag) })?;
+        let count = buf.try_get_u32_le().map_err(|_| DeserializeError::TooShort { tag: Some(tag) })?;
+        if !buf.is_empty() {
+            return Err(DeserializeError::TooLong { tag });
+        }
+        Ok(Self { fid, offset, count })
+    }
+}
+
 impl Twrite {
     fn deserialize(mut buf: Bytes, tag: u16) -> Result<Self, DeserializeError> {
         let fid = buf.try_get_u32_le().map_err(|_| DeserializeError::TooShort { tag: Some(tag) })?;
@@ -169,6 +181,7 @@ pub fn deserialize_t(mut buf: Bytes) -> Result<(u16, TMessage), DeserializeError
     };
 
     Ok((tag, match type_ {
+        TypeId::Treads => Treads::deserialize(buf, tag)?.into(),
         TypeId::Tversion => Tversion::deserialize(buf, tag)?.into(),
         TypeId::Tflush => Tflush::deserialize(buf, tag)?.into(),
         TypeId::Twalk => Twalk::deserialize(buf, tag)?.into(),

@@ -1,8 +1,8 @@
-use std::{io, net::Ipv6Addr, sync::Arc, time::Duration};
+use std::{io, net::Ipv6Addr, time::Duration};
 
 use bytestring::ByteString;
 use fs::{Directory, FileReader, Filesystem};
-use tokio::{io::AsyncReadExt as _, net::UdpSocket, time};
+use tokio::{io::AsyncReadExt as _, net::TcpStream, time};
 
 pub mod fs;
 
@@ -39,9 +39,7 @@ async fn tree(dir: &Directory) -> io::Result<()> {
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
     
-    let sock = Arc::new(UdpSocket::bind((Ipv6Addr::UNSPECIFIED, 0)).await?);
-    let ep = utp::Endpoint::new(sock, 0);
-    let con = ep.connect((Ipv6Addr::LOCALHOST, 64444)).await?;
+    let con = TcpStream::connect((Ipv6Addr::LOCALHOST, 64444)).await?;
     let noise = util::noise::NoiseStream::new(
         con,
         util::noise::Side::Initiator { remote_public_key: &PUBLIC_KEY }

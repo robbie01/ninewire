@@ -7,6 +7,11 @@ use bytes::Bytes;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, IntEnum)]
 #[repr(u8)]
 pub enum TypeId {
+    // 9P2000.w (bulk read extension)
+    Treads = 30,
+    Rreads = 31,
+
+    // 9P2000
     Tversion = 100,
     Rversion = 101,
     Tauth = 102,
@@ -215,6 +220,19 @@ pub struct Rread {
     pub data: Bytes,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct Treads {
+    pub fid: u32,
+    pub offset: u64,
+    pub count: u32,
+}
+
+#[derive(Debug, Clone)]
+pub struct Rreads {
+    pub offset: u64,
+    pub data: Bytes,
+}
+
 #[derive(Debug, Clone)]
 pub struct Twrite {
     pub fid: u32,
@@ -264,6 +282,7 @@ pub struct Rwstat;
 
 #[derive(Clone)]
 pub enum TMessage {
+    Treads(Treads),
     Tversion(Tversion),
     Tauth(Tauth),
     Tflush(Tflush),
@@ -282,6 +301,7 @@ pub enum TMessage {
 impl Debug for TMessage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::Treads(inner) => Debug::fmt(inner, f),
             Self::Tversion(inner) => Debug::fmt(inner, f),
             Self::Tauth(inner) => Debug::fmt(inner, f),
             Self::Tflush(inner) => Debug::fmt(inner, f),
@@ -296,6 +316,12 @@ impl Debug for TMessage {
             Self::Tstat(inner) => Debug::fmt(inner, f),
             Self::Twstat(inner) => Debug::fmt(inner, f),
         }
+    }
+}
+
+impl From<Treads> for TMessage {
+    fn from(value: Treads) -> Self {
+        Self::Treads(value)
     }
 }
 
@@ -379,6 +405,7 @@ impl From<Twstat> for TMessage {
 
 #[derive(Clone)]
 pub enum RMessage {
+    Rreads(Rreads),
     Rversion(Rversion),
     Rauth(Rauth),
     Rerror(Rerror),
@@ -398,6 +425,7 @@ pub enum RMessage {
 impl Debug for RMessage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::Rreads(inner) => Debug::fmt(inner, f),
             Self::Rversion(inner) => Debug::fmt(inner, f),
             Self::Rauth(inner) => Debug::fmt(inner, f),
             Self::Rerror(inner) => Debug::fmt(inner, f),

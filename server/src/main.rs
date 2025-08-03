@@ -1,9 +1,10 @@
-use std::{collections::HashMap, convert::Infallible, io, net::Ipv6Addr, path::PathBuf, sync::{atomic::{AtomicU64, Ordering}, Arc}};
+use std::{collections::HashMap, io, path::PathBuf, sync::{atomic::{AtomicU64, Ordering}, Arc}};
 
 use anyhow::bail;
 use bytestring::ByteString;
+use futures::stream;
 use np::traits;
-use tokio::net::UdpSocket;
+use tokio::net::TcpListener;
 
 mod np;
 mod res;
@@ -66,11 +67,11 @@ impl traits::Serve for Handler {
 
 
 #[tokio::main]
-async fn main() -> io::Result<Infallible> {
+async fn main() -> io::Result<()> {
     console_subscriber::init();
 
-    let sock = Arc::new(UdpSocket::bind((Ipv6Addr::UNSPECIFIED, 64444)).await?);
-    let listener = utp::Endpoint::new(sock, 16);
+    let endpoint = TcpListener::bind("[::]:64444").await?;
+    let listener = stream::poll_fn(|cx| endpoint.poll_accept(cx).map(Some));
 
     np::serve_mux(Arc::new(Handler::new([
         ("forfun".into(), "forfun".into()),

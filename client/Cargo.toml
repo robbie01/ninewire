@@ -14,5 +14,4 @@ tokio = { workspace = true, features = ["rt", "macros", "net", "io-util", "time"
 tokio-util.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
-utp.workspace = true
 futures.workspace = true

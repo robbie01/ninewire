@@ -5,6 +5,5 @@ edition = "2024"
 
 [dependencies]
 util.workspace = true
-utp.workspace = true
 
 tokio = { workspace = true, features = ["rt", "macros", "net", "io-util"] }
