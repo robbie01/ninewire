@@ -236,7 +236,7 @@ int CEPoll::remove_ssock(const int eid, const SYSSOCKET& s)
 int CEPoll::wait(const int eid, set<UDTSOCKET>* readfds, set<UDTSOCKET>* writefds, int64_t msTimeOut, set<SYSSOCKET>* lrfds, set<SYSSOCKET>* lwfds)
 {
    // if all fields is NULL and waiting time is infinite, then this would be a deadlock
-   if (!readfds && !writefds && !lrfds && lwfds && (msTimeOut < 0))
+   if (!readfds && !writefds && !lrfds && !lwfds && (msTimeOut < 0))
       throw CUDTException(5, 3, 0);
 
    // Clear these sets in case the app forget to do it.

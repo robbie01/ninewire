@@ -2,7 +2,7 @@ use std::{io, net::SocketAddr, ops::RangeInclusive, sync::{atomic::{AtomicU64, O
 
 use range_set::RangeSet;
 use snow::StatelessTransportState;
-use udt::{nb::{DatagramConnection, EndpointExt as _}, Endpoint};
+use udt::{nb::DatagramConnection, Endpoint};
 
 #[derive(Debug)]
 pub struct SecureTransport {

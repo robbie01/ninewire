@@ -4723,6 +4723,7 @@ dependencies = [
  "libc",
  "os_socketaddr",
  "parking_lot",
+ "rustix 1.0.5",
  "tokio",
  "udt-sys",
  "weak-table",

@@ -11,3 +11,4 @@ cfg-if = "1"
 tokio = { workspace = true, features = ["rt"] }
 parking_lot = "0.12"
 weak-table = "0.3"
+rustix = { version = "1", features = ["fs"] }
