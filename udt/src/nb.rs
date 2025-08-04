@@ -20,8 +20,8 @@ struct Poller {
     eid: i32,
     introduced: Mutex<HashSet<udt_sys::Socket>>,
     pollers: Mutex<WeakValueHashMap<(udt_sys::Socket, Watcher), Weak<Notify>>>,
-    pr: Mutex<PipeReader>,
-    pw: Mutex<PipeWriter>
+    pr: PipeReader,
+    pw: PipeWriter
 }
 
 fn set_nonblocking<Fd: AsFd>(fd: Fd) -> io::Result<()> {
@@ -51,8 +51,7 @@ impl Poller {
             eid,
             introduced: Default::default(),
             pollers: Default::default(),
-            pr: Mutex::new(pr),
-            pw: Mutex::new(pw)
+            pr, pw
         })
     }
 
@@ -72,9 +71,9 @@ impl Poller {
             return Err(udt_getlasterror());
         }
         if !lrfds.is_empty() {
-            println!("woken up");
+            // println!("woken up");
             let mut buf = [0; 1];
-            while let Ok(_) = self.pr.lock().read(&mut buf) {}
+            while let Ok(_) = (&self.pr).read(&mut buf) {}
         }
         let guard = self.pollers.lock();
         for socket in readfds {
@@ -146,8 +145,8 @@ impl Poller {
         let nt = {
             let mut guard = self.pollers.lock();
             let n = guard.entry((u, Watcher::Readable)).or_insert_with(Default::default);
-            println!("awakening");
-            let _ = self.pw.lock().write_all(&[0]);
+            // println!("awakening");
+            let _ = (&self.pw).write_all(&[0]);
             n.notified_owned()
         };
         nt.await;
@@ -158,8 +157,8 @@ impl Poller {
         let nt = {
             let mut guard = self.pollers.lock();
             let n = guard.entry((u, Watcher::Writable)).or_insert_with(Default::default);
-            println!("awakening");
-            let _ = self.pw.lock().write_all(&[0]);
+            // println!("awakening");
+            let _ = (&self.pw).write_all(&[0]);
             n.notified_owned()
         };
         nt.await;
@@ -209,7 +208,7 @@ impl super::Endpoint {
             return Err(udt_getlasterror());
         }
 
-        if false {
+        if cfg!(feature = "x-poller") {
             POLLER.introduce(con.0.u)?;
         }
         
@@ -219,7 +218,7 @@ impl super::Endpoint {
 
 impl Drop for DatagramConnection {
     fn drop(&mut self) {
-        if false {
+        if cfg!(feature = "x-poller")  {
             let _ = POLLER.obituary(self.0.u);
         }
     }
@@ -235,33 +234,33 @@ impl DatagramConnection {
     }
 
     pub async fn readable(&self) -> io::Result<()> {
-        if false {
-            return POLLER.readable(self.0.u).await;
+        if cfg!(feature = "x-poller")  {
+            POLLER.readable(self.0.u).await
+        } else {
+            let inner = self.0.clone();
+            spawn_blocking(move || {
+                let res = unsafe { udt_sys::select_single(inner.u, false) };
+                if res < 0 {
+                    return Err(udt_getlasterror());
+                }
+                Ok(())
+            }).await.unwrap()
         }
-        
-        let inner = self.0.clone();
-        spawn_blocking(move || {
-            let res = unsafe { udt_sys::select_single(inner.u, false) };
-            if res < 0 {
-                return Err(udt_getlasterror());
-            }
-            Ok(())
-        }).await.unwrap()
     }
 
     pub async fn writable(&self) -> io::Result<()> {
-        if false {
-            return POLLER.writable(self.0.u).await;
+        if cfg!(feature = "x-poller")  {
+            POLLER.writable(self.0.u).await
+        } else {
+            let inner = self.0.clone();
+            spawn_blocking(move || {
+                let res = unsafe { udt_sys::select_single(inner.u, true) };
+                if res < 0 {
+                    return Err(udt_getlasterror());
+                }
+                Ok(())
+            }).await.unwrap()
         }
-
-        let inner = self.0.clone();
-        spawn_blocking(move || {
-            let res = unsafe { udt_sys::select_single(inner.u, true) };
-            if res < 0 {
-                return Err(udt_getlasterror());
-            }
-            Ok(())
-        }).await.unwrap()
     }
 
     pub fn try_recv(&self, buf: &mut [u8]) -> io::Result<usize> {

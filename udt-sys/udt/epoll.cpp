@@ -318,8 +318,14 @@ int CEPoll::wait(const int eid, set<UDTSOCKET>* readfds, set<UDTSOCKET>* writefd
          FD_ZERO(&readfds2);
          FD_ZERO(&writefds2);
 
+         int nfds = 0;
+
          for (set<SYSSOCKET>::const_iterator i = p->second.m_sLocals.begin(); i != p->second.m_sLocals.end(); ++ i)
          {
+            if (*i >= nfds) {
+               nfds = *i + 1;
+            }
+
             if (lrfds)
                FD_SET(*i, &readfds2);
             if (lwfds)
@@ -329,7 +335,7 @@ int CEPoll::wait(const int eid, set<UDTSOCKET>* readfds, set<UDTSOCKET>* writefd
          timeval tv;
          tv.tv_sec = 0;
          tv.tv_usec = 0;
-         if (::select(0, &readfds2, &writefds2, NULL, &tv) > 0)
+         if (::select(nfds, &readfds2, &writefds2, NULL, &tv) > 0)
          {
             for (set<SYSSOCKET>::const_iterator i = p->second.m_sLocals.begin(); i != p->second.m_sLocals.end(); ++ i)
             {

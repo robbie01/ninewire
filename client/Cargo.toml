@@ -21,3 +21,6 @@ mediator-proto.path = "../mediator-proto"
 transport.path = "../transport"
 parking_lot = "0.12"
 console-subscriber = "0.4"
+
+[features]
+x-poller = ["udt/x-poller"]
