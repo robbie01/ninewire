@@ -2,7 +2,6 @@ use std::net::Ipv6Addr;
 
 pub mod fidpool;
 pub mod polymur;
-pub mod table;
 
 pub fn is_unicast_global(addr: &Ipv6Addr) -> bool {
     !addr.is_multicast()

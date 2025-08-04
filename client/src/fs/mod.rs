@@ -5,7 +5,6 @@ use bytestring::ByteString;
 use npwire::{deserialize_r, RMessage, TMessage, Tversion};
 use parking_lot::Mutex;
 
-mod pool;
 mod transact;
 mod dir;
 mod file;

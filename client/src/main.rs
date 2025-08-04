@@ -89,6 +89,7 @@ async fn main() -> anyhow::Result<()> {
         print!("{s}");
     }
 
+    #[allow(unreachable_code)]
     time::sleep(Duration::from_millis(100)).await;
 
     Ok(())

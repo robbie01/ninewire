@@ -1,6 +1,7 @@
 use std::task::Waker;
 
 use bitflags::bitflags;
+use util::polymur;
 
 bitflags! {
     #[repr(transparent)]
@@ -14,7 +15,7 @@ bitflags! {
 
 #[derive(Debug, Default)]
 pub struct RPoll {
-    evts: scc::HashMap<super::Socket, (Event, Vec<(Event, Waker)>)>
+    evts: scc::HashMap<super::Socket, (Event, Vec<(Event, Waker)>), polymur::RandomState>
 }
 
 impl RPoll {

@@ -7,6 +7,7 @@ use tokio::sync::{mpsc, oneshot};
 use tokio_stream::Stream;
 use tokio_util::sync::CancellationToken;
 use tonic::Status;
+use util::polymur;
 
 #[derive(Debug)]
 struct PlsRendezvous {
@@ -90,7 +91,7 @@ impl mediator_server::Mediator for Handler {
             println!("new binding for {name}");
 
             let mut ctr = 1u64;
-            let mut inflight = HashMap::<u64, oneshot::Sender<Option<Endpoint>>>::new();
+            let mut inflight = HashMap::<u64, oneshot::Sender<Option<Endpoint>>, polymur::RandomState>::default();
 
             loop {
                 tokio::select! {

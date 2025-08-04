@@ -2025,6 +2025,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "hashbench"
+version = "0.1.0"
+dependencies = [
+ "rand 0.9.0",
+ "util",
+]
+
+[[package]]
 name = "hashbrown"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2658,6 +2666,7 @@ dependencies = [
  "tokio-util",
  "tonic 0.14.0",
  "tonic-reflection",
+ "util",
 ]
 
 [[package]]
@@ -4798,6 +4807,7 @@ dependencies = [
  "cxx-build",
  "md-5",
  "scc",
+ "util",
 ]
 
 [[package]]

@@ -9,6 +9,7 @@ cfg-if = "1"
 scc = "2.3"
 bitflags = "2.9"
 md-5 = "0.11.0-rc.0"
+util.workspace = true
 
 [build-dependencies]
 cxx-build = "1"

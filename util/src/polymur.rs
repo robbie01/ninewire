@@ -53,67 +53,8 @@ impl Hasher for PolymurHasher {
         self.hash.expect("invariant violated")
     }
 
-    fn write(&mut self, _: &[u8]) {
-        panic!("unsupported operation");
-    }
-
-    fn write_u8(&mut self, i: u8) {
+    fn write(&mut self, i: &[u8]) {
         assert!(self.hash.is_none(), "invariant violated");
-        self.hash = Some(HASH.hash_with_tweak(i.to_ne_bytes(), self.tweak))
-    }
-
-    fn write_u16(&mut self, i: u16) {
-        assert!(self.hash.is_none(), "invariant violated");
-        self.hash = Some(HASH.hash_with_tweak(i.to_ne_bytes(), self.tweak))
-    }
-
-    fn write_u32(&mut self, i: u32) {
-        assert!(self.hash.is_none(), "invariant violated");
-        self.hash = Some(HASH.hash_with_tweak(i.to_ne_bytes(), self.tweak))
-    }
-
-    fn write_u64(&mut self, i: u64) {
-        assert!(self.hash.is_none(), "invariant violated");
-        self.hash = Some(HASH.hash_with_tweak(i.to_ne_bytes(), self.tweak))
-    }
-
-    fn write_u128(&mut self, i: u128) {
-        assert!(self.hash.is_none(), "invariant violated");
-        self.hash = Some(HASH.hash_with_tweak(i.to_ne_bytes(), self.tweak))
-    }
-
-    fn write_usize(&mut self, i: usize) {
-        assert!(self.hash.is_none(), "invariant violated");
-        self.hash = Some(HASH.hash_with_tweak(i.to_ne_bytes(), self.tweak))
-    }
-
-    fn write_i8(&mut self, i: i8) {
-        assert!(self.hash.is_none(), "invariant violated");
-        self.hash = Some(HASH.hash_with_tweak(i.to_ne_bytes(), self.tweak))
-    }
-
-    fn write_i16(&mut self, i: i16) {
-        assert!(self.hash.is_none(), "invariant violated");
-        self.hash = Some(HASH.hash_with_tweak(i.to_ne_bytes(), self.tweak))
-    }
-
-    fn write_i32(&mut self, i: i32) {
-        assert!(self.hash.is_none(), "invariant violated");
-        self.hash = Some(HASH.hash_with_tweak(i.to_ne_bytes(), self.tweak))
-    }
-
-    fn write_i64(&mut self, i: i64) {
-        assert!(self.hash.is_none(), "invariant violated");
-        self.hash = Some(HASH.hash_with_tweak(i.to_ne_bytes(), self.tweak))
-    }
-
-    fn write_i128(&mut self, i: i128) {
-        assert!(self.hash.is_none(), "invariant violated");
-        self.hash = Some(HASH.hash_with_tweak(i.to_ne_bytes(), self.tweak))
-    }
-
-    fn write_isize(&mut self, i: isize) {
-        assert!(self.hash.is_none(), "invariant violated");
-        self.hash = Some(HASH.hash_with_tweak(i.to_ne_bytes(), self.tweak))
+        self.hash = Some(HASH.hash_with_tweak(i, self.tweak))
     }
 }
