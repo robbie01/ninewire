@@ -1,6 +1,8 @@
-use std::{io, net::SocketAddr, ops::RangeInclusive, sync::{atomic::{AtomicU64, Ordering}, Arc, Mutex}};
+use std::{io, net::SocketAddr, ops::RangeInclusive, sync::{atomic::{AtomicU64, Ordering}, Arc}};
 
+use parking_lot::Mutex;
 use range_set::RangeSet;
+use scc::Bag;
 use snow::StatelessTransportState;
 use udt::{nb::DatagramConnection, Endpoint};
 
@@ -8,6 +10,7 @@ use udt::{nb::DatagramConnection, Endpoint};
 pub struct SecureTransport {
     inner: DatagramConnection,
     crypto: StatelessTransportState,
+    buffers: Bag<Vec<u8>>,
     nonce_outgoing: AtomicU64,
     // There's a potential DoS here. A malicious sender could only use non-consecutive nonces
     // (i.e. all evens) and force the receiver to allocate a ton of memory here. We should
@@ -30,10 +33,10 @@ impl SecureTransport {
         let crypto = snow::Builder::new("Noise_NK_25519_AESGCM_SHA256".parse().unwrap());
         let mut crypto = match side {
             Side::Initiator { remote_public_key } => crypto
-                .remote_public_key(remote_public_key).unwrap()
+                .remote_public_key(remote_public_key).map_err(io::Error::other)?
                 .build_initiator().unwrap(),
             Side::Responder { local_private_key } => crypto
-                .local_private_key(local_private_key).unwrap()
+                .local_private_key(local_private_key).map_err(io::Error::other)?
                 .build_responder().unwrap()
         };
 
@@ -52,6 +55,7 @@ impl SecureTransport {
         Ok(Self {
             inner,
             crypto: crypto.into_stateless_transport_mode().map_err(io::Error::other)?,
+            buffers: Bag::new(),
             nonce_outgoing: AtomicU64::new(0),
             nonce_incoming: RangeSet::new().into()
         })
@@ -66,36 +70,48 @@ impl SecureTransport {
     }
 
     pub async fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
-        let mut tmp = vec![0; buf.len() + 8 + 16];
+        let mut tmp = self.buffers.pop().unwrap_or_default();
+        let tgt = buf.len() + 8 + 16;
+        if tmp.len() < tgt {
+            tmp.resize(tgt, 0);
+        }
 
-        let (mut guard, nonce) = loop {
+        let (mut guard, nonce, n) = loop {
             let n = self.inner.recv(&mut tmp).await?;
             let nonce = u64::from_be_bytes(tmp[..8].try_into().unwrap());
             
-            let guard = self.nonce_incoming.lock().unwrap();
+            let guard = self.nonce_incoming.lock();
             if !guard.contains(nonce) {
-                tmp.truncate(n);
-                break (guard, nonce)
+                break (guard, nonce, n)
             }
         };
 
-        let res = self.crypto.read_message(nonce, &tmp[8..], buf).map_err(io::Error::other);
+        let res = self.crypto.read_message(nonce, &tmp[8..n], buf).map_err(io::Error::other);
+        self.buffers.push(tmp);
+        let res = res?;
         guard.insert(nonce);
-        res
+        Ok(res)
     }
 
     pub async fn send_with(&self, buf: &[u8], inorder: bool) -> io::Result<usize> {
         let nonce = self.nonce_outgoing.fetch_add(1, Ordering::Relaxed);
 
-        let mut tmp = vec![0; buf.len() + 8 + 16];
+        let mut tmp = self.buffers.pop().unwrap_or_default();
+        let tgt = buf.len() + 8 + 16;
+        if tmp.len() < tgt {
+            tmp.resize(tgt, 0);
+        }
+
         let n = self.crypto.write_message(nonce, buf, &mut tmp[8..]).map_err(io::Error::other)?;
-        assert_eq!(n, tmp.len() - 8);
+        assert_eq!(n, tgt - 8);
 
         tmp[..8].copy_from_slice(&nonce.to_be_bytes());
 
         // Force inorder if the nonce is 0 so that transport messages aren't reordered behind handshake messages
-        let n = self.inner.send_with(&tmp, None, inorder || nonce == 0).await?;
-        assert_eq!(n, tmp.len());
+        let n = self.inner.send_with(&tmp[..tgt], None, inorder || nonce == 0).await?;
+        assert_eq!(n, tgt);
+
+        self.buffers.push(tmp);
 
         Ok(buf.len())
     }
