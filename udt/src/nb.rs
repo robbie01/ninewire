@@ -34,6 +34,18 @@ impl super::Endpoint {
         if res < 0 {
             return Err(udt_getlasterror());
         }
+
+        let maxbw = i64::MAX;
+        let res = unsafe { udt_sys::setsockopt(
+            con.0.u,
+            0,
+            udt_sys::SocketOption::MaxBandwidth,
+            (&maxbw as *const i64).cast(),
+            mem::size_of::<i64>() as i32
+        ) };
+        if res < 0 {
+            return Err(udt_getlasterror());
+        }
         
         Ok(con)
     }
@@ -44,8 +56,8 @@ impl DatagramConnection {
         self.0.local_addr()
     }
 
-    pub fn remote_addr(&self) -> io::Result<SocketAddr> {
-        self.0.remote_addr()
+    pub fn peer_addr(&self) -> io::Result<SocketAddr> {
+        self.0.peer_addr()
     }
 
     fn register(&self, interest: udt_sys::Event) -> impl Future<Output = io::Result<()>> {

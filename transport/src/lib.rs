@@ -61,8 +61,8 @@ impl SecureTransport {
         self.inner.local_addr()
     }
 
-    pub fn remote_addr(&self) -> io::Result<SocketAddr> {
-        self.inner.remote_addr()
+    pub fn peer_addr(&self) -> io::Result<SocketAddr> {
+        self.inner.peer_addr()
     }
 
     pub async fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {

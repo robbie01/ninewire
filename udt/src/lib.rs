@@ -252,7 +252,7 @@ impl StreamConnection {
         Ok(addr)
     }
 
-    fn remote_addr_os(&self) -> io::Result<OsSocketAddr> {
+    fn peer_addr_os(&self) -> io::Result<OsSocketAddr> {
         let mut addr = OsSocketAddr::new();
         let mut namelen = addr.len() as i32;
         let res = unsafe { udt_sys::getpeername(self.u, addr.as_mut_ptr().cast(), &mut namelen) };
@@ -266,8 +266,8 @@ impl StreamConnection {
         self.local_addr_os().map(|addr| addr.into_addr().unwrap())
     }
 
-    pub fn remote_addr(&self) -> io::Result<SocketAddr> {
-        self.remote_addr_os().map(|addr| addr.into_addr().unwrap())
+    pub fn peer_addr(&self) -> io::Result<SocketAddr> {
+        self.peer_addr_os().map(|addr| addr.into_addr().unwrap())
     }
 }
 
@@ -348,7 +348,7 @@ impl DatagramConnection {
         Ok(addr)
     }
 
-    fn remote_addr_os(&self) -> io::Result<OsSocketAddr> {
+    fn peer_addr_os(&self) -> io::Result<OsSocketAddr> {
         let mut addr = OsSocketAddr::new();
         let mut namelen = addr.len() as i32;
         let res = unsafe { udt_sys::getpeername(self.u, addr.as_mut_ptr().cast(), &mut namelen) };
@@ -362,8 +362,8 @@ impl DatagramConnection {
         self.local_addr_os().map(|addr| addr.into_addr().unwrap())
     }
 
-    pub fn remote_addr(&self) -> io::Result<SocketAddr> {
-        self.remote_addr_os().map(|addr| addr.into_addr().unwrap())
+    pub fn peer_addr(&self) -> io::Result<SocketAddr> {
+        self.peer_addr_os().map(|addr| addr.into_addr().unwrap())
     }
 
     pub fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {

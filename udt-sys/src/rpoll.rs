@@ -33,11 +33,11 @@ impl RPoll {
         }
     }
 
-    pub fn update_events_cxx(&self, socket: super::Socket, events: u32, value: bool) {
+    pub(crate) fn update_events_cxx(&self, socket: super::Socket, events: u32, value: bool) {
         self.update_events(socket, Event::from_bits_retain(events), value);
     }
 
-    pub fn remove_usock(&self, socket: super::Socket) {
+    pub(crate) fn remove_usock(&self, socket: super::Socket) {
         self.evts.remove(&socket);
     }
 
