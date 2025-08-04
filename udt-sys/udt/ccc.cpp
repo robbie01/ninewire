@@ -103,7 +103,7 @@ const CPerfMon* CCC::getPerfInfo()
    {
       CUDT* u = CUDT::getUDTHandle(m_UDT);
       if (NULL != u)
-         u->sample(&m_PerfInfo, false);
+         u->sample(m_PerfInfo, false);
    }
    catch (...)
    {

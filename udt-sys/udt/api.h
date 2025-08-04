@@ -44,6 +44,7 @@ written by
 
 #include <map>
 #include <vector>
+#include <memory>
 #include "udt.h"
 #include "packet.h"
 #include "queue.h"

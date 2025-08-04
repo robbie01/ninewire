@@ -2,7 +2,7 @@ fn main() {
     let mut build = cxx_build::bridge("src/lib.rs");
 
     build
-        .std("c++11")
+        .std("c++14")
         .includes(["udt", "bridge"])
         .files([
             "udt/api.cpp",

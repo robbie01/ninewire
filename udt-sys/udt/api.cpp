@@ -1666,7 +1666,7 @@ CUDTException& CUDT::getlasterror()
    return *s_UDTUnited.getError();
 }
 
-int CUDT::perfmon(UDTSOCKET u, CPerfMon* perf, bool clear)
+int CUDT::perfmon(UDTSOCKET u, CPerfMon& perf, bool clear)
 {
    try
    {
@@ -1824,7 +1824,7 @@ const char* getlasterror_desc()
    return CUDT::getlasterror().getErrorMessage();
 }
 
-int perfmon(UDTSOCKET u, TRACEINFO* perf, bool clear)
+int perfmon(UDTSOCKET u, TRACEINFO& perf, bool clear)
 {
    return CUDT::perfmon(u, perf, clear);
 }

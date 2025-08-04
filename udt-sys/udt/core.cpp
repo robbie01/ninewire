@@ -1423,7 +1423,7 @@ int CUDT::recvmsg(char* data, int len)
    return res;
 }
 
-void CUDT::sample(CPerfMon* perf, bool clear)
+void CUDT::sample(CPerfMon& perf, bool clear)
 {
    if (!m_bConnected)
       throw CUDTException(2, 2, 0);
@@ -1431,41 +1431,41 @@ void CUDT::sample(CPerfMon* perf, bool clear)
       throw CUDTException(2, 1, 0);
 
    uint64_t currtime = CTimer::getTime();
-   perf->msTimeStamp = (currtime - m_StartTime) / 1000;
+   perf.msTimeStamp = (currtime - m_StartTime) / 1000;
 
-   perf->pktSent = m_llTraceSent;
-   perf->pktRecv = m_llTraceRecv;
-   perf->pktSndLoss = m_iTraceSndLoss;
-   perf->pktRcvLoss = m_iTraceRcvLoss;
-   perf->pktRetrans = m_iTraceRetrans;
-   perf->pktSentACK = m_iSentACK;
-   perf->pktRecvACK = m_iRecvACK;
-   perf->pktSentNAK = m_iSentNAK;
-   perf->pktRecvNAK = m_iRecvNAK;
-   perf->usSndDuration = m_llSndDuration;
+   perf.pktSent = m_llTraceSent;
+   perf.pktRecv = m_llTraceRecv;
+   perf.pktSndLoss = m_iTraceSndLoss;
+   perf.pktRcvLoss = m_iTraceRcvLoss;
+   perf.pktRetrans = m_iTraceRetrans;
+   perf.pktSentACK = m_iSentACK;
+   perf.pktRecvACK = m_iRecvACK;
+   perf.pktSentNAK = m_iSentNAK;
+   perf.pktRecvNAK = m_iRecvNAK;
+   perf.usSndDuration = m_llSndDuration;
 
-   perf->pktSentTotal = m_llSentTotal;
-   perf->pktRecvTotal = m_llRecvTotal;
-   perf->pktSndLossTotal = m_iSndLossTotal;
-   perf->pktRcvLossTotal = m_iRcvLossTotal;
-   perf->pktRetransTotal = m_iRetransTotal;
-   perf->pktSentACKTotal = m_iSentACKTotal;
-   perf->pktRecvACKTotal = m_iRecvACKTotal;
-   perf->pktSentNAKTotal = m_iSentNAKTotal;
-   perf->pktRecvNAKTotal = m_iRecvNAKTotal;
-   perf->usSndDurationTotal = m_llSndDurationTotal;
+   perf.pktSentTotal = m_llSentTotal;
+   perf.pktRecvTotal = m_llRecvTotal;
+   perf.pktSndLossTotal = m_iSndLossTotal;
+   perf.pktRcvLossTotal = m_iRcvLossTotal;
+   perf.pktRetransTotal = m_iRetransTotal;
+   perf.pktSentACKTotal = m_iSentACKTotal;
+   perf.pktRecvACKTotal = m_iRecvACKTotal;
+   perf.pktSentNAKTotal = m_iSentNAKTotal;
+   perf.pktRecvNAKTotal = m_iRecvNAKTotal;
+   perf.usSndDurationTotal = m_llSndDurationTotal;
 
    double interval = double(currtime - m_LastSampleTime);
 
-   perf->mbpsSendRate = double(m_llTraceSent) * m_iPayloadSize * 8.0 / interval;
-   perf->mbpsRecvRate = double(m_llTraceRecv) * m_iPayloadSize * 8.0 / interval;
+   perf.mbpsSendRate = double(m_llTraceSent) * m_iPayloadSize * 8.0 / interval;
+   perf.mbpsRecvRate = double(m_llTraceRecv) * m_iPayloadSize * 8.0 / interval;
 
-   perf->usPktSndPeriod = m_ullInterval / double(m_ullCPUFrequency);
-   perf->pktFlowWindow = m_iFlowWindowSize;
-   perf->pktCongestionWindow = (int)m_dCongestionWindow;
-   perf->pktFlightSize = CSeqNo::seqlen(m_iSndLastAck, CSeqNo::incseq(m_iSndCurrSeqNo)) - 1;
-   perf->msRTT = m_iRTT/1000.0;
-   perf->mbpsBandwidth = m_iBandwidth * m_iPayloadSize * 8.0 / 1000000.0;
+   perf.usPktSndPeriod = m_ullInterval / double(m_ullCPUFrequency);
+   perf.pktFlowWindow = m_iFlowWindowSize;
+   perf.pktCongestionWindow = (int)m_dCongestionWindow;
+   perf.pktFlightSize = CSeqNo::seqlen(m_iSndLastAck, CSeqNo::incseq(m_iSndCurrSeqNo)) - 1;
+   perf.msRTT = m_iRTT/1000.0;
+   perf.mbpsBandwidth = m_iBandwidth * m_iPayloadSize * 8.0 / 1000000.0;
 
    #ifndef WINDOWS
       if (0 == pthread_mutex_trylock(&m_ConnectionLock))
@@ -1473,8 +1473,8 @@ void CUDT::sample(CPerfMon* perf, bool clear)
       if (WAIT_OBJECT_0 == WaitForSingleObject(m_ConnectionLock, 0))
    #endif
    {
-      perf->byteAvailSndBuf = (NULL == m_pSndBuffer) ? 0 : (m_iSndBufSize - m_pSndBuffer->getCurrBufSize()) * m_iMSS;
-      perf->byteAvailRcvBuf = (NULL == m_pRcvBuffer) ? 0 : m_pRcvBuffer->getAvailBufSize() * m_iMSS;
+      perf.byteAvailSndBuf = (NULL == m_pSndBuffer) ? 0 : (m_iSndBufSize - m_pSndBuffer->getCurrBufSize()) * m_iMSS;
+      perf.byteAvailRcvBuf = (NULL == m_pRcvBuffer) ? 0 : m_pRcvBuffer->getAvailBufSize() * m_iMSS;
 
       #ifndef WINDOWS
          pthread_mutex_unlock(&m_ConnectionLock);
@@ -1484,8 +1484,8 @@ void CUDT::sample(CPerfMon* perf, bool clear)
    }
    else
    {
-      perf->byteAvailSndBuf = 0;
-      perf->byteAvailRcvBuf = 0;
+      perf.byteAvailSndBuf = 0;
+      perf.byteAvailRcvBuf = 0;
    }
 
    if (clear)

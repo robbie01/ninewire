@@ -140,6 +140,41 @@ mod ffi {
         NONEXIST
     }
 
+    #[namespace = ""]
+    struct CPerfMon {
+        msTimeStamp: i64,
+        pktSentTotal: i64,
+        pktRecvTotal: i64,
+        pktSndLossTotal: i32,
+        pktRcvLossTotal: i32,
+        pktRetransTotal: i32,
+        pktSentACKTotal: i32,
+        pktRecvACKTotal: i32,
+        pktSentNAKTotal: i32,
+        pktRecvNAKTotal: i32,
+        usSndDurationTotal: i64,
+        pktSent: i64,
+        pktRecv: i64,
+        pktSndLoss: i32,
+        pktRcvLoss: i32,
+        pktRetrans: i32,
+        pktSentACK: i32,
+        pktRecvACK: i32,
+        pktSentNAK: i32,
+        pktRecvNAK: i32,
+        mbpsSendRate: f64,
+        mbpsRecvRate: f64,
+        usSndDuration: i64,
+        usPktSndPeriod: f64,
+        pktFlowWindow: i32,
+        pktCongestionWindow: i32,
+        pktFlightSize: i32,
+        msRTT: f64,
+        mbpsBandwidth: f64,
+        byteAvailSndBuf: i32,
+        byteAvailRcvBuf: i32
+    }
+
     #[namespace = "rpoll"]
     extern "Rust" {
         type RPoll;
@@ -202,6 +237,7 @@ mod ffi {
         unsafe fn getlasterror_code() -> i32;
         unsafe fn getlasterror_desc() -> *const c_char;
         unsafe fn getsockstate(u: Socket) -> Status;
+        unsafe fn perfmon(u: Socket, perf: &mut CPerfMon, clear: bool) -> i32;
     }
 
     unsafe extern "C++" {

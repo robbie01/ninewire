@@ -2,7 +2,7 @@ use std::{collections::HashMap, error::Error, future::ready, net::{IpAddr, Ipv6A
 
 use anyhow::{anyhow, bail};
 use bytestring::ByteString;
-use futures::StreamExt;
+use futures::{stream::abortable, StreamExt};
 use mediator_proto::{mediator_client::MediatorClient, register_request, RegisterReply, RegisterRequest, Registration};
 use np::traits;
 use tokio::sync::mpsc;
@@ -138,6 +138,10 @@ async fn main() -> anyhow::Result<()> {
             is_tonic_error
         }
     }));
+
+    let (listener, handle) = abortable(listener);
+
+    ctrlc::set_handler(move || handle.abort())?;
 
     np::serve_mux(Arc::new(Handler::new([
         ("forfun".into(), "forfun".into()),

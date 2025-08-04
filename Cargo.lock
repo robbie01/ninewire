@@ -3982,6 +3982,7 @@ dependencies = [
  "bytes",
  "bytestring",
  "cfg-if",
+ "ctrlc",
  "futures",
  "local-ip-address",
  "mediator-proto",

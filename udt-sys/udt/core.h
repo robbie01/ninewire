@@ -96,7 +96,7 @@ public: //API
    static int recvmsg(UDTSOCKET u, char* buf, int len);
    static const rpoll::RPoll &getrpoll();
    static CUDTException& getlasterror();
-   static int perfmon(UDTSOCKET u, CPerfMon* perf, bool clear = true);
+   static int perfmon(UDTSOCKET u, CPerfMon& perf, bool clear = true);
    static UDTSTATUS getsockstate(UDTSOCKET u);
 
 public: // internal API
@@ -239,7 +239,7 @@ private:
       // Returned value:
       //    None.
 
-   void sample(CPerfMon* perf, bool clear = true);
+   void sample(CPerfMon& perf, bool clear = true);
 
 private:
    static CUDTUnited s_UDTUnited;               // UDT global management base
