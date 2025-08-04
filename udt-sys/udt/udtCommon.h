@@ -145,24 +145,6 @@ public:
    static uint64_t getTime();
 
       // Functionality:
-      //    trigger an event such as new connection, close, new data, etc. for "select" call.
-      // Parameters:
-      //    None.
-      // Returned value:
-      //    None.
-
-   static void triggerEvent();
-
-      // Functionality:
-      //    wait for an event to br triggered by "triggerEvent".
-      // Parameters:
-      //    None.
-      // Returned value:
-      //    None.
-
-   static void waitForEvent();
-
-      // Functionality:
       //    sleep for a short interval. exact sleep time does not matter
       // Parameters:
       //    None.
