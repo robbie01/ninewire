@@ -4,14 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-bytes.workspace = true
 tokio.workspace = true
-tokio-util = { workspace = true, features = ["io"] }
-futures.workspace = true
-pin-project.workspace = true
 rand.workspace = true
 
 arc-swap = "1.7"
 polymur-hash = "0.2"
 rpds = "1.1"
-snow = "0.10"
