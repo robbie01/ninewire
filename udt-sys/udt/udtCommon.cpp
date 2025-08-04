@@ -54,7 +54,6 @@ written by
 #endif
 
 #include <cmath>
-#include "md5.h"
 #include "udtCommon.h"
 
 bool CTimer::m_bUseMicroSecond = false;
@@ -781,14 +780,4 @@ void CIPAddress::pton(sockaddr* addr, const uint32_t ip[4], int ver)
          a->sin6_addr.s6_addr[i * 4 + 3] = (unsigned char)((ip[i] & 0xFF000000) >> 24);
       }
    }
-}
-
-//
-void CMD5::compute(const char* input, unsigned char result[16])
-{
-   md5_state_t state;
-
-   md5_init(&state);
-   md5_append(&state, (const md5_byte_t *)input, strlen(input));
-   md5_finish(&state, result);
 }

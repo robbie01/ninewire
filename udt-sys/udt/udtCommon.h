@@ -316,12 +316,4 @@ struct CIPAddress
    static void pton(sockaddr* addr, const uint32_t ip[4], int ver = AF_INET);
 };
 
-////////////////////////////////////////////////////////////////////////////////
-
-struct CMD5
-{
-   static void compute(const char* input, unsigned char result[16]);
-};
-
-
 #endif

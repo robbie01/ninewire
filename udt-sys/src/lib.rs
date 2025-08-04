@@ -3,6 +3,7 @@ mod rpoll;
 use std::os::raw::c_int;
 use cfg_if::cfg_if;
 
+use cxx::CxxString;
 pub use rpoll::*;
 
 #[repr(transparent)]
@@ -59,6 +60,12 @@ pub const EPEERERR: i32 = 7000;
 
 fn new_rpoll() -> Box<RPoll> {
     Box::default()
+}
+
+fn compute_md5(s: &CxxString, digest: &mut [u8; 16]) {
+    use md5::Digest as _;
+
+    *digest = md5::Md5::digest(s.as_bytes()).0;
 }
 
 #[cxx::bridge(namespace = "UDT")]
@@ -141,6 +148,11 @@ mod ffi {
         #[cxx_name = "update_events"]
         fn update_events_cxx(&self, socket: Socket, events: u32, value: bool);
         fn remove_usock(&self, socket: Socket);
+    }
+
+    #[namespace = "rutil"]
+    extern "Rust" {
+        fn compute_md5(s: &CxxString, digest: &mut [u8; 16]);
     }
 
     extern "C++" {

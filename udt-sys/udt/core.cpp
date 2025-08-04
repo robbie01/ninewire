@@ -2315,12 +2315,12 @@ int CUDT::listen(sockaddr* addr, CPacket& packet)
    int64_t timestamp = (CTimer::getTime() - m_StartTime) / 60000000; // secret changes every one minute
    stringstream cookiestr;
    cookiestr << clienthost << ":" << clientport << ":" << timestamp;
-   unsigned char cookie[16];
-   CMD5::compute(cookiestr.str().c_str(), cookie);
+   std::array<unsigned char, 16> cookie;
+   rutil::compute_md5(cookiestr.str(), cookie);
 
    if (1 == hs.m_iReqType)
    {
-      hs.m_iCookie = *(int*)cookie;
+      hs.m_iCookie = *(int*)&cookie[0];
       packet.m_iID = hs.m_iID;
       int size = packet.getLength();
       hs.serialize(packet.m_pcData, size);
@@ -2329,13 +2329,13 @@ int CUDT::listen(sockaddr* addr, CPacket& packet)
    }
    else
    {
-      if (hs.m_iCookie != *(int*)cookie)
+      if (hs.m_iCookie != *(int*)&cookie[0])
       {
          timestamp --;
          cookiestr << clienthost << ":" << clientport << ":" << timestamp;
-         CMD5::compute(cookiestr.str().c_str(), cookie);
+         rutil::compute_md5(cookiestr.str(), cookie);
 
-         if (hs.m_iCookie != *(int*)cookie)
+         if (hs.m_iCookie != *(int*)&cookie[0])
             return -1;
       }
    }
