@@ -300,39 +300,6 @@ uint64_t CTimer::getTime()
    #endif
 }
 
-void CTimer::triggerEvent()
-{
-   #ifndef WINDOWS
-      pthread_cond_signal(&m_EventCond);
-   #else
-      SetEvent(m_EventCond);
-   #endif
-}
-
-void CTimer::waitForEvent()
-{
-   #ifndef WINDOWS
-      timeval now;
-      timespec timeout;
-      gettimeofday(&now, 0);
-      if (now.tv_usec < 990000)
-      {
-         timeout.tv_sec = now.tv_sec;
-         timeout.tv_nsec = (now.tv_usec + 10000) * 1000;
-      }
-      else
-      {
-         timeout.tv_sec = now.tv_sec + 1;
-         timeout.tv_nsec = (now.tv_usec + 10000 - 1000000) * 1000;
-      }
-      pthread_mutex_lock(&m_EventLock);
-      pthread_cond_timedwait(&m_EventCond, &m_EventLock, &timeout);
-      pthread_mutex_unlock(&m_EventLock);
-   #else
-      WaitForSingleObject(m_EventCond, 1);
-   #endif
-}
-
 void CTimer::sleep()
 {
    #ifndef WINDOWS

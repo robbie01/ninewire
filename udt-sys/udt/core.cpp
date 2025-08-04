@@ -2068,8 +2068,6 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
       // Signal the sender and recver if they are waiting for data.
       releaseSynch();
 
-      CTimer::triggerEvent();
-
       break;
 
    case 7: //111 - Msg drop request
@@ -2455,8 +2453,6 @@ void CUDT::checkTimers()
 
          // app can call any UDT API to learn the connection_broken error
          s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_IN | UDT_EPOLL_OUT | UDT_EPOLL_ERR, true);
-
-         CTimer::triggerEvent();
 
          return;
       }

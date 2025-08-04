@@ -273,8 +273,6 @@ void CSndBuffer::ackData(int offset)
       m_pFirstBlock = m_pFirstBlock->m_pNext;
 
    m_iCount -= offset;
-
-   CTimer::triggerEvent();
 }
 
 int CSndBuffer::getCurrBufSize() const
@@ -470,8 +468,6 @@ void CRcvBuffer::ackData(int len)
    m_iMaxPos -= len;
    if (m_iMaxPos < 0)
       m_iMaxPos = 0;
-
-   CTimer::triggerEvent();
 }
 
 int CRcvBuffer::getAvailBufSize() const

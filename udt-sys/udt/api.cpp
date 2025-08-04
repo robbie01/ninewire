@@ -437,8 +437,6 @@ int CUDTUnited::newConnection(const UDTSOCKET listener, const sockaddr* peer, CH
    // acknowledge users waiting for new connections on the listening socket
    m_RPoll->update_events(listener, UDT_EPOLL_IN, true);
 
-   CTimer::triggerEvent();
-
    ERR_ROLLBACK:
    if (error > 0)
    {
@@ -861,8 +859,6 @@ int CUDTUnited::close(const UDTSOCKET u)
 
    m_Sockets.erase(s->m_SocketID);
    m_ClosedSockets.insert(pair<UDTSOCKET, CUDTSocket*>(s->m_SocketID, s));
-
-   CTimer::triggerEvent();
 
    return 0;
 }
