@@ -191,7 +191,6 @@ mod ffi {
         unsafe fn recv(u: Socket, buf: *mut c_char, len: i32, _unused: i32) -> i32;
         unsafe fn sendmsg(u: Socket, buf: *const c_char, len: i32, ttl_ms: i32, inorder: bool) -> i32;
         unsafe fn recvmsg(u: Socket, buf: *mut c_char, len: i32) -> i32;
-        unsafe fn select_single(u: Socket, writable: bool) -> i32;
         unsafe fn getlasterror_code() -> i32;
         unsafe fn getlasterror_desc() -> *const c_char;
         unsafe fn getsockstate(u: Socket) -> Status;

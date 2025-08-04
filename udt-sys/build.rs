@@ -16,8 +16,7 @@ fn main() {
             "udt/packet.cpp",
             "udt/queue.cpp",
             "udt/udtCommon.cpp",
-            "udt/window.cpp",
-            "bridge/bridge.cpp"
+            "udt/window.cpp"
         ]);
 
     build.flag_if_supported("-pthread");
