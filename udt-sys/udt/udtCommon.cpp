@@ -58,13 +58,6 @@ written by
 
 bool CTimer::m_bUseMicroSecond = false;
 uint64_t CTimer::s_ullCPUFrequency = CTimer::readCPUFrequency();
-#ifndef WINDOWS
-   udt_pthread_mutex_t CTimer::m_EventLock = PTHREAD_MUTEX_INITIALIZER;
-   udt_pthread_cond_t CTimer::m_EventCond = PTHREAD_COND_INITIALIZER;
-#else
-   udt_pthread_mutex_t CTimer::m_EventLock = CreateMutex(NULL, false, NULL);
-   udt_pthread_cond_t CTimer::m_EventCond = CreateEvent(NULL, false, false, NULL);
-#endif
 
 CTimer::CTimer():
 m_ullSchedTime(),

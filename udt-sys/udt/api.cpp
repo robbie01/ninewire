@@ -193,8 +193,6 @@ int CUDTUnited::startup()
          throw CUDTException(1, 0,  WSAGetLastError());
    #endif
 
-   //init CTimer::EventLock
-
    if (m_bGCStatus)
       return true;
 
@@ -221,8 +219,6 @@ int CUDTUnited::cleanup()
 
    if (--m_iInstanceCount > 0)
       return 0;
-
-   //destroy CTimer::EventLock
 
    if (!m_bGCStatus)
       return 0;

@@ -162,9 +162,6 @@ private:
    udt_pthread_cond_t m_TickCond;
    udt_pthread_mutex_t m_TickLock;
 
-   static udt_pthread_cond_t m_EventCond;
-   static udt_pthread_mutex_t m_EventLock;
-
 private:
    static uint64_t s_ullCPUFrequency;	// CPU frequency : clock cycles per microsecond
    static uint64_t readCPUFrequency();
