@@ -1,6 +1,6 @@
-use std::{io, mem, net::SocketAddr, sync::Arc, time::Duration};
+use std::{future::poll_fn, io, mem, net::SocketAddr, sync::Arc, task::Poll, time::Duration};
 
-use tokio::task::spawn_blocking;
+use tokio::task::{coop::cooperative, spawn_blocking};
 
 use crate::util::udt_getlasterror;
 
@@ -12,6 +12,9 @@ impl super::Endpoint {
         let inner = self.clone();
         let con = spawn_blocking(move || inner.connect_datagram(addr, rendezvous)).await.unwrap()
             .map(|c| DatagramConnection(c.into()))?;
+
+        let rpoll = unsafe { udt_sys::getrpoll() };
+        rpoll.update_events(con.0.u, udt_sys::Event::IN | udt_sys::Event::OUT, true);
 
         let syn = false;
         let res = unsafe { udt_sys::setsockopt(
@@ -48,26 +51,35 @@ impl DatagramConnection {
         self.0.remote_addr()
     }
 
-    pub async fn readable(&self) -> io::Result<()> {
-        let inner = self.0.clone();
-        spawn_blocking(move || {
-            let res = unsafe { udt_sys::select_single(inner.u, false) };
-            if res < 0 {
-                return Err(udt_getlasterror());
+    fn register(&self, interest: udt_sys::Event) -> impl Future<Output = io::Result<()>> {
+        cooperative(poll_fn(move |cx| {
+            let rpoll = unsafe { udt_sys::getrpoll() };
+            if rpoll.query(self.0.u).intersects(interest) {
+                return Poll::Ready(Ok(()));
             }
-            Ok(())
-        }).await.unwrap()
+            rpoll.register(self.0.u, interest, cx.waker());
+            if rpoll.query(self.0.u).intersects(interest) {
+                Poll::Ready(Ok(()))
+            } else {
+                Poll::Pending
+            }
+        }))
     }
 
-    pub async fn writable(&self) -> io::Result<()> {
-        let inner = self.0.clone();
-        spawn_blocking(move || {
-            let res = unsafe { udt_sys::select_single(inner.u, true) };
-            if res < 0 {
-                return Err(udt_getlasterror());
-            }
-            Ok(())
-        }).await.unwrap()
+    pub fn readable(&self) -> impl Future<Output = io::Result<()>> {
+        // let inner = self.0.clone();
+        // spawn_blocking(move || {
+        //     let res = unsafe { udt_sys::select_single(inner.u, false) };
+        //     if res < 0 {
+        //         return Err(udt_getlasterror());
+        //     }
+        //     Ok(())
+        // }).await.unwrap()
+        self.register(udt_sys::Event::IN | udt_sys::Event::ERR)
+    }
+
+    pub fn writable(&self) -> impl Future<Output = io::Result<()>> {
+        self.register(udt_sys::Event::OUT | udt_sys::Event::ERR)
     }
 
     pub fn try_recv(&self, buf: &mut [u8]) -> io::Result<usize> {
@@ -84,6 +96,7 @@ impl DatagramConnection {
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => (),
                 v => break v
             }
+            // println!("waiting for readable");
             self.readable().await?;
         }
     }

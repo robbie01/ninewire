@@ -1,5 +1,9 @@
+mod rpoll;
+
 use std::os::raw::c_int;
 use cfg_if::cfg_if;
+
+pub use rpoll::*;
 
 #[repr(transparent)]
 #[derive(PartialEq, Eq, Hash, Debug, Clone, Copy)]
@@ -56,6 +60,10 @@ pub const EPEERERR: i32 = 7000;
 pub const UDT_EPOLL_IN: i32 = 1;
 pub const UDT_EPOLL_OUT: i32 = 4;
 pub const UDT_EPOLL_ERR: i32 = 8;
+
+fn new_rpoll() -> Box<RPoll> {
+    Box::default()
+}
 
 #[cxx::bridge(namespace = "UDT")]
 mod ffi {
@@ -129,6 +137,16 @@ mod ffi {
         NONEXIST
     }
 
+    #[namespace = "rpoll"]
+    extern "Rust" {
+        type RPoll;
+
+        fn new_rpoll() -> Box<RPoll>;
+        #[cxx_name = "update_events"]
+        fn update_events_cxx(&self, socket: Socket, events: u32, value: bool);
+        fn remove_usock(&self, socket: Socket);
+    }
+
     extern "C++" {
         include!("udt.h");
         include!("bridge.h");
@@ -177,6 +195,10 @@ mod ffi {
         unsafe fn getlasterror_code() -> i32;
         unsafe fn getlasterror_desc() -> *const c_char;
         unsafe fn getsockstate(u: Socket) -> Status;
+    }
+
+    unsafe extern "C++" {
+        unsafe fn getrpoll<'a>() -> &'a RPoll;
     }
 }
 

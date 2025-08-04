@@ -807,7 +807,7 @@ POST_CONNECT:
    m_pRcvQueue->setNewEntry(this);
 
    // acknowledde any waiting epolls to write
-   s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_OUT, true);
+   s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_OUT, true);
 
    // acknowledge the management module.
    s_UDTUnited.connect_complete(m_SocketID);
@@ -962,18 +962,17 @@ void CUDT::close()
       m_pSndQueue->m_pSndUList->remove(this);
 
    // trigger any pending IO events.
-   // s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_ERR, true);
+   // s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_ERR, true);
 
    // BARCHART: Trigger pending events as errors; CEPoll::wait does error cleanup.
-   s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_IN, false);
-   s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_OUT, false);
-   s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_ERR, true);
+   s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_IN, false);
+   s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_OUT, false);
+   s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_ERR, true);
 
    // remove itself from all epoll monitoring
    try
    {
-      for (set<int>::iterator i = m_sPollID.begin(); i != m_sPollID.end(); ++ i)
-         s_UDTUnited.m_EPoll.remove_usock(*i, m_SocketID);
+      s_UDTUnited.m_RPoll->remove_usock(m_SocketID);
    }
    catch (...)
    {
@@ -1129,7 +1128,7 @@ int CUDT::send(const char* data, int len)
    if (m_iSndBufSize <= m_pSndBuffer->getCurrBufSize())
    {
       // write is not available any more
-      s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_OUT, false);
+      s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_OUT, false);
    }
 
    return size;
@@ -1153,8 +1152,10 @@ int CUDT::recv(char* data, int len)
 
    if (0 == m_pRcvBuffer->getRcvDataSize())
    {
-      if (!m_bSynRecving)
+      if (!m_bSynRecving) {
+         s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_IN, false);
          throw CUDTException(6, 2, 0);
+      }
       else
       {
          #ifndef WINDOWS
@@ -1213,7 +1214,7 @@ int CUDT::recv(char* data, int len)
    if (m_pRcvBuffer->getRcvDataSize() <= 0)
    {
       // read is not available any more
-      s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_IN, false);
+      s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_IN, false);
    }
 
    if ((res <= 0) && (m_iRcvTimeOut >= 0))
@@ -1319,7 +1320,7 @@ int CUDT::sendmsg(const char* data, int len, int msttl, bool inorder)
    if (m_iSndBufSize <= m_pSndBuffer->getCurrBufSize())
    {
       // write is not available any more
-      s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_OUT, false);
+      s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_OUT, false);
    }
 
    return len;
@@ -1346,7 +1347,7 @@ int CUDT::recvmsg(char* data, int len)
       if (m_pRcvBuffer->getRcvMsgNum() <= 0)
       {
          // read is not available any more
-         s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_IN, false);
+         s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_IN, false);
       }
 
       if (0 == res)
@@ -1358,8 +1359,10 @@ int CUDT::recvmsg(char* data, int len)
    if (!m_bSynRecving)
    {
       int res = m_pRcvBuffer->readMsg(data, len);
-      if (0 == res)
+      if (0 == res) {
+         s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_IN, false);
          throw CUDTException(6, 2, 0);
+      }
       else
          return res;
    }
@@ -1415,7 +1418,7 @@ int CUDT::recvmsg(char* data, int len)
    if (m_pRcvBuffer->getRcvMsgNum() <= 0)
    {
       // read is not available any more
-      s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_IN, false);
+      s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_IN, false);
    }
 
    if ((res <= 0) && (m_iRcvTimeOut >= 0))
@@ -1511,7 +1514,7 @@ int64_t CUDT::sendfile(fstream& ifs, int64_t& offset, int64_t size, int block)
    if (m_iSndBufSize <= m_pSndBuffer->getCurrBufSize())
    {
       // write is not available any more
-      s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_OUT, false);
+      s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_OUT, false);
    }
 
    return size - tosend;
@@ -1586,7 +1589,7 @@ int64_t CUDT::recvfile(fstream& ofs, int64_t& offset, int64_t size, int block)
    if (m_pRcvBuffer->getRcvDataSize() <= 0)
    {
       // read is not available any more
-      s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_IN, false);
+      s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_IN, false);
    }
 
    return size - torecv;
@@ -1805,7 +1808,7 @@ void CUDT::sendCtrl(int pkttype, void* lparam, void* rparam, int size)
          #endif
 
          // acknowledge any waiting epolls to read
-         s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_IN, true);
+         s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_IN, true);
       }
       else if (ack == m_iRcvLastAck)
       {
@@ -2062,7 +2065,7 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
       #endif
 
       // acknowledde any waiting epolls to write
-      s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_OUT, true);
+      s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_OUT, true);
 
       // insert this socket to snd list if it is not on the list yet
       m_pSndQueue->m_pSndUList->update(this, false);
@@ -2538,7 +2541,7 @@ int CUDT::listen(sockaddr* addr, CPacket& packet)
          else
          {
             // a new connection has been created, enable epoll for write
-            s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_OUT, true);
+            s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_OUT, true);
          }
       }
    }
@@ -2620,7 +2623,7 @@ void CUDT::checkTimers()
          releaseSynch();
 
          // app can call any UDT API to learn the connection_broken error
-         s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_IN | UDT_EPOLL_OUT | UDT_EPOLL_ERR, true);
+         s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_IN | UDT_EPOLL_OUT | UDT_EPOLL_ERR, true);
 
          CTimer::triggerEvent();
 
@@ -2655,35 +2658,4 @@ void CUDT::checkTimers()
       // Reset last response time since we just sent a heart-beat.
       m_ullLastRspTime = currtime;
    }
-}
-
-void CUDT::addEPoll(const int eid)
-{
-   CGuard::enterCS(s_UDTUnited.m_EPoll.m_EPollLock);
-   m_sPollID.insert(eid);
-   CGuard::leaveCS(s_UDTUnited.m_EPoll.m_EPollLock);
-
-   if (!m_bConnected || m_bBroken || m_bClosing)
-      return;
-
-   if (((UDT_STREAM == m_iSockType) && (m_pRcvBuffer->getRcvDataSize() > 0)) ||
-      ((UDT_DGRAM == m_iSockType) && (m_pRcvBuffer->getRcvMsgNum() > 0)))
-   {
-      s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_IN, true);
-   }
-   if (m_iSndBufSize > m_pSndBuffer->getCurrBufSize())
-   {
-      s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_OUT, true);
-   }
-}
-
-void CUDT::removeEPoll(const int eid)
-{
-   CGuard::enterCS(s_UDTUnited.m_EPoll.m_EPollLock);
-   m_sPollID.erase(eid);
-   CGuard::leaveCS(s_UDTUnited.m_EPoll.m_EPollLock);
-
-   // clear IO events notifications;
-   // since this happens after the epoll ID has been removed, they cannot be set again
-   s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_IN | UDT_EPOLL_OUT, false);
 }

@@ -56,6 +56,9 @@ written by
 #include <string>
 #include <vector>
 
+// #include "udt-sys/src/lib.rs.h"
+namespace rpoll { struct RPoll; }
+
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -301,21 +304,7 @@ UDT_API int select(int nfds, UDSET* readfds, UDSET* writefds, UDSET* exceptfds, 
 UDT_API int selectEx(const std::vector<UDTSOCKET>& fds, std::vector<UDTSOCKET>* readfds,
                      std::vector<UDTSOCKET>* writefds, std::vector<UDTSOCKET>* exceptfds, int64_t msTimeOut);
 
-// BARCHART
-UDT_API int epoll_update_usock(int eid, UDTSOCKET u, const int* events = NULL);
-// BARCHART
-UDT_API int epoll_verify_usock(int eid, UDTSOCKET u, int* events);
-
-UDT_API int epoll_create();
-UDT_API int epoll_add_usock(int eid, UDTSOCKET u, const int* events = NULL);
-UDT_API int epoll_add_ssock(int eid, SYSSOCKET s, const int* events = NULL);
-UDT_API int epoll_remove_usock(int eid, UDTSOCKET u);
-UDT_API int epoll_remove_ssock(int eid, SYSSOCKET s);
-UDT_API int epoll_wait(int eid, std::set<UDTSOCKET>* readfds, std::set<UDTSOCKET>* writefds, int64_t msTimeOut,
-                       std::set<SYSSOCKET>* lrfds = NULL, std::set<SYSSOCKET>* wrfds = NULL);
-UDT_API int epoll_wait2(int eid, UDTSOCKET* readfds, int* rnum, UDTSOCKET* writefds, int* wnum, int64_t msTimeOut,
-                        SYSSOCKET* lrfds = NULL, int* lrnum = NULL, SYSSOCKET* lwfds = NULL, int* lwnum = NULL);
-UDT_API int epoll_release(int eid);
+UDT_API const rpoll::RPoll &getrpoll();
 UDT_API ERRORINFO& getlasterror();
 UDT_API int getlasterror_code();
 UDT_API const char* getlasterror_desc();

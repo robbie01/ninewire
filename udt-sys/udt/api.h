@@ -48,7 +48,7 @@ written by
 #include "packet.h"
 #include "queue.h"
 #include "cache.h"
-#include "epoll.h"
+#include "udt-sys/src/lib.rs.h"
 
 class CUDT;
 
@@ -174,18 +174,8 @@ public:
    int getsockname(const UDTSOCKET u, sockaddr* name, int* namelen);
    int select(ud_set* readfds, ud_set* writefds, ud_set* exceptfds, const timeval* timeout);
    int selectEx(const std::vector<UDTSOCKET>& fds, std::vector<UDTSOCKET>* readfds, std::vector<UDTSOCKET>* writefds, std::vector<UDTSOCKET>* exceptfds, int64_t msTimeOut);
-   int epoll_create();
-   int epoll_add_usock(const int eid, const UDTSOCKET u, const int* events = NULL);
-   int epoll_add_ssock(const int eid, const SYSSOCKET s, const int* events = NULL);
-   int epoll_remove_usock(const int eid, const UDTSOCKET u);
-   int epoll_remove_ssock(const int eid, const SYSSOCKET s);
-   int epoll_wait(const int eid, std::set<UDTSOCKET>* readfds, std::set<UDTSOCKET>* writefds, int64_t msTimeOut, std::set<SYSSOCKET>* lrfds = NULL, std::set<SYSSOCKET>* lwfds = NULL);
-   int epoll_release(const int eid);
 
-   // BARCHART
-   int epoll_update_usock(const int eid, const UDTSOCKET u, const int* events = NULL);
-   // BARCHART
-   int epoll_verify_usock(const int eid, const UDTSOCKET u, int* events);
+   const rpoll::RPoll &getrpoll();
 
       // Functionality:
       //    record the UDT exception.
@@ -264,7 +254,7 @@ private:
    void removeSocket(const UDTSOCKET u);
 
 private:
-   CEPoll m_EPoll;                                     // handling epoll data structures and events
+   rust::Box<rpoll::RPoll> m_RPoll = rpoll::new_rpoll();
 
 private:
    CUDTUnited(const CUDTUnited&);

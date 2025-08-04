@@ -98,21 +98,10 @@ public: //API
    static int64_t recvfile(UDTSOCKET u, std::fstream& ofs, int64_t& offset, int64_t size, int block = 7280000);
    static int select(int nfds, ud_set* readfds, ud_set* writefds, ud_set* exceptfds, const timeval* timeout);
    static int selectEx(const std::vector<UDTSOCKET>& fds, std::vector<UDTSOCKET>* readfds, std::vector<UDTSOCKET>* writefds, std::vector<UDTSOCKET>* exceptfds, int64_t msTimeOut);
-   static int epoll_create();
-   static int epoll_add_usock(const int eid, const UDTSOCKET u, const int* events = NULL);
-   static int epoll_add_ssock(const int eid, const SYSSOCKET s, const int* events = NULL);
-   static int epoll_remove_usock(const int eid, const UDTSOCKET u);
-   static int epoll_remove_ssock(const int eid, const SYSSOCKET s);
-   static int epoll_wait(const int eid, std::set<UDTSOCKET>* readfds, std::set<UDTSOCKET>* writefds, int64_t msTimeOut, std::set<SYSSOCKET>* lrfds = NULL, std::set<SYSSOCKET>* wrfds = NULL);
-   static int epoll_release(const int eid);
+   static const rpoll::RPoll &getrpoll();
    static CUDTException& getlasterror();
    static int perfmon(UDTSOCKET u, CPerfMon* perf, bool clear = true);
    static UDTSTATUS getsockstate(UDTSOCKET u);
-
-   // BARCHART
-   static int epoll_update_usock(const int eid, const UDTSOCKET u, const int* events = NULL);
-   // BARCHART
-   static int epoll_verify_usock(const int eid, const UDTSOCKET u, int* events);
 
 public: // internal API
    static CUDT* getUDTHandle(UDTSOCKET u);
@@ -462,11 +451,6 @@ private: // for UDP multiplexer
    uint32_t m_piSelfIP[4];			// local UDP IP address
    CSNode* m_pSNode;				// node information for UDT list used in snd queue
    CRNode* m_pRNode;                            // node information for UDT list used in rcv queue
-
-private: // for epoll
-   std::set<int> m_sPollID;                     // set of epoll ID to trigger
-   void addEPoll(const int eid);
-   void removeEPoll(const int eid);
 };
 
 

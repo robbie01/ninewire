@@ -11,7 +11,6 @@ fn main() {
             "udt/ccc.cpp",
             "udt/channel.cpp",
             "udt/core.cpp",
-            "udt/epoll.cpp",
             "udt/list.cpp",
             "udt/md5.cpp",
             "udt/packet.cpp",

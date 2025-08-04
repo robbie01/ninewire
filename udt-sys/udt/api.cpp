@@ -435,7 +435,7 @@ int CUDTUnited::newConnection(const UDTSOCKET listener, const sockaddr* peer, CH
    CGuard::leaveCS(ls->m_AcceptLock);
 
    // acknowledge users waiting for new connections on the listening socket
-   m_EPoll.update_events(listener, ls->m_pUDT->m_sPollID, UDT_EPOLL_IN, true);
+   m_RPoll->update_events(listener, UDT_EPOLL_IN, true);
 
    CTimer::triggerEvent();
 
@@ -662,7 +662,7 @@ UDTSOCKET CUDTUnited::accept(const UDTSOCKET listener, sockaddr* addr, int* addr
             pthread_cond_wait(&(ls->m_AcceptCond), &(ls->m_AcceptLock));
 
          if (ls->m_pQueuedSockets->empty())
-            m_EPoll.update_events(listener, ls->m_pUDT->m_sPollID, UDT_EPOLL_IN, false);
+            m_RPoll->update_events(listener, UDT_EPOLL_IN, false);
 
          pthread_mutex_unlock(&(ls->m_AcceptLock));
       }
@@ -695,7 +695,7 @@ UDTSOCKET CUDTUnited::accept(const UDTSOCKET listener, sockaddr* addr, int* addr
          }
 
          if (ls->m_pQueuedSockets->empty())
-            m_EPoll.update_events(listener, ls->m_pUDT->m_sPollID, UDT_EPOLL_IN, false);
+            m_RPoll->update_events(listener, UDT_EPOLL_IN, false);
       }
    #endif
 
@@ -1090,89 +1090,6 @@ int CUDTUnited::selectEx(const vector<UDTSOCKET>& fds, vector<UDTSOCKET>* readfd
    return count;
 }
 
-int CUDTUnited::epoll_create()
-{
-   return m_EPoll.create();
-}
-
-int CUDTUnited::epoll_add_usock(const int eid, const UDTSOCKET u, const int* events)
-{
-   CUDTSocket* s = locate(u);
-   int ret = -1;
-   if (NULL != s)
-   {
-      ret = m_EPoll.add_usock(eid, u, events);
-      s->m_pUDT->addEPoll(eid);
-   }
-   else
-   {
-      throw CUDTException(5, 4);
-   }
-
-   return ret;
-}
-
-// BARCHART
-int CUDTUnited::epoll_update_usock(const int eid, const UDTSOCKET u, const int* events)
-{
-   CUDTSocket* s = locate(u);
-   int ret = -1;
-   if (NULL != s)  {
-      ret = m_EPoll.update_usock(eid, u, events);
-   } else {
-      throw CUDTException(5, 4);
-   }
-   return ret;
-}
-
-// BARCHART
-int CUDTUnited::epoll_verify_usock(const int eid, const UDTSOCKET u, int* events)
-{
-   CUDTSocket* s = locate(u);
-   int ret = -1;
-   if (NULL != s)  {
-      ret = m_EPoll.verify_usock(eid, u, events);
-   } else {
-      throw CUDTException(5, 4);
-   }
-   return ret;
-}
-
-int CUDTUnited::epoll_add_ssock(const int eid, const SYSSOCKET s, const int* events)
-{
-   return m_EPoll.add_ssock(eid, s, events);
-}
-
-int CUDTUnited::epoll_remove_usock(const int eid, const UDTSOCKET u)
-{
-   CUDTSocket* s = locate(u);
-   if (NULL != s)
-   {
-      s->m_pUDT->removeEPoll(eid);
-   }
-   //else
-   //{
-   //   throw CUDTException(5, 4);
-   //}
-
-   return m_EPoll.remove_usock(eid, u);
-}
-
-int CUDTUnited::epoll_remove_ssock(const int eid, const SYSSOCKET s)
-{
-   return m_EPoll.remove_ssock(eid, s);
-}
-
-int CUDTUnited::epoll_wait(const int eid, set<UDTSOCKET>* readfds, set<UDTSOCKET>* writefds, int64_t msTimeOut, set<SYSSOCKET>* lrfds, set<SYSSOCKET>* lwfds)
-{
-   return m_EPoll.wait(eid, readfds, writefds, msTimeOut, lrfds, lwfds);
-}
-
-int CUDTUnited::epoll_release(const int eid)
-{
-   return m_EPoll.release(eid);
-}
-
 CUDTSocket* CUDTUnited::locate(const UDTSOCKET u)
 {
    CGuard cg(m_ControlLock);
@@ -1358,6 +1275,8 @@ void CUDTUnited::setError(CUDTException* e)
       m_mTLSRecord[GetCurrentThreadId()] = e;
    #endif
 }
+
+rpoll::RPoll const &CUDTUnited::getrpoll() { return *m_RPoll; }
 
 CUDTException* CUDTUnited::getError()
 {
@@ -2026,170 +1945,7 @@ int CUDT::selectEx(const vector<UDTSOCKET>& fds, vector<UDTSOCKET>* readfds, vec
    }
 }
 
-int CUDT::epoll_create()
-{
-   try
-   {
-      return s_UDTUnited.epoll_create();
-   }
-   catch (CUDTException e)
-   {
-      s_UDTUnited.setError(new CUDTException(e));
-      return ERROR;
-   }
-   catch (...)
-   {
-      s_UDTUnited.setError(new CUDTException(-1, 0, 0));
-      return ERROR;
-   }
-}
-
-int CUDT::epoll_add_usock(const int eid, const UDTSOCKET u, const int* events)
-{
-   try
-   {
-      return s_UDTUnited.epoll_add_usock(eid, u, events);
-   }
-   catch (CUDTException e)
-   {
-      s_UDTUnited.setError(new CUDTException(e));
-      return ERROR;
-   }
-   catch (...)
-   {
-      s_UDTUnited.setError(new CUDTException(-1, 0, 0));
-      return ERROR;
-   }
-}
-
-// BARCHART
-int CUDT::epoll_update_usock(const int eid, const UDTSOCKET u, const int* events)
-{
-   try
-   {
-      return s_UDTUnited.epoll_update_usock(eid, u, events);
-   }
-   catch (CUDTException e)
-   {
-      s_UDTUnited.setError(new CUDTException(e));
-      return ERROR;
-   }
-   catch (...)
-   {
-      s_UDTUnited.setError(new CUDTException(-1, 0, 0));
-      return ERROR;
-   }
-}
-
-// BARCHART
-int CUDT::epoll_verify_usock(const int eid, const UDTSOCKET u, int* events)
-{
-   try
-   {
-      return s_UDTUnited.epoll_verify_usock(eid, u, events);
-   }
-   catch (CUDTException e)
-   {
-      s_UDTUnited.setError(new CUDTException(e));
-      return ERROR;
-   }
-   catch (...)
-   {
-      s_UDTUnited.setError(new CUDTException(-1, 0, 0));
-      return ERROR;
-   }
-}
-
-
-int CUDT::epoll_add_ssock(const int eid, const SYSSOCKET s, const int* events)
-{
-   try
-   {
-      return s_UDTUnited.epoll_add_ssock(eid, s, events);
-   }
-   catch (CUDTException e)
-   {
-      s_UDTUnited.setError(new CUDTException(e));
-      return ERROR;
-   }
-   catch (...)
-   {
-      s_UDTUnited.setError(new CUDTException(-1, 0, 0));
-      return ERROR;
-   }
-}
-
-int CUDT::epoll_remove_usock(const int eid, const UDTSOCKET u)
-{
-   try
-   {
-      return s_UDTUnited.epoll_remove_usock(eid, u);
-   }
-   catch (CUDTException e)
-   {
-      s_UDTUnited.setError(new CUDTException(e));
-      return ERROR;
-   }
-   catch (...)
-   {
-      s_UDTUnited.setError(new CUDTException(-1, 0, 0));
-      return ERROR;
-   }
-}
-
-int CUDT::epoll_remove_ssock(const int eid, const SYSSOCKET s)
-{
-   try
-   {
-      return s_UDTUnited.epoll_remove_ssock(eid, s);
-   }
-   catch (CUDTException e)
-   {
-      s_UDTUnited.setError(new CUDTException(e));
-      return ERROR;
-   }
-   catch (...)
-   {
-      s_UDTUnited.setError(new CUDTException(-1, 0, 0));
-      return ERROR;
-   }
-}
-
-int CUDT::epoll_wait(const int eid, set<UDTSOCKET>* readfds, set<UDTSOCKET>* writefds, int64_t msTimeOut, set<SYSSOCKET>* lrfds, set<SYSSOCKET>* lwfds)
-{
-   try
-   {
-      return s_UDTUnited.epoll_wait(eid, readfds, writefds, msTimeOut, lrfds, lwfds);
-   }
-   catch (CUDTException e)
-   {
-      s_UDTUnited.setError(new CUDTException(e));
-      return ERROR;
-   }
-   catch (...)
-   {
-      s_UDTUnited.setError(new CUDTException(-1, 0, 0));
-      return ERROR;
-   }
-}
-
-int CUDT::epoll_release(const int eid)
-{
-   try
-   {
-      return s_UDTUnited.epoll_release(eid);
-   }
-   catch (CUDTException e)
-   {
-      s_UDTUnited.setError(new CUDTException(e));
-      return ERROR;
-   }
-   catch (...)
-   {
-      s_UDTUnited.setError(new CUDTException(-1, 0, 0));
-      return ERROR;
-   }
-}
+rpoll::RPoll const &CUDT::getrpoll() { return s_UDTUnited.getrpoll(); }
 
 CUDTException& CUDT::getlasterror()
 {
@@ -2373,102 +2129,7 @@ int selectEx(const vector<UDTSOCKET>& fds, vector<UDTSOCKET>* readfds, vector<UD
    return CUDT::selectEx(fds, readfds, writefds, exceptfds, msTimeOut);
 }
 
-int epoll_create()
-{
-   return CUDT::epoll_create();
-}
-
-int epoll_add_usock(int eid, UDTSOCKET u, const int* events)
-{
-   return CUDT::epoll_add_usock(eid, u, events);
-}
-
-// BARCHART
-int epoll_update_usock(int eid, UDTSOCKET u, const int* events)
-{
-   return CUDT::epoll_update_usock(eid, u, events);
-}
-
-// BARCHART
-int epoll_verify_usock(int eid, UDTSOCKET u, int* events)
-{
-   return CUDT::epoll_verify_usock(eid, u, events);
-}
-
-int epoll_add_ssock(int eid, SYSSOCKET s, const int* events)
-{
-   return CUDT::epoll_add_ssock(eid, s, events);
-}
-
-int epoll_remove_usock(int eid, UDTSOCKET u)
-{
-   return CUDT::epoll_remove_usock(eid, u);
-}
-
-int epoll_remove_ssock(int eid, SYSSOCKET s)
-{
-   return CUDT::epoll_remove_ssock(eid, s);
-}
-
-int epoll_wait(int eid, set<UDTSOCKET>* readfds, set<UDTSOCKET>* writefds, int64_t msTimeOut, set<SYSSOCKET>* lrfds, set<SYSSOCKET>* lwfds)
-{
-   return CUDT::epoll_wait(eid, readfds, writefds, msTimeOut, lrfds, lwfds);
-}
-
-#define SET_RESULT(val, num, fds, it) \
-   if ((val != NULL) && !val->empty()) \
-   { \
-      if (*num > static_cast<int>(val->size())) \
-         *num = val->size(); \
-      int count = 0; \
-      for (it = val->begin(); it != val->end(); ++ it) \
-      { \
-         if (count >= *num) \
-            break; \
-         fds[count ++] = *it; \
-      } \
-   }
-int epoll_wait2(int eid, UDTSOCKET* readfds, int* rnum, UDTSOCKET* writefds, int* wnum, int64_t msTimeOut,
-                SYSSOCKET* lrfds, int* lrnum, SYSSOCKET* lwfds, int* lwnum)
-{
-   // This API is an alternative format for epoll_wait, created for compatability with other languages.
-   // Users need to pass in an array for holding the returned sockets, with the maximum array length
-   // stored in *rnum, etc., which will be updated with returned number of sockets.
-
-   set<UDTSOCKET> readset;
-   set<UDTSOCKET> writeset;
-   set<SYSSOCKET> lrset;
-   set<SYSSOCKET> lwset;
-   set<UDTSOCKET>* rval = NULL;
-   set<UDTSOCKET>* wval = NULL;
-   set<SYSSOCKET>* lrval = NULL;
-   set<SYSSOCKET>* lwval = NULL;
-   if ((readfds != NULL) && (rnum != NULL))
-      rval = &readset;
-   if ((writefds != NULL) && (wnum != NULL))
-      wval = &writeset;
-   if ((lrfds != NULL) && (lrnum != NULL))
-      lrval = &lrset;
-   if ((lwfds != NULL) && (lwnum != NULL))
-      lwval = &lwset;
-
-   int ret = CUDT::epoll_wait(eid, rval, wval, msTimeOut, lrval, lwval);
-   if (ret > 0)
-   {
-      set<UDTSOCKET>::const_iterator i;
-      SET_RESULT(rval, rnum, readfds, i);
-      SET_RESULT(wval, wnum, writefds, i);
-      set<SYSSOCKET>::const_iterator j;
-      SET_RESULT(lrval, lrnum, lrfds, j);
-      SET_RESULT(lwval, lwnum, lwfds, j);
-   }
-   return ret;
-}
-
-int epoll_release(int eid)
-{
-   return CUDT::epoll_release(eid);
-}
+const rpoll::RPoll &getrpoll() { return CUDT::getrpoll(); }
 
 ERRORINFO& getlasterror()
 {
