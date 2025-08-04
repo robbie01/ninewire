@@ -45,22 +45,27 @@ impl RPoll {
         self.evts.read(&socket, |_, &(v, _)| v).unwrap_or_default()
     }
 
+    pub fn with_lock<R>(&self, socket: super::Socket, f: impl FnOnce(&mut Event) -> R) -> R {
+        let mut ent = self.evts.entry(socket).or_default();
+        f(&mut ent.0)
+    }
+
     pub fn register(&self, socket: super::Socket, interest: Event, waker: &Waker) {
-        if let Some(mut ent) = self.evts.get(&socket) {
-            if ent.0.intersects(interest) {
-                waker.wake_by_ref();
-            } else {
-                let mut registered = false;
-                for (existing_interest, existing_waker) in ent.1.iter_mut() {
-                    if existing_waker.will_wake(waker) {
-                        *existing_interest |= interest;
-                        registered = true;
-                        break;
-                    }
+        let mut ent = self.evts.entry(socket).or_default();
+        
+        if ent.0.intersects(interest) {
+            waker.wake_by_ref();
+        } else {
+            let mut registered = false;
+            for (existing_interest, existing_waker) in ent.1.iter_mut() {
+                if existing_waker.will_wake(waker) {
+                    *existing_interest = existing_interest.union(interest);
+                    registered = true;
+                    break;
                 }
-                if !registered {
-                    ent.1.push((interest, waker.clone()));
-                }
+            }
+            if !registered {
+                ent.1.push((interest, waker.clone()));
             }
         }
     }

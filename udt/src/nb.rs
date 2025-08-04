@@ -1,6 +1,6 @@
 use std::{future::poll_fn, io, mem, net::SocketAddr, sync::Arc, task::Poll, time::Duration};
 
-use tokio::task::{coop::cooperative, spawn_blocking};
+use tokio::task::spawn_blocking;
 
 use crate::util::udt_getlasterror;
 
@@ -52,7 +52,7 @@ impl DatagramConnection {
     }
 
     fn register(&self, interest: udt_sys::Event) -> impl Future<Output = io::Result<()>> {
-        cooperative(poll_fn(move |cx| {
+        poll_fn(move |cx| {
             let rpoll = unsafe { udt_sys::getrpoll() };
             if rpoll.query(self.0.u).intersects(interest) {
                 return Poll::Ready(Ok(()));
@@ -63,18 +63,10 @@ impl DatagramConnection {
             } else {
                 Poll::Pending
             }
-        }))
+        })
     }
 
     pub fn readable(&self) -> impl Future<Output = io::Result<()>> {
-        // let inner = self.0.clone();
-        // spawn_blocking(move || {
-        //     let res = unsafe { udt_sys::select_single(inner.u, false) };
-        //     if res < 0 {
-        //         return Err(udt_getlasterror());
-        //     }
-        //     Ok(())
-        // }).await.unwrap()
         self.register(udt_sys::Event::IN | udt_sys::Event::ERR)
     }
 
@@ -83,11 +75,25 @@ impl DatagramConnection {
     }
 
     pub fn try_recv(&self, buf: &mut [u8]) -> io::Result<usize> {
-        self.0.recv(buf)
+        let rpoll = unsafe { udt_sys::getrpoll() };
+        rpoll.with_lock(self.0.u, |s| {
+            let res = self.0.recv(buf);
+            if res.as_ref().is_err_and(|e| e.kind() == io::ErrorKind::WouldBlock) {
+                *s = s.difference(udt_sys::Event::IN);
+            }
+            res
+        })
     }
     
     pub fn try_send_with(&self, buf: &[u8], ttl: Option<Duration>, inorder: bool) -> io::Result<usize> {
-        self.0.send_with(buf, ttl, inorder)
+        let rpoll = unsafe { udt_sys::getrpoll() };
+        rpoll.with_lock(self.0.u, |s| {
+            let res = self.0.send_with(buf, ttl, inorder);
+            if res.as_ref().is_err_and(|e| e.kind() == io::ErrorKind::WouldBlock) {
+                *s = s.difference(udt_sys::Event::OUT);
+            }
+            res
+        })
     }
 
     pub async fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {

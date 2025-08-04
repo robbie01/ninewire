@@ -1152,10 +1152,8 @@ int CUDT::recv(char* data, int len)
 
    if (0 == m_pRcvBuffer->getRcvDataSize())
    {
-      if (!m_bSynRecving) {
-         s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_IN, false);
+      if (!m_bSynRecving)
          throw CUDTException(6, 2, 0);
-      }
       else
       {
          #ifndef WINDOWS
@@ -1359,10 +1357,8 @@ int CUDT::recvmsg(char* data, int len)
    if (!m_bSynRecving)
    {
       int res = m_pRcvBuffer->readMsg(data, len);
-      if (0 == res) {
-         s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_IN, false);
+      if (0 == res)
          throw CUDTException(6, 2, 0);
-      }
       else
          return res;
    }
