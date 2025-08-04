@@ -172,8 +172,6 @@ public:
    int close(const UDTSOCKET u);
    int getpeername(const UDTSOCKET u, sockaddr* name, int* namelen);
    int getsockname(const UDTSOCKET u, sockaddr* name, int* namelen);
-   int select(ud_set* readfds, ud_set* writefds, ud_set* exceptfds, const timeval* timeout);
-   int selectEx(const std::vector<UDTSOCKET>& fds, std::vector<UDTSOCKET>* readfds, std::vector<UDTSOCKET>* writefds, std::vector<UDTSOCKET>* exceptfds, int64_t msTimeOut);
 
    const rpoll::RPoll &getrpoll();
 

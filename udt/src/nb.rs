@@ -13,9 +13,6 @@ impl super::Endpoint {
         let con = spawn_blocking(move || inner.connect_datagram(addr, rendezvous)).await.unwrap()
             .map(|c| DatagramConnection(c.into()))?;
 
-        let rpoll = unsafe { udt_sys::getrpoll() };
-        rpoll.update_events(con.0.u, udt_sys::Event::IN | udt_sys::Event::OUT, true);
-
         let syn = false;
         let res = unsafe { udt_sys::setsockopt(
             con.0.u,
@@ -77,6 +74,7 @@ impl DatagramConnection {
     pub fn try_recv(&self, buf: &mut [u8]) -> io::Result<usize> {
         let rpoll = unsafe { udt_sys::getrpoll() };
         rpoll.with_lock(self.0.u, |s| {
+            // This might deadlock.
             let res = self.0.recv(buf);
             if res.as_ref().is_err_and(|e| e.kind() == io::ErrorKind::WouldBlock) {
                 *s = s.difference(udt_sys::Event::IN);
@@ -88,6 +86,7 @@ impl DatagramConnection {
     pub fn try_send_with(&self, buf: &[u8], ttl: Option<Duration>, inorder: bool) -> io::Result<usize> {
         let rpoll = unsafe { udt_sys::getrpoll() };
         rpoll.with_lock(self.0.u, |s| {
+            // This might deadlock.
             let res = self.0.send_with(buf, ttl, inorder);
             if res.as_ref().is_err_and(|e| e.kind() == io::ErrorKind::WouldBlock) {
                 *s = s.difference(udt_sys::Event::OUT);

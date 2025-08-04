@@ -94,10 +94,6 @@ public: //API
    static int recv(UDTSOCKET u, char* buf, int len, int flags);
    static int sendmsg(UDTSOCKET u, const char* buf, int len, int ttl = -1, bool inorder = false);
    static int recvmsg(UDTSOCKET u, char* buf, int len);
-   static int64_t sendfile(UDTSOCKET u, std::fstream& ifs, int64_t& offset, int64_t size, int block = 364000);
-   static int64_t recvfile(UDTSOCKET u, std::fstream& ofs, int64_t& offset, int64_t size, int block = 7280000);
-   static int select(int nfds, ud_set* readfds, ud_set* writefds, ud_set* exceptfds, const timeval* timeout);
-   static int selectEx(const std::vector<UDTSOCKET>& fds, std::vector<UDTSOCKET>* readfds, std::vector<UDTSOCKET>* writefds, std::vector<UDTSOCKET>* exceptfds, int64_t msTimeOut);
    static const rpoll::RPoll &getrpoll();
    static CUDTException& getlasterror();
    static int perfmon(UDTSOCKET u, CPerfMon* perf, bool clear = true);
@@ -212,30 +208,6 @@ private:
       //    Actual size of data received.
 
    int recvmsg(char* data, int len);
-
-      // Functionality:
-      //    Request UDT to send out a file described as "fd", starting from "offset", with size of "size".
-      // Parameters:
-      //    0) [in] ifs: The input file stream.
-      //    1) [in, out] offset: From where to read and send data; output is the new offset when the call returns.
-      //    2) [in] size: How many data to be sent.
-      //    3) [in] block: size of block per read from disk
-      // Returned value:
-      //    Actual size of data sent.
-
-   int64_t sendfile(std::fstream& ifs, int64_t& offset, int64_t size, int block = 366000);
-
-      // Functionality:
-      //    Request UDT to receive data into a file described as "fd", starting from "offset", with expected size of "size".
-      // Parameters:
-      //    0) [out] ofs: The output file stream.
-      //    1) [in, out] offset: From where to write data; output is the new offset when the call returns.
-      //    2) [in] size: How many data to be received.
-      //    3) [in] block: size of block per write to disk
-      // Returned value:
-      //    Actual size of data received.
-
-   int64_t recvfile(std::fstream& ofs, int64_t& offset, int64_t size, int block = 7320000);
 
       // Functionality:
       //    Configure UDT options.

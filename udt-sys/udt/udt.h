@@ -259,11 +259,6 @@ public: // Error Code
 
 ////////////////////////////////////////////////////////////////////////////////
 
-// If you need to export these APIs to be used by a different language,
-// declare extern "C" for them, and add a "udt_" prefix to each API.
-// The following APIs: sendfile(), recvfile(), epoll_wait(), geterrormsg(),
-// include C++ specific feature, please use the corresponding sendfile2(), etc.
-
 namespace UDT
 {
 
@@ -294,15 +289,6 @@ UDT_API int send(UDTSOCKET u, const char* buf, int len, int flags);
 UDT_API int recv(UDTSOCKET u, char* buf, int len, int flags);
 UDT_API int sendmsg(UDTSOCKET u, const char* buf, int len, int ttl = -1, bool inorder = false);
 UDT_API int recvmsg(UDTSOCKET u, char* buf, int len);
-UDT_API int64_t sendfile(UDTSOCKET u, std::fstream& ifs, int64_t& offset, int64_t size, int block = 364000);
-UDT_API int64_t recvfile(UDTSOCKET u, std::fstream& ofs, int64_t& offset, int64_t size, int block = 7280000);
-UDT_API int64_t sendfile2(UDTSOCKET u, const char* path, int64_t* offset, int64_t size, int block = 364000);
-UDT_API int64_t recvfile2(UDTSOCKET u, const char* path, int64_t* offset, int64_t size, int block = 7280000);
-
-// select and selectEX are DEPRECATED; please use epoll.
-UDT_API int select(int nfds, UDSET* readfds, UDSET* writefds, UDSET* exceptfds, const struct timeval* timeout);
-UDT_API int selectEx(const std::vector<UDTSOCKET>& fds, std::vector<UDTSOCKET>* readfds,
-                     std::vector<UDTSOCKET>* writefds, std::vector<UDTSOCKET>* exceptfds, int64_t msTimeOut);
 
 UDT_API const rpoll::RPoll &getrpoll();
 UDT_API ERRORINFO& getlasterror();

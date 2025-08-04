@@ -1128,7 +1128,7 @@ int CUDT::send(const char* data, int len)
    if (m_iSndBufSize <= m_pSndBuffer->getCurrBufSize())
    {
       // write is not available any more
-      s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_OUT, false);
+      // s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_OUT, false);
    }
 
    return size;
@@ -1212,7 +1212,7 @@ int CUDT::recv(char* data, int len)
    if (m_pRcvBuffer->getRcvDataSize() <= 0)
    {
       // read is not available any more
-      s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_IN, false);
+      // s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_IN, false);
    }
 
    if ((res <= 0) && (m_iRcvTimeOut >= 0))
@@ -1318,7 +1318,7 @@ int CUDT::sendmsg(const char* data, int len, int msttl, bool inorder)
    if (m_iSndBufSize <= m_pSndBuffer->getCurrBufSize())
    {
       // write is not available any more
-      s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_OUT, false);
+      // s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_OUT, false);
    }
 
    return len;
@@ -1345,7 +1345,7 @@ int CUDT::recvmsg(char* data, int len)
       if (m_pRcvBuffer->getRcvMsgNum() <= 0)
       {
          // read is not available any more
-         s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_IN, false);
+         // s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_IN, false);
       }
 
       if (0 == res)
@@ -1414,181 +1414,13 @@ int CUDT::recvmsg(char* data, int len)
    if (m_pRcvBuffer->getRcvMsgNum() <= 0)
    {
       // read is not available any more
-      s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_IN, false);
+      // s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_IN, false);
    }
 
    if ((res <= 0) && (m_iRcvTimeOut >= 0))
       throw CUDTException(6, 3, 0);
 
    return res;
-}
-
-int64_t CUDT::sendfile(fstream& ifs, int64_t& offset, int64_t size, int block)
-{
-   if (UDT_DGRAM == m_iSockType)
-      throw CUDTException(5, 10, 0);
-
-   if (m_bBroken || m_bClosing)
-      throw CUDTException(2, 1, 0);
-   else if (!m_bConnected)
-      throw CUDTException(2, 2, 0);
-
-   if (size <= 0)
-      return 0;
-
-   CGuard sendguard(m_SendLock);
-
-   if (m_pSndBuffer->getCurrBufSize() == 0)
-   {
-      // delay the EXP timer to avoid mis-fired timeout
-      uint64_t currtime;
-      CTimer::rdtsc(currtime);
-      m_ullLastRspTime = currtime;
-   }
-
-   int64_t tosend = size;
-   int unitsize;
-
-   // positioning...
-   try
-   {
-      ifs.seekg((streamoff)offset);
-   }
-   catch (...)
-   {
-      throw CUDTException(4, 1);
-   }
-
-   // sending block by block
-   while (tosend > 0)
-   {
-      if (ifs.fail())
-         throw CUDTException(4, 4);
-
-      if (ifs.eof())
-         break;
-
-      unitsize = int((tosend >= block) ? block : tosend);
-
-      #ifndef WINDOWS
-         pthread_mutex_lock(&m_SendBlockLock);
-         while (!m_bBroken && m_bConnected && !m_bClosing && (m_iSndBufSize <= m_pSndBuffer->getCurrBufSize()) && m_bPeerHealth)
-            pthread_cond_wait(&m_SendBlockCond, &m_SendBlockLock);
-         pthread_mutex_unlock(&m_SendBlockLock);
-      #else
-         while (!m_bBroken && m_bConnected && !m_bClosing && (m_iSndBufSize <= m_pSndBuffer->getCurrBufSize()) && m_bPeerHealth)
-            WaitForSingleObject(m_SendBlockCond, INFINITE);
-      #endif
-
-      if (m_bBroken || m_bClosing)
-         throw CUDTException(2, 1, 0);
-      else if (!m_bConnected)
-         throw CUDTException(2, 2, 0);
-      else if (!m_bPeerHealth)
-      {
-         // reset peer health status, once this error returns, the app should handle the situation at the peer side
-         m_bPeerHealth = true;
-         throw CUDTException(7);
-      }
-
-      // record total time used for sending
-      if (0 == m_pSndBuffer->getCurrBufSize())
-         m_llSndDurationCounter = CTimer::getTime();
-
-      int64_t sentsize = m_pSndBuffer->addBufferFromFile(ifs, unitsize);
-
-      if (sentsize > 0)
-      {
-         tosend -= sentsize;
-         offset += sentsize;
-      }
-
-      // insert this socket to snd list if it is not on the list yet
-      m_pSndQueue->m_pSndUList->update(this, false);
-   }
-
-   if (m_iSndBufSize <= m_pSndBuffer->getCurrBufSize())
-   {
-      // write is not available any more
-      s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_OUT, false);
-   }
-
-   return size - tosend;
-}
-
-int64_t CUDT::recvfile(fstream& ofs, int64_t& offset, int64_t size, int block)
-{
-   if (UDT_DGRAM == m_iSockType)
-      throw CUDTException(5, 10, 0);
-
-   if (!m_bConnected)
-      throw CUDTException(2, 2, 0);
-   else if ((m_bBroken || m_bClosing) && (0 == m_pRcvBuffer->getRcvDataSize()))
-      throw CUDTException(2, 1, 0);
-
-   if (size <= 0)
-      return 0;
-
-   CGuard recvguard(m_RecvLock);
-
-   int64_t torecv = size;
-   int unitsize = block;
-   int recvsize;
-
-   // positioning...
-   try
-   {
-      ofs.seekp((streamoff)offset);
-   }
-   catch (...)
-   {
-      throw CUDTException(4, 3);
-   }
-
-   // receiving... "recvfile" is always blocking
-   while (torecv > 0)
-   {
-      if (ofs.fail())
-      {
-         // send the sender a signal so it will not be blocked forever
-         int32_t err_code = CUDTException::EFILE;
-         sendCtrl(8, &err_code);
-
-         throw CUDTException(4, 4);
-      }
-
-      #ifndef WINDOWS
-         pthread_mutex_lock(&m_RecvDataLock);
-         while (!m_bBroken && m_bConnected && !m_bClosing && (0 == m_pRcvBuffer->getRcvDataSize()))
-            pthread_cond_wait(&m_RecvDataCond, &m_RecvDataLock);
-         pthread_mutex_unlock(&m_RecvDataLock);
-      #else
-         while (!m_bBroken && m_bConnected && !m_bClosing && (0 == m_pRcvBuffer->getRcvDataSize()))
-            WaitForSingleObject(m_RecvDataCond, INFINITE);
-      #endif
-
-      if (!m_bConnected)
-         throw CUDTException(2, 2, 0);
-      else if ((m_bBroken || m_bClosing) && (0 == m_pRcvBuffer->getRcvDataSize()))
-         throw CUDTException(2, 1, 0);
-
-      unitsize = int((torecv >= block) ? block : torecv);
-      recvsize = m_pRcvBuffer->readBufferToFile(ofs, unitsize);
-
-      if (recvsize > 0)
-      {
-         torecv -= recvsize;
-         offset += recvsize;
-      }
-   }
-
-   if (m_pRcvBuffer->getRcvDataSize() <= 0)
-   {
-      // read is not available any more
-      s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_IN, false);
-   }
-
-   return size - torecv;
 }
 
 void CUDT::sample(CPerfMon* perf, bool clear)
@@ -2259,6 +2091,9 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
       // currently only this error is signalled from the peer side
       // if recvfile() failes (e.g., due to disk fail), blcoked sendfile/send should return immediately
       // giving the app a chance to fix the issue
+
+      // r: yeah, this is way too high level of a concern for a transport protocol.
+      //    anything interesting we can do with it instead?
 
       m_bPeerHealth = false;
 

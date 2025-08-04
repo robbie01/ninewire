@@ -78,7 +78,7 @@ async fn main() -> anyhow::Result<()> {
     ).await?;
 
     let fsys = Filesystem::new(transport).await?;
-    {
+    loop {
         let root = fsys.attach("anonymous", "").await?;
         tree(&root).await?;
         let f = root.open_at("ff2/dvd/video/ch1").await?;

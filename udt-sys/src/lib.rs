@@ -57,10 +57,6 @@ pub const EASYNCRCV: i32 = 6002;
 pub const ETIMEOUT: i32 = 6003;
 pub const EPEERERR: i32 = 7000;
 
-pub const UDT_EPOLL_IN: i32 = 1;
-pub const UDT_EPOLL_OUT: i32 = 4;
-pub const UDT_EPOLL_ERR: i32 = 8;
-
 fn new_rpoll() -> Box<RPoll> {
     Box::default()
 }

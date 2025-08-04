@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::{sync::Arc, time::{Duration, Instant}};
 
 use tokio::{task::JoinSet, time::sleep};
 use transport::SecureTransport;
@@ -16,11 +16,25 @@ async fn main() -> anyhow::Result<()> {
         let r = SecureTransport::connect(&l, "[::1]:25584".parse()?, transport::Side::Responder { local_private_key: &PRIVATE_KEY }).await?;
         println!("A: connected to {:?}", r.remote_addr()?);
         let mut msg = [0; 30000];
+        let mut t = Instant::now();
+        let mut timeout = t + Duration::from_secs(5);
+        let mut ctr = 0;
         loop {
             let len = r.recv(&mut msg).await?;
             if len == 0 { break }
-            let msg = String::from_utf8_lossy(&msg[..len]);
-            println!("A: received message {:?}", msg.len());
+
+            ctr += len;
+            let now = Instant::now();
+            if now > timeout {
+                let mbps = ctr as f64 * 8. / (1000. * (now - t).as_secs_f64());
+                ctr = 0;
+                println!("A: {mbps} mbps");
+                t = now;
+                timeout = now + Duration::from_secs(5);
+            }
+
+            // let msg = String::from_utf8_lossy(&msg[..len]);
+            // println!("A: received message {:?}", msg.len());
         }
         Ok::<(), anyhow::Error>(())
     });
@@ -31,10 +45,11 @@ async fn main() -> anyhow::Result<()> {
         println!("B: bound to {:?}", l.local_addr()?);
         let c = SecureTransport::connect(&l, "[::1]:25583".parse()?, transport::Side::Initiator { remote_public_key: &PUBLIC_KEY }).await?;
         println!("B: connected to {:?}", c.remote_addr()?);
-        c.send_with(&[b'o'; 1192], false).await?;
-        c.send_with(&[b'a'; 1192], false).await?;
-        c.flush().await?;
+        loop {
+            c.send_with(&[b'o'; 1192], false).await?;
+        }
         // println!("B: sent {len} bytes");
+        #[allow(unreachable_code)]
         Ok::<(), anyhow::Error>(())
     });
         
