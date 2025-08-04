@@ -26,7 +26,7 @@ async fn main() -> anyhow::Result<()> {
             ctr += len;
             let now = Instant::now();
             if now > timeout {
-                let mbps = ctr as f64 * 8. / (1000. * (now - t).as_secs_f64());
+                let mbps = ctr as f64 * 8. / (1_000_000. * (now - t).as_secs_f64());
                 ctr = 0;
                 println!("A: {mbps} mbps");
                 t = now;
