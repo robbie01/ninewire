@@ -604,10 +604,6 @@ const char* CUDTException::getErrorMessage()
            m_strMsg += ": Message is too large to send (it must be less than the UDT send buffer size)";
            break;
 
-        case 13:
-           m_strMsg += ": Invalid epoll ID";
-           break;
-
         default:
            break;
         }

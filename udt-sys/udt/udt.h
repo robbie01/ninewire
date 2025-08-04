@@ -258,7 +258,7 @@ public: // Error Code
 
 // If you need to export these APIs to be used by a different language,
 // declare extern "C" for them, and add a "udt_" prefix to each API.
-// The following APIs: sendfile(), recvfile(), epoll_wait(), geterrormsg(),
+// The following APIs: sendfile(), recvfile(), geterrormsg(),
 // include C++ specific feature, please use the corresponding sendfile2(), etc.
 
 namespace UDT
@@ -296,26 +296,10 @@ UDT_API int64_t recvfile(UDTSOCKET u, std::fstream& ofs, int64_t& offset, int64_
 UDT_API int64_t sendfile2(UDTSOCKET u, const char* path, int64_t* offset, int64_t size, int block = 364000);
 UDT_API int64_t recvfile2(UDTSOCKET u, const char* path, int64_t* offset, int64_t size, int block = 7280000);
 
-// select and selectEX are DEPRECATED; please use epoll.
 UDT_API int select(int nfds, UDSET* readfds, UDSET* writefds, UDSET* exceptfds, const struct timeval* timeout);
 UDT_API int selectEx(const std::vector<UDTSOCKET>& fds, std::vector<UDTSOCKET>* readfds,
                      std::vector<UDTSOCKET>* writefds, std::vector<UDTSOCKET>* exceptfds, int64_t msTimeOut);
 
-// BARCHART
-UDT_API int epoll_update_usock(int eid, UDTSOCKET u, const int* events = NULL);
-// BARCHART
-UDT_API int epoll_verify_usock(int eid, UDTSOCKET u, int* events);
-
-UDT_API int epoll_create();
-UDT_API int epoll_add_usock(int eid, UDTSOCKET u, const int* events = NULL);
-UDT_API int epoll_add_ssock(int eid, SYSSOCKET s, const int* events = NULL);
-UDT_API int epoll_remove_usock(int eid, UDTSOCKET u);
-UDT_API int epoll_remove_ssock(int eid, SYSSOCKET s);
-UDT_API int epoll_wait(int eid, std::set<UDTSOCKET>* readfds, std::set<UDTSOCKET>* writefds, int64_t msTimeOut,
-                       std::set<SYSSOCKET>* lrfds = NULL, std::set<SYSSOCKET>* wrfds = NULL);
-UDT_API int epoll_wait2(int eid, UDTSOCKET* readfds, int* rnum, UDTSOCKET* writefds, int* wnum, int64_t msTimeOut,
-                        SYSSOCKET* lrfds = NULL, int* lrnum = NULL, SYSSOCKET* lwfds = NULL, int* lwnum = NULL);
-UDT_API int epoll_release(int eid);
 UDT_API ERRORINFO& getlasterror();
 UDT_API int getlasterror_code();
 UDT_API const char* getlasterror_desc();

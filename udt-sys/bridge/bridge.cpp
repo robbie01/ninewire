@@ -13,7 +13,6 @@ namespace UDT {
         
         // Tokio will *hang* while exiting until all `spawn_blocking`s have completed.
         // In the future, we should somehow make this remotely interruptible.
-        // Epoll may assist with this.
         if (writable) {
             return selectEx(fds, nullptr, &v1, &v2, 500);
         } else {
