@@ -35,7 +35,7 @@ impl FilesystemInner {
             .unwrap_or_else(|e| Rerror::from(e).serialize(tag).unwrap());
 
         self.transport.send(data).await?;
-        trace!("sent request with tag {tag}, {:?}", message);
+        trace!(target: "client::fs", "sent request with tag {tag}, {:?}", message);
 
         rcv.await.map_err(|_| io::ErrorKind::UnexpectedEof.into())
     }

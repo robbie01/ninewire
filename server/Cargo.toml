@@ -21,7 +21,7 @@ mediator-proto.path = "../mediator-proto"
 local-ip-address = "0.6.5"
 transport.path = "../transport"
 
-console-subscriber = "0.4"
+# console-subscriber = "0.4"
 tracing-subscriber = "0.3"
 cfg-if = "1"
 tonic = "0.14"

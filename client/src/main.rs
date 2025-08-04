@@ -42,6 +42,7 @@ async fn tree(dir: &Directory) -> io::Result<()> {
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
+    // console_subscriber::init();
 
     let endpoint = Arc::new(udt::Endpoint::bind("[::]:0".parse()?)?);
     let port = endpoint.local_addr()?.port();

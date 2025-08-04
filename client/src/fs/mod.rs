@@ -21,6 +21,7 @@ use util::fidpool::{FidHandle, FidPool};
 
 const MAX_MESSAGE_SIZE: u32 = 1280 - 64 - 8 - 16;
 
+// todo: AtomicBool flag in case recv task dies
 #[derive(Debug)]
 pub(crate) struct FilesystemInner {
     transport: SecureTransport,

@@ -27,11 +27,19 @@ fn main() {
         println!("cargo::rustc-link-lib=m");
     }
 
-    if std::env::var("CARGO_CFG_TARGET_OS").unwrap() == "macos" {
+    if std::env::var("CARGO_CFG_TARGET_ARCH").unwrap() == "x86_64" {
+        build.define("AMD64", None);
+    }
+
+    let os = std::env::var("CARGO_CFG_TARGET_OS").unwrap();
+
+    if os == "macos" {
         build.define("MACOSX", None);
-    } else if std::env::var("CARGO_CFG_TARGET_OS").unwrap() == "linux" {
+    } else if os == "linux" {
         build.define("LINUX", None);
         println!("cargo::rustc-link-lib=dl");
+    } else if os.contains("bsd") {
+        build.define("BSD", None);
     } else {
         panic!("unsupported platform");
     }
