@@ -174,16 +174,6 @@ mod ffi {
         unsafe fn sendmsg(u: Socket, buf: *const c_char, len: i32, ttl_ms: i32, inorder: bool) -> i32;
         unsafe fn recvmsg(u: Socket, buf: *mut c_char, len: i32) -> i32;
         unsafe fn select_single(u: Socket, writable: bool) -> i32;
-        unsafe fn epoll_create() -> i32;
-        unsafe fn epoll_add_usock(eid: i32, u: Socket, events: *const i32) -> i32;
-        unsafe fn epoll_add_ssock(eid: i32, s: SysSocket, events: *const i32) -> i32;
-        unsafe fn epoll_remove_usock(eid: i32, u: Socket) -> i32;
-        unsafe fn epoll_remove_ssock(eid: i32, s: SysSocket) -> i32;
-        unsafe fn epoll_update_usock(eid: i32, u: Socket, events: *const i32) -> i32;
-        unsafe fn epoll_verify_usock(eid: i32, u: Socket, events: *mut i32) -> i32;
-        #[rust_name = "epoll_wait"]
-        unsafe fn epoll_wait3(eid: i32, readfds: *mut Vec<Socket>, writefds: *mut Vec<Socket>, timeout_ms: i64, lrfds: *mut Vec<SysSocket>, lwfds: *mut Vec<SysSocket>) -> i32;
-        unsafe fn epoll_release(eid: i32) -> i32;
         unsafe fn getlasterror_code() -> i32;
         unsafe fn getlasterror_desc() -> *const c_char;
         unsafe fn getsockstate(u: Socket) -> Status;
