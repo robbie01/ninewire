@@ -228,7 +228,7 @@ private:
    udt_pthread_mutex_t m_MultiplexerLock;
 
 private:
-   CCache<CInfoBlock>* m_pCache;			// UDT network information cache
+   std::unique_ptr<CCache<CInfoBlock>> m_pCache;			// UDT network information cache
 
 private:
    volatile bool m_bClosing;

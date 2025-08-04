@@ -120,7 +120,7 @@ m_SocketID(0),
 m_TLSError(),
 m_mMultiplexer(),
 m_MultiplexerLock(),
-m_pCache(NULL),
+m_pCache(nullptr),
 m_bClosing(false),
 m_GCStopLock(),
 m_GCStopCond(),
@@ -151,7 +151,7 @@ m_ClosedSockets()
       m_TLSLock = CreateMutex(NULL, false, NULL);
    #endif
 
-   m_pCache = new CCache<CInfoBlock>;
+   m_pCache = std::make_unique<CCache<CInfoBlock>>();
 }
 
 CUDTUnited::~CUDTUnited()
@@ -172,8 +172,6 @@ CUDTUnited::~CUDTUnited()
       TlsFree(m_TLSError);
       CloseHandle(m_TLSLock);
    #endif
-
-   delete m_pCache;
 }
 
 int CUDTUnited::startup()
@@ -284,7 +282,7 @@ UDTSOCKET CUDTUnited::newSocket(int af, int type)
    ns->m_pUDT->m_SocketID = ns->m_SocketID;
    ns->m_pUDT->m_iSockType = (SOCK_STREAM == type) ? UDT_STREAM : UDT_DGRAM;
    ns->m_pUDT->m_iIPversion = ns->m_iIPversion = af;
-   ns->m_pUDT->m_pCache = m_pCache;
+   ns->m_pUDT->m_pCache = m_pCache.get();
 
    // protect the m_Sockets structure.
    CGuard::enterCS(m_ControlLock);
