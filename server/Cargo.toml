@@ -12,10 +12,16 @@ bytes.workspace = true
 bytestring.workspace = true
 tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros", "net", "io-util", "fs", "full", "tracing"] }
 tokio-util = { workspace = true, features = ["net"] }
+tokio-stream = "0.1"
 futures.workspace = true
 pin-project.workspace = true
 rand.workspace = true
 udt.path = "../udt"
+mediator-proto.path = "../mediator-proto"
+local-ip-address = "0.6.5"
+transport.path = "../transport"
 
 console-subscriber = "0.4"
+tracing-subscriber = "0.3"
 cfg-if = "1"
+tonic = "0.14"

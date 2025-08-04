@@ -1,12 +1,13 @@
-use std::{collections::HashMap, future::{ready, Future}, pin::{pin, Pin}, sync::Arc, task::{Context, Poll, Waker}};
+use std::{collections::HashMap, future::{ready, Future}, mem, pin::{pin, Pin}, sync::Arc, task::{Context, Poll, Waker}};
 
+use bytes::BytesMut;
 use bytestring::ByteString;
-use futures::{io, stream::FuturesUnordered, FutureExt as _, SinkExt as _, Stream, StreamExt as _};
+use futures::{io, stream::FuturesUnordered, FutureExt as _, Stream, StreamExt as _};
 use pin_project::pin_project;
-use tokio::{io::{AsyncRead, AsyncWrite}, sync::RwLock};
-use tokio_util::codec::LengthDelimitedCodec;
+use tokio::sync::RwLock;
 use npwire::*;
-use util::{noise::{NoiseStream, Side}, polymur};
+use transport::SecureTransport;
+use util::polymur;
 
 use super::{traits::{OpenResource as _, PathResource as _, Resource as _}, Serve};
 
@@ -240,22 +241,13 @@ fn poll_no_context<S: Stream + Unpin>(stream: &mut S) -> Poll<Option<S::Item>> {
 }
 
 pub async fn handle_client<S: Serve>(
-    peer: impl AsyncRead + AsyncWrite,
+    peer: SecureTransport,
     handler: Arc<S>
 ) -> io::Result<()> {
     let resource_mgr = ResourceManager {
         resources: RwLock::default(),
         handler: handler.clone(),
     };
-
-    let peer = pin!(peer);
-    let peer = NoiseStream::new(peer, Side::Responder { local_private_key: &super::PRIVATE_KEY }).await?;
-    let mut framed = LengthDelimitedCodec::builder()
-        .little_endian()
-        .length_field_type::<u32>()
-        .length_adjustment(-4)
-        .max_frame_length(MAX_MESSAGE_SIZE as usize - 4)
-        .new_framed(peer);
 
     let mut inflight = pin!(FuturesUnordered::new());
 
@@ -269,14 +261,13 @@ pub async fn handle_client<S: Serve>(
                 resource_mgr.resources.write().await.clear();
 
                 if msize < 256 {
-                    framed.send(rerror(
+                    peer.send(rerror(
                         "Tversion: message size too small"
                     ).serialize(!0).unwrap()).await?;
                 } else {
                     let msize = msize.min(MAX_MESSAGE_SIZE);
-                    let version = if version == "9P2000" { "9P2000" } else { "unknown" };
-                    framed.codec_mut().set_max_frame_length(msize.checked_sub(4).unwrap() as usize);
-                    framed.send(Rversion { msize, version: ByteString::from_static(version) }.serialize(!0).unwrap()).await?;
+                    let version: &'static str = if version == "9P2000" { "9P2000" } else { "unknown" };
+                    peer.send(Rversion { msize, version: ByteString::from_static(version) }.serialize(!0).unwrap()).await?;
     
                     initialized = true;
                 }
@@ -286,10 +277,13 @@ pub async fn handle_client<S: Serve>(
         // 2025-03-31: I have realized that I reinvented StreamExt::buffer_unordered
         // from first principles. Luckily, that method doesn't actually work directly
         // with what I need to do because of the flush stuff.
+        let mut buffer = BytesMut::zeroed(MAX_MESSAGE_SIZE as usize);
         tokio::select! {
             biased;
-            Some(incoming) = framed.next(), if inflight.len() < MAX_IN_FLIGHT && next_session.is_none() => {
-                let incoming = incoming?;
+            incoming_n = peer.recv(&mut buffer), if inflight.len() < MAX_IN_FLIGHT && next_session.is_none() => {
+                let incoming_n = incoming_n?;
+                let mut incoming = mem::replace(&mut buffer, BytesMut::zeroed(MAX_MESSAGE_SIZE as usize));
+                incoming.truncate(incoming_n);
 
                 let des = deserialize_t(incoming.freeze());
 
@@ -332,7 +326,7 @@ pub async fn handle_client<S: Serve>(
                                     hdl: dispatch(
                                         &resource_mgr,
                                         req,
-                                        framed.codec().max_frame_length()
+                                        MAX_MESSAGE_SIZE as usize
                                     ).map(|resp| resp.unwrap_or_else(RMessage::from)).left_future()
                                 });
                             }
@@ -359,10 +353,10 @@ pub async fn handle_client<S: Serve>(
                         .serialize(tag)
                         .unwrap_or_else(|e| Rerror::from(e).serialize(tag).unwrap());
 
-                    framed.feed(serialized).await?;
+                    peer.send(serialized).await?;
 
                     if let Some(flush) = flushes {
-                        framed.feed(Rflush.serialize(flush).unwrap()).await?;
+                        peer.send(Rflush.serialize(flush).unwrap()).await?;
                     }
 
                     if let Poll::Ready(Some(tfr)) = poll_no_context(&mut inflight) {
@@ -373,14 +367,12 @@ pub async fn handle_client<S: Serve>(
                         break;
                     }
                 }
-
-                framed.flush().await?;
             },
             else => break
         }
     }
 
-    framed.close().await?;
+    peer.flush().await?;
 
     Ok(())
 }

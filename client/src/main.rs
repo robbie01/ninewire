@@ -1,8 +1,12 @@
-use std::{io, net::Ipv6Addr, time::Duration};
+use std::{io, net::{IpAddr, Ipv6Addr, SocketAddr, SocketAddrV6}, sync::Arc, time::Duration};
 
+use anyhow::bail;
 use bytestring::ByteString;
 use fs::{Directory, FileReader, Filesystem};
-use tokio::{io::AsyncReadExt as _, net::TcpStream, time};
+use mediator_proto::{mediator_client::MediatorClient, RendezvousRequest};
+use tokio::{io::AsyncReadExt as _, time};
+use transport::SecureTransport;
+use util::is_unicast_global;
 
 pub mod fs;
 
@@ -38,14 +42,41 @@ async fn tree(dir: &Directory) -> io::Result<()> {
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
-    
-    let con = TcpStream::connect((Ipv6Addr::LOCALHOST, 64444)).await?;
-    let noise = util::noise::NoiseStream::new(
-        con,
-        util::noise::Side::Initiator { remote_public_key: &PUBLIC_KEY }
+
+    let endpoint = Arc::new(udt::Endpoint::bind("[::]:0".parse()?)?);
+    let port = endpoint.local_addr()?.port();
+
+    let Some(addr) = local_ip_address::unix::list_afinet_netifas()?.into_iter()
+        .find_map(|(_, addr)| match addr {
+            IpAddr::V6(addr) if is_unicast_global(&addr) => Some(addr),
+            _ => None
+        }) else { bail!("no usable address :(") };
+
+    let mut mediator = MediatorClient::connect("http://[::1]:64344").await?;
+
+    let resp = mediator.rendezvous(RendezvousRequest {
+        name: "bugerking".to_owned(),
+        endpoint: Some(mediator_proto::Endpoint {
+            addr: addr.octets().to_vec(),
+            port: port.into(),
+            pubkey: Vec::new()
+        })
+    }).await?.into_inner();
+    drop(mediator);
+
+    let Some(ep) = resp.endpoint else { bail!("no endpoint??") };
+
+    let transport = SecureTransport::connect(
+        &endpoint,
+        SocketAddr::V6(SocketAddrV6::new(
+            Ipv6Addr::from(<[u8; 16]>::try_from(&ep.addr[..])?),
+            ep.port.try_into()?,
+            0, 0
+        )),
+        transport::Side::Initiator { remote_public_key: &PUBLIC_KEY }
     ).await?;
 
-    let fsys = Filesystem::new(noise);
+    let fsys = Filesystem::new(transport).await?;
     {
         let root = fsys.attach("anonymous", "").await?;
         tree(&root).await?;

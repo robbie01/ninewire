@@ -1,10 +1,11 @@
-use std::{collections::HashMap, sync::LazyLock};
+use std::{collections::HashMap, pin::Pin, sync::{Arc, LazyLock}};
 
+use async_stream::try_stream;
 use mediator_proto::{mediator_server, register_request, Endpoint, RegisterReply, RegisterRequest, RendezvousReply, RendezvousRequest};
 use scc::hash_map::Entry;
 use tokio::sync::{mpsc, oneshot};
-use tokio_stream::{empty, wrappers::ReceiverStream, Empty};
-use tokio_util::{either::Either, sync::CancellationToken};
+use tokio_stream::Stream;
+use tokio_util::sync::CancellationToken;
 use tonic::Status;
 
 #[derive(Debug)]
@@ -15,7 +16,7 @@ struct PlsRendezvous {
 
 #[derive(Debug, Default)]
 struct Handler {
-    mappings: scc::HashMap<String, mpsc::Sender<PlsRendezvous>>
+    mappings: Arc<scc::HashMap<String, mpsc::Sender<PlsRendezvous>>>
 }
 
 fn validate_endpoint(ep: &Endpoint, server: bool) -> tonic::Result<()> {
@@ -36,7 +37,7 @@ fn validate_endpoint(ep: &Endpoint, server: bool) -> tonic::Result<()> {
 
 #[tonic::async_trait]
 impl mediator_server::Mediator for Handler {
-    type RegisterStream = Either<ReceiverStream<tonic::Result<RegisterReply>>, Empty<tonic::Result<RegisterReply>>>;
+    type RegisterStream = Pin<Box<dyn Stream<Item = tonic::Result<RegisterReply>> + Send>>;//Either<ReceiverStream<tonic::Result<RegisterReply>>, Empty<tonic::Result<RegisterReply>>>;
 
     async fn rendezvous(&self, req: tonic::Request<RendezvousRequest>) -> tonic::Result<tonic::Response<RendezvousReply>> {
         let req = req.into_inner();
@@ -58,36 +59,37 @@ impl mediator_server::Mediator for Handler {
     }
 
     async fn register(&self, req: tonic::Request<tonic::Streaming<RegisterRequest>>) -> tonic::Result<tonic::Response<Self::RegisterStream>> {
-        let mut req = req.into_inner();
+        let mappings = self.mappings.clone();
+        Ok(tonic::Response::new(Box::pin(try_stream! {
+            let mut req = req.into_inner();
 
-        let Some(first) = req.message().await? else { return Ok(Either::Right(empty()).into()) };
-        let Some(register_request::Req::Registration(reg)) = first.req else { return Err(Status::invalid_argument("first request must be registration")) };
+            let Some(first) = req.message().await? else { return };
+            let Some(register_request::Req::Registration(reg)) = first.req else { Err(Status::invalid_argument("first request must be registration"))? };
 
-        let name = reg.name;
-        let Some(endpoint) = reg.endpoint else { return Err(Status::invalid_argument("unspecified endpoint")) };
-        validate_endpoint(&endpoint, true)?;
+            let name = reg.name;
+            let Some(endpoint) = reg.endpoint else { Err(Status::invalid_argument("unspecified endpoint"))? };
+            validate_endpoint(&endpoint, true)?;
 
-        let ent = self.mappings.entry_async(name).await;
-        let mut rdv_requests = match ent {
-            Entry::Occupied(mut ent) => {
-                if !ent.is_closed() {
-                    return Err(Status::already_exists("requested name is in use"))
+            let ent = mappings.entry_async(name.clone()).await;
+            let mut rdv_requests = match ent {
+                Entry::Occupied(mut ent) => {
+                    if !ent.is_closed() {
+                        Err(Status::already_exists("requested name is in use"))?
+                    }
+                    let (inc, rdv_request) = mpsc::channel(1);
+                    ent.insert(inc);
+                    rdv_request
+                },
+                Entry::Vacant(ent) => {
+                    let (inc, rdv_request) = mpsc::channel(1);
+                    ent.insert_entry(inc);
+                    rdv_request
                 }
-                let (inc, rdv_request) = mpsc::channel(1);
-                ent.insert(inc);
-                rdv_request
-            },
-            Entry::Vacant(ent) => {
-                let (inc, rdv_request) = mpsc::channel(1);
-                ent.insert_entry(inc);
-                rdv_request
-            }
-        };
+            };
 
-        let (reqs_outgoing, out) = mpsc::channel(1);
+            println!("new binding for {name}");
 
-        tokio::spawn(async move {
-            let mut ctr = 0u64;
+            let mut ctr = 1u64;
             let mut inflight = HashMap::<u64, oneshot::Sender<Option<Endpoint>>>::new();
 
             loop {
@@ -99,18 +101,15 @@ impl mediator_server::Mediator for Handler {
                                 let id = ctr;
                                 ctr += 1;
                                 inflight.insert(id, rdv_req.reply);
-                                let res = reqs_outgoing.send(Ok(RegisterReply {
+                                yield RegisterReply {
                                     request_id: id,
                                     endpoint: Some(rdv_req.ep)
-                                })).await;
-                                if res.is_err() {
-                                    break;
-                                }
+                                };
                             }
                         }
                     }
                     rdv_reply = req.message() => {
-                        let rdv_reply = rdv_reply?;
+                        let rdv_reply = rdv_reply.unwrap(); // todo
                         match rdv_reply {
                             None => break,
                             Some(rdv_reply) => {
@@ -133,10 +132,7 @@ impl mediator_server::Mediator for Handler {
                 }
                 inflight.retain(|_, v| !v.is_closed());
             }
-            Ok::<_, anyhow::Error>(())
-        });
-
-        Ok(Either::Left(ReceiverStream::new(out)).into())
+        })))
     }
 }
 

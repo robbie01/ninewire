@@ -16,9 +16,12 @@ async fn main() -> anyhow::Result<()> {
         let r = SecureTransport::connect(&l, "[::1]:25584".parse()?, transport::Side::Responder { local_private_key: &PRIVATE_KEY }).await?;
         println!("A: connected to {:?}", r.remote_addr()?);
         let mut msg = [0; 30000];
-        let len = r.recv(&mut msg).await?;
-        let msg = String::from_utf8_lossy(&msg[..len]);
-        println!("A: received message {:?}", msg.len());
+        loop {
+            let len = r.recv(&mut msg).await?;
+            if len == 0 { break }
+            let msg = String::from_utf8_lossy(&msg[..len]);
+            println!("A: received message {:?}", msg.len());
+        }
         Ok::<(), anyhow::Error>(())
     });
 

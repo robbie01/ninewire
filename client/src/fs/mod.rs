@@ -1,12 +1,9 @@
-use std::{collections::HashMap, pin::pin, sync::Arc};
+use std::{collections::BTreeMap, io, mem, sync::Arc};
 
-use anyhow::bail;
+use bytes::BytesMut;
 use bytestring::ByteString;
-use futures::{SinkExt, StreamExt as _, TryStreamExt};
-use npwire::{deserialize_r, RMessage, Rerror, TMessage, Tversion, Twrite, TWRITE_OVERHEAD};
-use pool::TagPool;
-use tokio::{io::{AsyncRead, AsyncWrite}, sync::{mpsc, oneshot}};
-use tokio_util::codec::LengthDelimitedCodec;
+use npwire::{deserialize_r, RMessage, TMessage, Tversion};
+use parking_lot::Mutex;
 
 mod pool;
 mod transact;
@@ -17,21 +14,19 @@ mod readdir;
 pub use dir::*;
 pub use readdir::*;
 pub use file::*;
+use tokio::sync::oneshot;
 use tracing::trace;
-use util::{fidpool::{FidHandle, FidPool}, polymur};
-
-#[derive(Debug)]
-struct Request {
-    message: TMessage,
-    reply_to: oneshot::Sender<RMessage>
-}
+use transport::SecureTransport;
+use util::fidpool::{FidHandle, FidPool};
 
 const MAX_MESSAGE_SIZE: u32 = 1280 - 64 - 8 - 16;
 
 #[derive(Debug)]
 pub(crate) struct FilesystemInner {
-    sender: mpsc::Sender<Request>,
-    fids: FidPool
+    transport: SecureTransport,
+    inflight: Mutex<BTreeMap<u16, oneshot::Sender<RMessage>>>,
+    fids: FidPool,
+    maxlen: usize
 }
 
 #[derive(Debug)]
@@ -46,85 +41,67 @@ impl FilesystemInner {
 }
 
 impl Filesystem {
-    pub fn new(stream: impl AsyncRead + AsyncWrite + Send + 'static) -> Self {
-        let (sender, mut rcv) = mpsc::channel::<Request>(1);
+    pub async fn new(transport: SecureTransport) -> io::Result<Self> {
+        let mut inner = FilesystemInner {
+            transport,
+            inflight: Default::default(),
+            fids: FidPool::new(),
+            maxlen: 0
+        };
+
+        let ver = TMessage::Tversion(Tversion {
+            msize: MAX_MESSAGE_SIZE,
+            version: ByteString::from_static("9P2000")
+        });
+        inner.transport.send(ver.serialize(!0).unwrap()).await?;
+        trace!("sent request {ver:?}");
+
+        let mut ver = BytesMut::zeroed(MAX_MESSAGE_SIZE as usize);
+        let n = inner.transport.recv(&mut ver).await?;
+        ver.truncate(n);
+        
+        let (_, ver) = deserialize_r(ver.freeze()).map_err(io::Error::other)?;
+        trace!("received reply {ver:?}");
+        let RMessage::Rversion(ver) = ver else {
+            return Err(io::Error::other("invalid version response"))
+        };
+
+        if ver.version != "9P2000" {
+            return Err(io::Error::other("protocol not supported"))
+        }
+        inner.maxlen = ver.msize as usize;
+
+        let inner = Arc::new(inner);
+        let inner2 = inner.clone();
 
         let _handle = tokio::spawn(async move {
-            let stream = pin!(stream);
-            let mut framed = LengthDelimitedCodec::builder()
-                .little_endian()
-                .length_field_type::<u32>()
-                .length_adjustment(-4)
-                .new_framed(stream);
-
-            let ver = TMessage::Tversion(Tversion {
-                msize: MAX_MESSAGE_SIZE,
-                version: ByteString::from_static("9P2000")
-            });
-            framed.send(ver.serialize(!0).unwrap()).await?;
-            trace!("sent request {ver:?}");
-
-            let Some(ver) = framed.try_next().await? else {
-                return Ok(())
-            };
-            
-            let (_, ver) = deserialize_r(ver.freeze())?;
-            trace!("received reply {ver:?}");
-            let RMessage::Rversion(ver) = ver else {
-                bail!("invalid version response")
-            };
-
-            if ver.version != "9P2000" {
-                bail!("protocol not supported")
-            }
-            let maxlen = ver.msize.checked_sub(4).unwrap() as usize;
-            framed.codec_mut().set_max_frame_length(maxlen);
-
-            let mut tags = TagPool::default();
-
-            let mut replies = HashMap::<_, _, polymur::RandomState>::default();
-
+            let mut resp = BytesMut::zeroed(MAX_MESSAGE_SIZE as usize);
             loop {
-                tokio::select! {
-                    Some(mut req) = rcv.recv() => {
-                        let tag = tags.get().unwrap();
+                let n = inner2.transport.recv(&mut resp).await?;
+                let mut resp = mem::replace(&mut resp, BytesMut::zeroed(MAX_MESSAGE_SIZE as usize));
+                resp.truncate(n);
+                if let Ok((tag, resp)) = deserialize_r(resp.freeze()) {
+                    trace!("received reply with tag {tag}, {resp:?}");
 
-                        replies.insert(tag, req.reply_to);
-
-                        // Bound writes by the max message size
-                        if let TMessage::Twrite(Twrite { ref mut data, .. }) = req.message {
-                            data.truncate(maxlen - TWRITE_OVERHEAD);
-                        }
-
-                        let data = req.message
-                            .serialize(tag)
-                            .unwrap_or_else(|e| Rerror::from(e).serialize(tag).unwrap());
-
-                        framed.send(data).await?;
-                        trace!("sent request with tag {tag}, {:?}", req.message);
-                    },
-                    Some(resp) = framed.next() => {
-                        if let Ok((tag, resp)) = deserialize_r(resp?.freeze()) {
-                            trace!("received reply with tag {tag}, {resp:?}");
-
-                            if let Some(reply_to) = replies.remove(&tag) {
-                                tags.put(tag);
-                                let _ = reply_to.send(resp);
-                            }
-                        }
-                    },
-                    else => break
+                    if let Some(reply_to) = inner2.inflight.lock().remove(&tag) {
+                        let _ = reply_to.send(resp);
+                    }
                 }
             }
 
-            Ok(())
+            #[allow(unreachable_code)]
+            Ok::<_, anyhow::Error>(())
         });
 
-        Self {
-            fsys: Arc::new(FilesystemInner {
-                sender,
-                fids: FidPool::default()
-            })
-        }
+        tokio::spawn(async move {
+            let res = _handle.await.unwrap();
+            if let Err(e) = res {
+                println!("fatal error: {e:?}")
+            }
+        });
+
+        Ok(Self {
+            fsys: inner
+        })
     }
 }

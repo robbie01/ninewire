@@ -169,6 +169,7 @@ mod ffi {
         unsafe fn recv(u: Socket, buf: *mut c_char, len: i32, _unused: i32) -> i32;
         unsafe fn sendmsg(u: Socket, buf: *const c_char, len: i32, ttl_ms: i32, inorder: bool) -> i32;
         unsafe fn recvmsg(u: Socket, buf: *mut c_char, len: i32) -> i32;
+        unsafe fn select_single(u: Socket, writable: bool) -> i32;
         unsafe fn epoll_create() -> i32;
         unsafe fn epoll_add_usock(eid: i32, u: Socket, events: *const i32) -> i32;
         unsafe fn epoll_add_ssock(eid: i32, s: SysSocket, events: *const i32) -> i32;

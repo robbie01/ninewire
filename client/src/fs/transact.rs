@@ -1,16 +1,42 @@
 use std::io;
 
 use bytestring::ByteString;
-use npwire::{RMessage, Rclunk, Rerror, Ropen, Rstat, Rwalk, TMessage, Tclunk, Topen, Tstat, Twalk};
+use npwire::{RMessage, Rclunk, Rerror, Ropen, Rstat, Rwalk, TMessage, Tclunk, Topen, Tstat, Twalk, Twrite, TWRITE_OVERHEAD};
 use tokio::sync::oneshot;
+use tracing::trace;
 use util::fidpool::FidHandle;
 
-use super::{FilesystemInner, Request};
+use super::FilesystemInner;
 
 impl FilesystemInner {
     pub(super) async fn transact(&self, message: impl Into<TMessage>) -> io::Result<RMessage> {
-        let (reply_to, rcv) = oneshot::channel();
-        self.sender.send(Request { message: message.into(), reply_to }).await.map_err(|_| io::ErrorKind::BrokenPipe)?;
+        let mut message = message.into();
+        
+        let (tag, rcv) = {
+            let mut inflight = self.inflight.lock();
+            let mut tag = 0;
+            while inflight.contains_key(&tag) {
+                // todo: prevent tags from equaling NOTAG (!0) and wait if the queue is full
+                tag = tag.checked_add(1).unwrap();
+            }
+
+            let (reply_to, rcv) = oneshot::channel();
+            inflight.insert(tag, reply_to);
+            (tag, rcv)
+        };
+
+        // Bound writes by the max message size
+        if let TMessage::Twrite(Twrite { ref mut data, .. }) = message {
+            data.truncate(self.maxlen - TWRITE_OVERHEAD);
+        }
+
+        let data = message
+            .serialize(tag)
+            .unwrap_or_else(|e| Rerror::from(e).serialize(tag).unwrap());
+
+        self.transport.send(data).await?;
+        trace!("sent request with tag {tag}, {:?}", message);
+
         rcv.await.map_err(|_| io::ErrorKind::UnexpectedEof.into())
     }
 

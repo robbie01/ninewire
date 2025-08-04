@@ -41,4 +41,16 @@ namespace UDT {
 
         return result;
     }
+
+    int select_single(UDTSOCKET u, bool writable) {
+        std::vector<UDTSOCKET> fds{u};
+        std::vector<UDTSOCKET> v1;
+        std::vector<UDTSOCKET> v2;
+        if (writable) {
+            return selectEx(fds, nullptr, &v1, &v2, -1);
+        } else {
+            std::vector<UDTSOCKET> v1;
+            return selectEx(fds, &v1, nullptr, &v2, -1);
+        }
+    }
 }

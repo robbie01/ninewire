@@ -13,3 +13,4 @@ tokio-util.workspace = true
 ctrlc = "3.4"
 scc = "2.3"
 tokio-stream = "0.1"
+async-stream = "0.3"

@@ -1,20 +1,18 @@
-use std::{fmt::Debug, io, sync::Arc};
+use std::{fmt::Debug, sync::Arc};
 
 use futures::{TryStream, TryStreamExt as _};
-use tokio::{io::{AsyncRead, AsyncWrite}, task::{id, JoinSet}};
+use tokio::task::{id, JoinSet};
 use traits::Serve;
+use transport::SecureTransport;
 
 pub mod traits;
 mod client;
 
-const PRIVATE_KEY: [u8; 32] = [127, 93, 161, 223, 213, 211, 245, 80, 69, 165, 77, 133, 169, 40, 130, 112, 218, 255, 225, 74, 78, 69, 83, 20, 154, 244, 58, 224, 51, 34, 61, 102];
-
 pub async fn serve_mux<
-    I: AsyncRead + AsyncWrite + Send + 'static,
     A: Debug + Send + 'static,
     S: Serve,
-    L: TryStream<Ok = (I, A), Error = io::Error> + Unpin
->(handler: Arc<S>, mut listener: L) -> io::Result<()> {
+    L: TryStream<Ok = (SecureTransport, A)> + Unpin
+>(handler: Arc<S>, mut listener: L) -> Result<(), L::Error> {
     let mut conns = JoinSet::new();
 
     loop {

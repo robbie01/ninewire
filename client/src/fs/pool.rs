@@ -1,11 +1,13 @@
 use std::collections::BTreeSet;
 
+#[allow(dead_code)]
 #[derive(Debug, Default)]
 pub struct TagPool {
     free: BTreeSet<u16>,
     lowest: u16
 }
 
+#[allow(dead_code)]
 impl TagPool {
     pub fn get(&mut self) -> Option<u16> {
         if let Some(v) = self.free.pop_first() {

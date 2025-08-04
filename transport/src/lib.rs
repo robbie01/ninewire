@@ -42,7 +42,7 @@ impl SecureTransport {
         while !crypto.is_handshake_finished() {
             if crypto.is_my_turn() {
                 let n = crypto.write_message(&[], &mut buf).map_err(io::Error::other)?;
-                inner.send(&buf[..n], None, true).await?;
+                inner.send(&buf[..n]).await?;
             } else {
                 let n = inner.recv(&mut buf).await?;
                 crypto.read_message(&buf[..n], &mut []).map_err(io::Error::other)?;
@@ -94,10 +94,14 @@ impl SecureTransport {
         tmp[..8].copy_from_slice(&nonce.to_be_bytes());
 
         // Force inorder if the nonce is 0 so that transport messages aren't reordered behind handshake messages
-        let n = self.inner.send(&tmp, None, inorder || nonce == 0).await?;
+        let n = self.inner.send_with(&tmp, None, inorder || nonce == 0).await?;
         assert_eq!(n, tmp.len());
 
         Ok(buf.len())
+    }
+
+    pub async fn send(&self, buf: impl AsRef<[u8]>) -> io::Result<usize> {
+        self.send_with(buf.as_ref(), true).await
     }
 
     pub fn flush(&self) -> impl Future<Output = io::Result<()>> {
