@@ -163,57 +163,6 @@ void CSndBuffer::addBuffer(const char* data, int len, int ttl, bool order)
       m_iNextMsgNo = 1;
 }
 
-int CSndBuffer::addBufferFromFile(fstream& ifs, int len)
-{
-   int size = len / m_iMSS;
-   if ((len % m_iMSS) != 0)
-      size ++;
-
-   // dynamically increase sender buffer
-   while (size + m_iCount >= m_iSize)
-      increase();
-
-   Block* s = m_pLastBlock;
-   int total = 0;
-   for (int i = 0; i < size; ++ i)
-   {
-      if (ifs.bad() || ifs.fail() || ifs.eof())
-         break;
-
-      int pktlen = len - i * m_iMSS;
-      if (pktlen > m_iMSS)
-         pktlen = m_iMSS;
-
-      ifs.read(s->m_pcData, pktlen);
-      if ((pktlen = ifs.gcount()) <= 0)
-         break;
-
-      // currently file transfer is only available in streaming mode, message is always in order, ttl = infinite
-      s->m_iMsgNo = m_iNextMsgNo | 0x20000000;
-      if (i == 0)
-         s->m_iMsgNo |= 0x80000000;
-      if (i == size - 1)
-         s->m_iMsgNo |= 0x40000000;
-
-      s->m_iLength = pktlen;
-      s->m_iTTL = -1;
-      s = s->m_pNext;
-
-      total += pktlen;
-   }
-   m_pLastBlock = s;
-
-   CGuard::enterCS(m_BufLock);
-   m_iCount += size;
-   CGuard::leaveCS(m_BufLock);
-
-   m_iNextMsgNo ++;
-   if (m_iNextMsgNo == CMsgNo::m_iMaxMsgNo)
-      m_iNextMsgNo = 1;
-
-   return total;
-}
-
 int CSndBuffer::readData(char** data, int32_t& msgno)
 {
    // No data to read
@@ -420,45 +369,6 @@ int CRcvBuffer::readBuffer(char* data, int len)
    }
 
    m_iStartPos = p;
-   return len - rs;
-}
-
-int CRcvBuffer::readBufferToFile(fstream& ofs, int len)
-{
-   int p = m_iStartPos;
-   int lastack = m_iLastAckPos;
-   int rs = len;
-
-   while ((p != lastack) && (rs > 0))
-   {
-      int unitsize = m_pUnit[p]->m_Packet.getLength() - m_iNotch;
-      if (unitsize > rs)
-         unitsize = rs;
-
-      ofs.write(m_pUnit[p]->m_Packet.m_pcData + m_iNotch, unitsize);
-      if (ofs.fail())
-         break;
-
-      if ((rs > unitsize) || (rs == m_pUnit[p]->m_Packet.getLength() - m_iNotch))
-      {
-         CUnit* tmp = m_pUnit[p];
-         m_pUnit[p] = NULL;
-         tmp->m_iFlag = 0;
-         -- m_pUnitQueue->m_iCount;
-
-         if (++ p == m_iSize)
-            p = 0;
-
-         m_iNotch = 0;
-      }
-      else
-         m_iNotch += rs;
-
-      rs -= unitsize;
-   }
-
-   m_iStartPos = p;
-
    return len - rs;
 }
 

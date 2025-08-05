@@ -45,7 +45,6 @@ written by
 #include "udt.h"
 #include "list.h"
 #include "queue.h"
-#include <fstream>
 
 class CSndBuffer
 {
@@ -64,16 +63,6 @@ public:
       //    None.
 
    void addBuffer(const char* data, int len, int ttl = -1, bool order = false);
-
-      // Functionality:
-      //    Read a block of data from file and insert it into the sending list.
-      // Parameters:
-      //    0) [in] ifs: input file stream.
-      //    1) [in] len: size of the block.
-      // Returned value:
-      //    actual size of data added from the file.
-
-   int addBufferFromFile(std::fstream& ifs, int len);
 
       // Functionality:
       //    Find data position to pack a DATA packet from the furthest reading point.
@@ -184,16 +173,6 @@ public:
       //    size of data read.
 
    int readBuffer(char* data, int len);
-
-      // Functionality:
-      //    Read data directly into file.
-      // Parameters:
-      //    0) [in] file: C++ file stream.
-      //    1) [in] len: expected length of data to write into the file.
-      // Returned value:
-      //    size of data read.
-
-   int readBufferToFile(std::fstream& ofs, int len);
 
       // Functionality:
       //    Update the ACK point of the buffer.

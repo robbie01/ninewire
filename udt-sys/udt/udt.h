@@ -51,7 +51,6 @@ written by
    #include <ws2tcpip.h>
    #include <windows.h>
 #endif
-#include <fstream>
 #include <set>
 #include <string>
 #include <vector>
