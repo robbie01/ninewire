@@ -22,7 +22,7 @@ impl super::Endpoint {
             mem::size_of::<bool>() as i32
         ) };
         if res < 0 {
-            return Err(udt_getlasterror());
+            return Err(unsafe { udt_getlasterror() });
         }
         let res = unsafe { udt_sys::setsockopt(
             con.0.u,
@@ -32,7 +32,7 @@ impl super::Endpoint {
             mem::size_of::<bool>() as i32
         ) };
         if res < 0 {
-            return Err(udt_getlasterror());
+            return Err(unsafe { udt_getlasterror() });
         }
         
         Ok(con)

@@ -235,12 +235,12 @@ mod ffi {
         unsafe fn sendmsg(u: Socket, buf: *const c_char, len: i32, ttl_ms: i32, inorder: bool) -> i32;
         unsafe fn recvmsg(u: Socket, buf: *mut c_char, len: i32) -> i32;
         unsafe fn getlasterror_code() -> i32;
-        unsafe fn getlasterror_desc() -> *const c_char;
         unsafe fn getsockstate(u: Socket) -> Status;
         unsafe fn perfmon(u: Socket, perf: &mut CPerfMon, clear: bool) -> i32;
     }
 
     unsafe extern "C++" {
+        unsafe fn getlasterror_desc<'a>() -> &'a CxxString;
         unsafe fn getrpoll<'a>() -> &'a RPoll;
     }
 }

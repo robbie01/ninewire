@@ -48,7 +48,7 @@ impl Endpoint {
             }, libc::SOCK_DGRAM, 0
         ) };
         if binding == INVALID_SOCK {
-            return Err(udt_getlasterror());
+            return Err(unsafe { udt_getlasterror() });
         }
         let addr = OsSocketAddr::from(addr);
         let res = unsafe { udt_sys::bind(
@@ -58,7 +58,7 @@ impl Endpoint {
         ) };
         if res == -1 {
             unsafe { udt_sys::close(binding) };
-            return Err(udt_getlasterror());
+            return Err(unsafe { udt_getlasterror() });
         }
         Ok(Self {
             _inst: inst,
@@ -71,7 +71,7 @@ impl Endpoint {
         let mut namelen = addr.len() as i32;
         let res = unsafe { udt_sys::getsockname(self.binding, addr.as_mut_ptr().cast(), &mut namelen) };
         if res == -1 {
-            return Err(udt_getlasterror());
+            return Err(unsafe { udt_getlasterror() });
         }
         Ok(addr)
     }
@@ -90,7 +90,7 @@ impl Endpoint {
             }, type_, 0
         ) };
         if u == INVALID_SOCK {
-            return Err(udt_getlasterror());
+            return Err(unsafe { udt_getlasterror() });
         }
         let res = unsafe { udt_sys::bind(
             u,
@@ -99,12 +99,12 @@ impl Endpoint {
         ) };
         if res == -1 {
             unsafe { udt_sys::close(u) };
-            return Err(udt_getlasterror());
+            return Err(unsafe { udt_getlasterror() });
         }
         let res = unsafe { udt_sys::listen(u, backlog.try_into().unwrap_or(i32::MAX)) };
         if res == -1 {
             unsafe { udt_sys::close(u) };
-            return Err(udt_getlasterror());
+            return Err(unsafe { udt_getlasterror() });
         }
         Ok((inst, u))
     }
@@ -119,7 +119,7 @@ impl Endpoint {
             }, type_, 0
         ) };
         if u == INVALID_SOCK {
-            return Err(udt_getlasterror());
+            return Err(unsafe { udt_getlasterror() });
         }
         let res = unsafe { udt_sys::bind(
             u,
@@ -128,7 +128,7 @@ impl Endpoint {
         ) };
         if res == -1 {
             unsafe { udt_sys::close(u) };
-            return Err(udt_getlasterror());
+            return Err(unsafe { udt_getlasterror() });
         }
         if rendezvous {
             let res = unsafe { udt_sys::setsockopt(
@@ -139,14 +139,14 @@ impl Endpoint {
             ) };
             if res == -1 {
                 unsafe { udt_sys::close(u) };
-                return Err(udt_getlasterror());
+                return Err(unsafe { udt_getlasterror() });
             }
         }
         let addr = OsSocketAddr::from(addr);
         let res = unsafe { udt_sys::connect(u, addr.as_ptr().cast(), addr.len() as i32) };
         if res == -1 {
             unsafe { udt_sys::close(u) };
-            return Err(udt_getlasterror());
+            return Err(unsafe { udt_getlasterror() });
         }
         Ok((inst, u))
     }
@@ -192,7 +192,7 @@ impl Endpoint {
 //             }, libc::SOCK_DGRAM, 0
 //         ) };
 //         if binding == INVALID_SOCK {
-//             return Err(udt_getlasterror());
+//             return Err(unsafe { udt_getlasterror() });
 //         }
 //         let res = unsafe { udt_sys::bind_syssock(
 //             binding,
@@ -206,7 +206,7 @@ impl Endpoint {
 //         ) };
 //         if res == -1 {
 //             unsafe { udt_sys::close(binding) };
-//             return Err(udt_getlasterror());
+//             return Err(unsafe { udt_getlasterror() });
 //         }
 //         mem::forget(value);
 //         Ok(Self {
@@ -222,7 +222,7 @@ impl StreamListener {
         let mut namelen = addr.len() as i32;
         let res = unsafe { udt_sys::getsockname(self.u, addr.as_mut_ptr().cast(), &mut namelen) };
         if res == -1 {
-            return Err(udt_getlasterror());
+            return Err(unsafe { udt_getlasterror() });
         }
         Ok(addr)
     }
@@ -235,7 +235,7 @@ impl StreamListener {
         let inst = Instance::default();
         let u = unsafe { udt_sys::accept(self.u, ptr::null_mut(), ptr::null_mut()) };
         if u == INVALID_SOCK {
-            return Err(udt_getlasterror());
+            return Err(unsafe { udt_getlasterror() });
         }
         Ok(StreamConnection { _inst: inst, u })
     }
@@ -247,7 +247,7 @@ impl StreamConnection {
         let mut namelen = addr.len() as i32;
         let res = unsafe { udt_sys::getsockname(self.u, addr.as_mut_ptr().cast(), &mut namelen) };
         if res == -1 {
-            return Err(udt_getlasterror());
+            return Err(unsafe { udt_getlasterror() });
         }
         Ok(addr)
     }
@@ -257,7 +257,7 @@ impl StreamConnection {
         let mut namelen = addr.len() as i32;
         let res = unsafe { udt_sys::getpeername(self.u, addr.as_mut_ptr().cast(), &mut namelen) };
         if res == -1 {
-            return Err(udt_getlasterror());
+            return Err(unsafe { udt_getlasterror() });
         }
         Ok(addr)
     }
@@ -283,7 +283,7 @@ impl Read for StreamConnection {
             if unsafe { udt_sys::getlasterror_code() } == udt_sys::ECONNLOST {
                 return Ok(0);
             }
-            return Err(udt_getlasterror());
+            return Err(unsafe { udt_getlasterror() });
         }
         Ok(res.try_into().unwrap())
     }
@@ -298,7 +298,7 @@ impl Write for StreamConnection {
             0
         ) };
         if res == -1 {
-            return Err(udt_getlasterror());
+            return Err(unsafe { udt_getlasterror() });
         }
         Ok(res.try_into().unwrap())
     }
@@ -306,7 +306,7 @@ impl Write for StreamConnection {
     fn flush(&mut self) -> io::Result<()> {
         let res = unsafe { udt_sys::flush(self.u) };
         if res == -1 {
-            return Err(udt_getlasterror());
+            return Err(unsafe { udt_getlasterror() });
         }
         Ok(())
     }
@@ -318,7 +318,7 @@ impl DatagramListener {
         let mut namelen = addr.len() as i32;
         let res = unsafe { udt_sys::getsockname(self.u, addr.as_mut_ptr().cast(), &mut namelen) };
         if res == -1 {
-            return Err(udt_getlasterror());
+            return Err(unsafe { udt_getlasterror() });
         }
         Ok(addr)
     }
@@ -331,7 +331,7 @@ impl DatagramListener {
         let inst = Instance::default();
         let u = unsafe { udt_sys::accept(self.u, ptr::null_mut(), ptr::null_mut()) };
         if u == INVALID_SOCK {
-            return Err(udt_getlasterror());
+            return Err(unsafe { udt_getlasterror() });
         }
         Ok(DatagramConnection { _inst: inst, u })
     }
@@ -343,7 +343,7 @@ impl DatagramConnection {
         let mut namelen = addr.len() as i32;
         let res = unsafe { udt_sys::getsockname(self.u, addr.as_mut_ptr().cast(), &mut namelen) };
         if res == -1 {
-            return Err(udt_getlasterror());
+            return Err(unsafe { udt_getlasterror() });
         }
         Ok(addr)
     }
@@ -353,7 +353,7 @@ impl DatagramConnection {
         let mut namelen = addr.len() as i32;
         let res = unsafe { udt_sys::getpeername(self.u, addr.as_mut_ptr().cast(), &mut namelen) };
         if res == -1 {
-            return Err(udt_getlasterror());
+            return Err(unsafe { udt_getlasterror() });
         }
         Ok(addr)
     }
@@ -369,7 +369,7 @@ impl DatagramConnection {
     pub fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
         let res = unsafe { udt_sys::recvmsg(self.u, buf.as_mut_ptr().cast(), buf.len().try_into().unwrap_or(i32::MAX)) };
         if res == -1 {
-            return Err(udt_getlasterror());
+            return Err(unsafe { udt_getlasterror() });
         }
         Ok(res.try_into().unwrap())
     }
@@ -383,7 +383,7 @@ impl DatagramConnection {
             inorder
         ) };
         if res == -1 {
-            return Err(udt_getlasterror());
+            return Err(unsafe { udt_getlasterror() });
         }
         Ok(res.try_into().unwrap())
     }
@@ -395,7 +395,7 @@ impl DatagramConnection {
     pub fn flush(&self) -> io::Result<()> {
         let res = unsafe { udt_sys::flush(self.u) };
         if res == -1 {
-            return Err(udt_getlasterror());
+            return Err(unsafe { udt_getlasterror() });
         }
         Ok(())
     }

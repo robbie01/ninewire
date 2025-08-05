@@ -410,7 +410,7 @@ CUDTException::~CUDTException()
 {
 }
 
-const char* CUDTException::getErrorMessage()
+const std::string &CUDTException::getErrorMessage()
 {
    // translate "Major:Minor" code into text message.
 
@@ -622,7 +622,7 @@ const char* CUDTException::getErrorMessage()
       m_strMsg += ".";
    #endif
 
-   return m_strMsg.c_str();
+   return m_strMsg;
 }
 
 int CUDTException::getErrorCode() const

@@ -140,7 +140,7 @@ public:
       // Returned value:
       //    Text message for the exception description.
 
-   virtual const char* getErrorMessage();
+   virtual const std::string &getErrorMessage();
 
       // Functionality:
       //    Get the system errno for the exception.
@@ -254,7 +254,7 @@ UDT_API int recvmsg(UDTSOCKET u, char* buf, int len);
 UDT_API const rpoll::RPoll &getrpoll();
 UDT_API ERRORINFO& getlasterror();
 UDT_API int getlasterror_code();
-UDT_API const char* getlasterror_desc();
+UDT_API const std::string &getlasterror_desc();
 UDT_API int perfmon(UDTSOCKET u, TRACEINFO& perf, bool clear = true);
 UDT_API UDTSTATUS getsockstate(UDTSOCKET u);
 

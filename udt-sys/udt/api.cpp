@@ -1819,7 +1819,7 @@ int getlasterror_code()
    return CUDT::getlasterror().getErrorCode();
 }
 
-const char* getlasterror_desc()
+const std::string &getlasterror_desc()
 {
    return CUDT::getlasterror().getErrorMessage();
 }

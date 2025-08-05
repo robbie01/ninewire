@@ -19,6 +19,7 @@ fn main() {
         ]);
 
     build.flag_if_supported("-pthread");
+
     if std::env::var_os("CARGO_CFG_UNIX").is_some() {
         println!("cargo::rustc-link-lib=pthread");
         println!("cargo::rustc-link-lib=m");
@@ -29,6 +30,10 @@ fn main() {
     }
 
     let os = std::env::var("CARGO_CFG_TARGET_OS").unwrap();
+
+    if os != "windows" {
+        build.flag_if_supported("-fvisibility=hidden");
+    }
 
     if os == "macos" {
         build.define("MACOSX", None);
