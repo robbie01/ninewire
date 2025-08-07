@@ -176,10 +176,10 @@ public:
    CGuard(udt_pthread_mutex_t& lock);
    ~CGuard();
 
-public:
-   static void enterCS(udt_pthread_mutex_t& lock);
-   static void leaveCS(udt_pthread_mutex_t& lock);
+   CGuard(const CGuard&) = delete;
+   CGuard& operator=(const CGuard&) = delete;
 
+public:
    static void createMutex(udt_pthread_mutex_t& lock);
    static void releaseMutex(udt_pthread_mutex_t& lock);
 
@@ -189,8 +189,6 @@ public:
 private:
    udt_pthread_mutex_t& m_Mutex;        // Alias name of the mutex to be protected
    unsigned int m_iLocked;              // Locking status
-
-   CGuard& operator=(const CGuard&);
 };
 
 

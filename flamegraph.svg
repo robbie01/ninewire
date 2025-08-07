@@ -1,0 +1,491 @@
+<?xml version="1.0" standalone="no"?><!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd"><svg version="1.1" width="1200" height="486" onload="init(evt)" viewBox="0 0 1200 486" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:fg="http://github.com/jonhoo/inferno"><!--Flame graph stack visualization. See https://github.com/brendangregg/FlameGraph for latest version, and http://www.brendangregg.com/flamegraphs.html for examples.--><!--NOTES: --><defs><linearGradient id="background" y1="0" y2="1" x1="0" x2="0"><stop stop-color="#eeeeee" offset="5%"/><stop stop-color="#eeeeb0" offset="95%"/></linearGradient></defs><style type="text/css">
+text { font-family:monospace; font-size:12px }
+#title { text-anchor:middle; font-size:17px; }
+#matched { text-anchor:end; }
+#search { text-anchor:end; opacity:0.1; cursor:pointer; }
+#search:hover, #search.show { opacity:1; }
+#subtitle { text-anchor:middle; font-color:rgb(160,160,160); }
+#unzoom { cursor:pointer; }
+#frames > *:hover { stroke:black; stroke-width:0.5; cursor:pointer; }
+.hide { display:none; }
+.parent { opacity:0.5; }
+</style><script type="text/ecmascript"><![CDATA[
+        var nametype = 'Function:';
+        var fontsize = 12;
+        var fontwidth = 0.59;
+        var xpad = 10;
+        var inverted = false;
+        var searchcolor = 'rgb(230,0,230)';
+        var fluiddrawing = true;
+        var truncate_text_right = false;
+    ]]><![CDATA["use strict";
+var details, searchbtn, unzoombtn, matchedtxt, svg, searching, frames, known_font_width;
+function init(evt) {
+    details = document.getElementById("details").firstChild;
+    searchbtn = document.getElementById("search");
+    unzoombtn = document.getElementById("unzoom");
+    matchedtxt = document.getElementById("matched");
+    svg = document.getElementsByTagName("svg")[0];
+    frames = document.getElementById("frames");
+    known_font_width = get_monospace_width(frames);
+    total_samples = parseInt(frames.attributes.total_samples.value);
+    searching = 0;
+
+    // Use GET parameters to restore a flamegraph's state.
+    var restore_state = function() {
+        var params = get_params();
+        if (params.x && params.y)
+            zoom(find_group(document.querySelector('[*|x="' + params.x + '"][y="' + params.y + '"]')));
+        if (params.s)
+            search(params.s);
+    };
+
+    if (fluiddrawing) {
+        // Make width dynamic so the SVG fits its parent's width.
+        svg.removeAttribute("width");
+        // Edge requires us to have a viewBox that gets updated with size changes.
+        var isEdge = /Edge\/\d./i.test(navigator.userAgent);
+        if (!isEdge) {
+            svg.removeAttribute("viewBox");
+        }
+        var update_for_width_change = function() {
+            if (isEdge) {
+                svg.attributes.viewBox.value = "0 0 " + svg.width.baseVal.value + " " + svg.height.baseVal.value;
+            }
+
+            // Keep consistent padding on left and right of frames container.
+            frames.attributes.width.value = svg.width.baseVal.value - xpad * 2;
+
+            // Text truncation needs to be adjusted for the current width.
+            update_text_for_elements(frames.children);
+
+            // Keep search elements at a fixed distance from right edge.
+            var svgWidth = svg.width.baseVal.value;
+            searchbtn.attributes.x.value = svgWidth - xpad;
+            matchedtxt.attributes.x.value = svgWidth - xpad;
+        };
+        window.addEventListener('resize', function() {
+            update_for_width_change();
+        });
+        // This needs to be done asynchronously for Safari to work.
+        setTimeout(function() {
+            unzoom();
+            update_for_width_change();
+            restore_state();
+        }, 0);
+    } else {
+        restore_state();
+    }
+}
+// event listeners
+window.addEventListener("click", function(e) {
+    var target = find_group(e.target);
+    if (target) {
+        if (target.nodeName == "a") {
+            if (e.ctrlKey === false) return;
+            e.preventDefault();
+        }
+        if (target.classList.contains("parent")) unzoom();
+        zoom(target);
+
+        // set parameters for zoom state
+        var el = target.querySelector("rect");
+        if (el && el.attributes && el.attributes.y && el.attributes["fg:x"]) {
+            var params = get_params()
+            params.x = el.attributes["fg:x"].value;
+            params.y = el.attributes.y.value;
+            history.replaceState(null, null, parse_params(params));
+        }
+    }
+    else if (e.target.id == "unzoom") {
+        unzoom();
+
+        // remove zoom state
+        var params = get_params();
+        if (params.x) delete params.x;
+        if (params.y) delete params.y;
+        history.replaceState(null, null, parse_params(params));
+    }
+    else if (e.target.id == "search") search_prompt();
+}, false)
+// mouse-over for info
+// show
+window.addEventListener("mouseover", function(e) {
+    var target = find_group(e.target);
+    if (target) details.nodeValue = nametype + " " + g_to_text(target);
+}, false)
+// clear
+window.addEventListener("mouseout", function(e) {
+    var target = find_group(e.target);
+    if (target) details.nodeValue = ' ';
+}, false)
+// ctrl-F for search
+window.addEventListener("keydown",function (e) {
+    if (e.keyCode === 114 || (e.ctrlKey && e.keyCode === 70)) {
+        e.preventDefault();
+        search_prompt();
+    }
+}, false)
+// functions
+function get_params() {
+    var params = {};
+    var paramsarr = window.location.search.substr(1).split('&');
+    for (var i = 0; i < paramsarr.length; ++i) {
+        var tmp = paramsarr[i].split("=");
+        if (!tmp[0] || !tmp[1]) continue;
+        params[tmp[0]]  = decodeURIComponent(tmp[1]);
+    }
+    return params;
+}
+function parse_params(params) {
+    var uri = "?";
+    for (var key in params) {
+        uri += key + '=' + encodeURIComponent(params[key]) + '&';
+    }
+    if (uri.slice(-1) == "&")
+        uri = uri.substring(0, uri.length - 1);
+    if (uri == '?')
+        uri = window.location.href.split('?')[0];
+    return uri;
+}
+function find_child(node, selector) {
+    var children = node.querySelectorAll(selector);
+    if (children.length) return children[0];
+    return;
+}
+function find_group(node) {
+    var parent = node.parentElement;
+    if (!parent) return;
+    if (parent.id == "frames") return node;
+    return find_group(parent);
+}
+function orig_save(e, attr, val) {
+    if (e.attributes["fg:orig_" + attr] != undefined) return;
+    if (e.attributes[attr] == undefined) return;
+    if (val == undefined) val = e.attributes[attr].value;
+    e.setAttribute("fg:orig_" + attr, val);
+}
+function orig_load(e, attr) {
+    if (e.attributes["fg:orig_"+attr] == undefined) return;
+    e.attributes[attr].value = e.attributes["fg:orig_" + attr].value;
+    e.removeAttribute("fg:orig_" + attr);
+}
+function g_to_text(e) {
+    var text = find_child(e, "title").firstChild.nodeValue;
+    return (text)
+}
+function g_to_func(e) {
+    var func = g_to_text(e);
+    // if there's any manipulation we want to do to the function
+    // name before it's searched, do it here before returning.
+    return (func);
+}
+function get_monospace_width(frames) {
+    // Given the id="frames" element, return the width of text characters if
+    // this is a monospace font, otherwise return 0.
+    text = find_child(frames.children[0], "text");
+    originalContent = text.textContent;
+    text.textContent = "!";
+    bangWidth = text.getComputedTextLength();
+    text.textContent = "W";
+    wWidth = text.getComputedTextLength();
+    text.textContent = originalContent;
+    if (bangWidth === wWidth) {
+        return bangWidth;
+    } else {
+        return 0;
+    }
+}
+function update_text_for_elements(elements) {
+    // In order to render quickly in the browser, you want to do one pass of
+    // reading attributes, and one pass of mutating attributes. See
+    // https://web.dev/avoid-large-complex-layouts-and-layout-thrashing/ for details.
+
+    // Fall back to inefficient calculation, if we're variable-width font.
+    // TODO This should be optimized somehow too.
+    if (known_font_width === 0) {
+        for (var i = 0; i < elements.length; i++) {
+            update_text(elements[i]);
+        }
+        return;
+    }
+
+    var textElemNewAttributes = [];
+    for (var i = 0; i < elements.length; i++) {
+        var e = elements[i];
+        var r = find_child(e, "rect");
+        var t = find_child(e, "text");
+        var w = parseFloat(r.attributes.width.value) * frames.attributes.width.value / 100 - 3;
+        var txt = find_child(e, "title").textContent.replace(/\([^(]*\)$/,"");
+        var newX = format_percent((parseFloat(r.attributes.x.value) + (100 * 3 / frames.attributes.width.value)));
+
+        // Smaller than this size won't fit anything
+        if (w < 2 * known_font_width) {
+            textElemNewAttributes.push([newX, ""]);
+            continue;
+        }
+
+        // Fit in full text width
+        if (txt.length * known_font_width < w) {
+            textElemNewAttributes.push([newX, txt]);
+            continue;
+        }
+
+        var substringLength = Math.floor(w / known_font_width) - 2;
+        if (truncate_text_right) {
+            // Truncate the right side of the text.
+            textElemNewAttributes.push([newX, txt.substring(0, substringLength) + ".."]);
+            continue;
+        } else {
+            // Truncate the left side of the text.
+            textElemNewAttributes.push([newX, ".." + txt.substring(txt.length - substringLength, txt.length)]);
+            continue;
+        }
+    }
+
+    console.assert(textElemNewAttributes.length === elements.length, "Resize failed, please file a bug at https://github.com/jonhoo/inferno/");
+
+    // Now that we know new textContent, set it all in one go so we don't refresh a bazillion times.
+    for (var i = 0; i < elements.length; i++) {
+        var e = elements[i];
+        var values = textElemNewAttributes[i];
+        var t = find_child(e, "text");
+        t.attributes.x.value = values[0];
+        t.textContent = values[1];
+    }
+}
+
+function update_text(e) {
+    var r = find_child(e, "rect");
+    var t = find_child(e, "text");
+    var w = parseFloat(r.attributes.width.value) * frames.attributes.width.value / 100 - 3;
+    var txt = find_child(e, "title").textContent.replace(/\([^(]*\)$/,"");
+    t.attributes.x.value = format_percent((parseFloat(r.attributes.x.value) + (100 * 3 / frames.attributes.width.value)));
+
+    // Smaller than this size won't fit anything
+    if (w < 2 * fontsize * fontwidth) {
+        t.textContent = "";
+        return;
+    }
+    t.textContent = txt;
+    // Fit in full text width
+    if (t.getComputedTextLength() < w)
+        return;
+    if (truncate_text_right) {
+        // Truncate the right side of the text.
+        for (var x = txt.length - 2; x > 0; x--) {
+            if (t.getSubStringLength(0, x + 2) <= w) {
+                t.textContent = txt.substring(0, x) + "..";
+                return;
+            }
+        }
+    } else {
+        // Truncate the left side of the text.
+        for (var x = 2; x < txt.length; x++) {
+            if (t.getSubStringLength(x - 2, txt.length) <= w) {
+                t.textContent = ".." + txt.substring(x, txt.length);
+                return;
+            }
+        }
+    }
+    t.textContent = "";
+}
+// zoom
+function zoom_reset(e) {
+    if (e.tagName == "rect") {
+        e.attributes.x.value = format_percent(100 * parseInt(e.attributes["fg:x"].value) / total_samples);
+        e.attributes.width.value = format_percent(100 * parseInt(e.attributes["fg:w"].value) / total_samples);
+    }
+    if (e.childNodes == undefined) return;
+    for(var i = 0, c = e.childNodes; i < c.length; i++) {
+        zoom_reset(c[i]);
+    }
+}
+function zoom_child(e, x, zoomed_width_samples) {
+    if (e.tagName == "text") {
+        var parent_x = parseFloat(find_child(e.parentNode, "rect[x]").attributes.x.value);
+        e.attributes.x.value = format_percent(parent_x + (100 * 3 / frames.attributes.width.value));
+    } else if (e.tagName == "rect") {
+        e.attributes.x.value = format_percent(100 * (parseInt(e.attributes["fg:x"].value) - x) / zoomed_width_samples);
+        e.attributes.width.value = format_percent(100 * parseInt(e.attributes["fg:w"].value) / zoomed_width_samples);
+    }
+    if (e.childNodes == undefined) return;
+    for(var i = 0, c = e.childNodes; i < c.length; i++) {
+        zoom_child(c[i], x, zoomed_width_samples);
+    }
+}
+function zoom_parent(e) {
+    if (e.attributes) {
+        if (e.attributes.x != undefined) {
+            e.attributes.x.value = "0.0%";
+        }
+        if (e.attributes.width != undefined) {
+            e.attributes.width.value = "100.0%";
+        }
+    }
+    if (e.childNodes == undefined) return;
+    for(var i = 0, c = e.childNodes; i < c.length; i++) {
+        zoom_parent(c[i]);
+    }
+}
+function zoom(node) {
+    var attr = find_child(node, "rect").attributes;
+    var width = parseInt(attr["fg:w"].value);
+    var xmin = parseInt(attr["fg:x"].value);
+    var xmax = xmin + width;
+    var ymin = parseFloat(attr.y.value);
+    unzoombtn.classList.remove("hide");
+    var el = frames.children;
+    var to_update_text = [];
+    for (var i = 0; i < el.length; i++) {
+        var e = el[i];
+        var a = find_child(e, "rect").attributes;
+        var ex = parseInt(a["fg:x"].value);
+        var ew = parseInt(a["fg:w"].value);
+        // Is it an ancestor
+        if (!inverted) {
+            var upstack = parseFloat(a.y.value) > ymin;
+        } else {
+            var upstack = parseFloat(a.y.value) < ymin;
+        }
+        if (upstack) {
+            // Direct ancestor
+            if (ex <= xmin && (ex+ew) >= xmax) {
+                e.classList.add("parent");
+                zoom_parent(e);
+                to_update_text.push(e);
+            }
+            // not in current path
+            else
+                e.classList.add("hide");
+        }
+        // Children maybe
+        else {
+            // no common path
+            if (ex < xmin || ex >= xmax) {
+                e.classList.add("hide");
+            }
+            else {
+                zoom_child(e, xmin, width);
+                to_update_text.push(e);
+            }
+        }
+    }
+    update_text_for_elements(to_update_text);
+}
+function unzoom() {
+    unzoombtn.classList.add("hide");
+    var el = frames.children;
+    for(var i = 0; i < el.length; i++) {
+        el[i].classList.remove("parent");
+        el[i].classList.remove("hide");
+        zoom_reset(el[i]);
+    }
+    update_text_for_elements(el);
+}
+// search
+function reset_search() {
+    var el = document.querySelectorAll("#frames rect");
+    for (var i = 0; i < el.length; i++) {
+        orig_load(el[i], "fill")
+    }
+    var params = get_params();
+    delete params.s;
+    history.replaceState(null, null, parse_params(params));
+}
+function search_prompt() {
+    if (!searching) {
+        var term = prompt("Enter a search term (regexp " +
+            "allowed, eg: ^ext4_)", "");
+        if (term != null) {
+            search(term)
+        }
+    } else {
+        reset_search();
+        searching = 0;
+        searchbtn.classList.remove("show");
+        searchbtn.firstChild.nodeValue = "Search"
+        matchedtxt.classList.add("hide");
+        matchedtxt.firstChild.nodeValue = ""
+    }
+}
+function search(term) {
+    var re = new RegExp(term);
+    var el = frames.children;
+    var matches = new Object();
+    var maxwidth = 0;
+    for (var i = 0; i < el.length; i++) {
+        var e = el[i];
+        // Skip over frames which are either not visible, or below the zoomed-to frame
+        if (e.classList.contains("hide") || e.classList.contains("parent")) {
+            continue;
+        }
+        var func = g_to_func(e);
+        var rect = find_child(e, "rect");
+        if (func == null || rect == null)
+            continue;
+        // Save max width. Only works as we have a root frame
+        var w = parseInt(rect.attributes["fg:w"].value);
+        if (w > maxwidth)
+            maxwidth = w;
+        if (func.match(re)) {
+            // highlight
+            var x = parseInt(rect.attributes["fg:x"].value);
+            orig_save(rect, "fill");
+            rect.attributes.fill.value = searchcolor;
+            // remember matches
+            if (matches[x] == undefined) {
+                matches[x] = w;
+            } else {
+                if (w > matches[x]) {
+                    // overwrite with parent
+                    matches[x] = w;
+                }
+            }
+            searching = 1;
+        }
+    }
+    if (!searching)
+        return;
+    var params = get_params();
+    params.s = term;
+    history.replaceState(null, null, parse_params(params));
+
+    searchbtn.classList.add("show");
+    searchbtn.firstChild.nodeValue = "Reset Search";
+    // calculate percent matched, excluding vertical overlap
+    var count = 0;
+    var lastx = -1;
+    var lastw = 0;
+    var keys = Array();
+    for (k in matches) {
+        if (matches.hasOwnProperty(k))
+            keys.push(k);
+    }
+    // sort the matched frames by their x location
+    // ascending, then width descending
+    keys.sort(function(a, b){
+        return a - b;
+    });
+    // Step through frames saving only the biggest bottom-up frames
+    // thanks to the sort order. This relies on the tree property
+    // where children are always smaller than their parents.
+    for (var k in keys) {
+        var x = parseInt(keys[k]);
+        var w = matches[keys[k]];
+        if (x >= lastx + lastw) {
+            count += w;
+            lastx = x;
+            lastw = w;
+        }
+    }
+    // display matched percent
+    matchedtxt.classList.remove("hide");
+    var pct = 100 * count / maxwidth;
+    if (pct != 100) pct = pct.toFixed(1);
+    matchedtxt.firstChild.nodeValue = "Matched: " + pct + "%";
+}
+function format_percent(n) {
+    return n.toFixed(4) + "%";
+}
+]]></script><rect x="0" y="0" width="100%" height="486" fill="url(#background)"/><text id="title" fill="rgb(0,0,0)" x="50.0000%" y="24.00">Flame Graph</text><text id="details" fill="rgb(0,0,0)" x="10" y="469.00"> </text><text id="unzoom" class="hide" fill="rgb(0,0,0)" x="10" y="24.00">Reset Zoom</text><text id="search" fill="rgb(0,0,0)" x="1190" y="24.00">Search</text><text id="matched" fill="rgb(0,0,0)" x="1190" y="469.00"> </text><svg id="frames" x="10" width="1180" total_samples="80601"><g><title>aes::soft::fixslice::bitslice (415 samples, 0.51%)</title><rect x="3.6637%" y="133" width="0.5149%" height="15" fill="rgb(227,0,7)" fg:x="2953" fg:w="415"/><text x="3.9137%" y="143.50"></text></g><g><title>aes::soft::fixslice::inv_bitslice (1,149 samples, 1.43%)</title><rect x="4.1786%" y="133" width="1.4255%" height="15" fill="rgb(217,0,24)" fg:x="3368" fg:w="1149"/><text x="4.4286%" y="143.50"></text></g><g><title>aes::soft::fixslice::mix_columns_1 (2,489 samples, 3.09%)</title><rect x="5.6041%" y="133" width="3.0881%" height="15" fill="rgb(221,193,54)" fg:x="4517" fg:w="2489"/><text x="5.8541%" y="143.50">aes..</text></g><g><title>aes::soft::fixslice::mix_columns_3 (1,648 samples, 2.04%)</title><rect x="8.6922%" y="133" width="2.0446%" height="15" fill="rgb(248,212,6)" fg:x="7006" fg:w="1648"/><text x="8.9422%" y="143.50">a..</text></g><g><title>&lt;Alg as cipher::block::BlockEncryptMut&gt;::encrypt_with_backend_mut (16,168 samples, 20.06%)</title><rect x="0.1042%" y="165" width="20.0593%" height="15" fill="rgb(208,68,35)" fg:x="84" fg:w="16168"/><text x="0.3542%" y="175.50">&lt;Alg as cipher::block::BlockEnc..</text></g><g><title>aes::soft::fixslice::aes256_encrypt (16,022 samples, 19.88%)</title><rect x="0.2854%" y="149" width="19.8782%" height="15" fill="rgb(232,128,0)" fg:x="230" fg:w="16022"/><text x="0.5354%" y="159.50">aes::soft::fixslice::aes256_enc..</text></g><g><title>aes::soft::fixslice::sub_bytes (7,598 samples, 9.43%)</title><rect x="10.7368%" y="133" width="9.4267%" height="15" fill="rgb(207,160,47)" fg:x="8654" fg:w="7598"/><text x="10.9868%" y="143.50">aes::soft::fi..</text></g><g><title>&lt;polyval::backend::soft::Polyval as universal_hash::UhfBackend&gt;::proc_block (45 samples, 0.06%)</title><rect x="20.1635%" y="165" width="0.0558%" height="15" fill="rgb(228,23,34)" fg:x="16252" fg:w="45"/><text x="20.4135%" y="175.50"></text></g><g><title>aes::soft::fixslice::bitslice (25 samples, 0.03%)</title><rect x="20.4452%" y="149" width="0.0310%" height="15" fill="rgb(218,30,26)" fg:x="16479" fg:w="25"/><text x="20.6952%" y="159.50"></text></g><g><title>aes::soft::fixslice::inv_bitslice (58 samples, 0.07%)</title><rect x="20.4762%" y="149" width="0.0720%" height="15" fill="rgb(220,122,19)" fg:x="16504" fg:w="58"/><text x="20.7262%" y="159.50"></text></g><g><title>aes::soft::fixslice::mix_columns_1 (129 samples, 0.16%)</title><rect x="20.5481%" y="149" width="0.1600%" height="15" fill="rgb(250,228,42)" fg:x="16562" fg:w="129"/><text x="20.7981%" y="159.50"></text></g><g><title>aes::soft::fixslice::mix_columns_3 (76 samples, 0.09%)</title><rect x="20.7082%" y="149" width="0.0943%" height="15" fill="rgb(240,193,28)" fg:x="16691" fg:w="76"/><text x="20.9582%" y="159.50"></text></g><g><title>aes::soft::fixslice::aes256_encrypt (830 samples, 1.03%)</title><rect x="20.2280%" y="165" width="1.0298%" height="15" fill="rgb(216,20,37)" fg:x="16304" fg:w="830"/><text x="20.4780%" y="175.50"></text></g><g><title>aes::soft::fixslice::sub_bytes (367 samples, 0.46%)</title><rect x="20.8025%" y="149" width="0.4553%" height="15" fill="rgb(206,188,39)" fg:x="16767" fg:w="367"/><text x="21.0525%" y="159.50"></text></g><g><title>&lt;polyval::backend::soft::Polyval as universal_hash::UhfBackend&gt;::proc_block (4,002 samples, 4.97%)</title><rect x="21.3335%" y="149" width="4.9652%" height="15" fill="rgb(217,207,13)" fg:x="17195" fg:w="4002"/><text x="21.5835%" y="159.50">&lt;polyv..</text></g><g><title>&lt;polyval::backend::soft::U64x2 as core::ops::arith::Mul&gt;::mul (3,943 samples, 4.89%)</title><rect x="21.4067%" y="133" width="4.8920%" height="15" fill="rgb(231,73,38)" fg:x="17254" fg:w="3943"/><text x="21.6567%" y="143.50">&lt;polyv..</text></g><g><title>aes_gcm::AesGcm&lt;Aes,NonceSize,TagSize&gt;::compute_tag (4,074 samples, 5.05%)</title><rect x="21.2578%" y="165" width="5.0545%" height="15" fill="rgb(225,20,46)" fg:x="17134" fg:w="4074"/><text x="21.5078%" y="175.50">aes_gc..</text></g><g><title>&lt;aes_gcm::AesGcm&lt;Aes,NonceSize,TagSize&gt; as aead::AeadInPlace&gt;::decrypt_in_place_detached (21,179 samples, 26.28%)</title><rect x="0.0658%" y="181" width="26.2763%" height="15" fill="rgb(210,31,41)" fg:x="53" fg:w="21179"/><text x="0.3158%" y="191.50">&lt;aes_gcm::AesGcm&lt;Aes,NonceSize,TagSize&gt; as..</text></g><g><title>subtle::black_box (24 samples, 0.03%)</title><rect x="26.3123%" y="165" width="0.0298%" height="15" fill="rgb(221,200,47)" fg:x="21208" fg:w="24"/><text x="26.5623%" y="175.50"></text></g><g><title>_platform_memmove (66 samples, 0.08%)</title><rect x="26.3433%" y="181" width="0.0819%" height="15" fill="rgb(226,26,5)" fg:x="21233" fg:w="66"/><text x="26.5933%" y="191.50"></text></g><g><title>aes::soft::fixslice::bitslice (45 samples, 0.06%)</title><rect x="26.6188%" y="165" width="0.0558%" height="15" fill="rgb(249,33,26)" fg:x="21455" fg:w="45"/><text x="26.8688%" y="175.50"></text></g><g><title>aes::soft::fixslice::inv_bitslice (59 samples, 0.07%)</title><rect x="26.6746%" y="165" width="0.0732%" height="15" fill="rgb(235,183,28)" fg:x="21500" fg:w="59"/><text x="26.9246%" y="175.50"></text></g><g><title>aes::soft::fixslice::mix_columns_1 (120 samples, 0.15%)</title><rect x="26.7478%" y="165" width="0.1489%" height="15" fill="rgb(221,5,38)" fg:x="21559" fg:w="120"/><text x="26.9978%" y="175.50"></text></g><g><title>aes::soft::fixslice::mix_columns_3 (80 samples, 0.10%)</title><rect x="26.8967%" y="165" width="0.0993%" height="15" fill="rgb(247,18,42)" fg:x="21679" fg:w="80"/><text x="27.1467%" y="175.50"></text></g><g><title>aes::soft::fixslice::aes256_encrypt (817 samples, 1.01%)</title><rect x="26.4252%" y="181" width="1.0136%" height="15" fill="rgb(241,131,45)" fg:x="21299" fg:w="817"/><text x="26.6752%" y="191.50"></text></g><g><title>aes::soft::fixslice::sub_bytes (357 samples, 0.44%)</title><rect x="26.9959%" y="165" width="0.4429%" height="15" fill="rgb(249,31,29)" fg:x="21759" fg:w="357"/><text x="27.2459%" y="175.50"></text></g><g><title>_platform_memmove (31 samples, 0.04%)</title><rect x="27.5952%" y="165" width="0.0385%" height="15" fill="rgb(225,111,53)" fg:x="22242" fg:w="31"/><text x="27.8452%" y="175.50"></text></g><g><title>_platform_memset (28 samples, 0.03%)</title><rect x="27.6337%" y="165" width="0.0347%" height="15" fill="rgb(238,160,17)" fg:x="22273" fg:w="28"/><text x="27.8837%" y="175.50"></text></g><g><title>aes::soft::fixslice::bitslice (47 samples, 0.06%)</title><rect x="27.6684%" y="165" width="0.0583%" height="15" fill="rgb(214,148,48)" fg:x="22301" fg:w="47"/><text x="27.9184%" y="175.50"></text></g><g><title>aes::soft::fixslice::memshift32 (123 samples, 0.15%)</title><rect x="27.7267%" y="165" width="0.1526%" height="15" fill="rgb(232,36,49)" fg:x="22348" fg:w="123"/><text x="27.9767%" y="175.50"></text></g><g><title>aes::soft::fixslice::sub_bytes (214 samples, 0.27%)</title><rect x="27.8793%" y="165" width="0.2655%" height="15" fill="rgb(209,103,24)" fg:x="22471" fg:w="214"/><text x="28.1293%" y="175.50"></text></g><g><title>aes::soft::fixslice::aes256_key_schedule (1,018 samples, 1.26%)</title><rect x="27.4389%" y="181" width="1.2630%" height="15" fill="rgb(229,88,8)" fg:x="22116" fg:w="1018"/><text x="27.6889%" y="191.50"></text></g><g><title>aes::soft::fixslice::xor_columns (449 samples, 0.56%)</title><rect x="28.1448%" y="165" width="0.5571%" height="15" fill="rgb(213,181,19)" fg:x="22685" fg:w="449"/><text x="28.3948%" y="175.50"></text></g><g><title>&lt;snow::resolvers::default::CipherAesGcm as snow::types::Cipher&gt;::decrypt (23,094 samples, 28.65%)</title><rect x="0.0546%" y="197" width="28.6522%" height="15" fill="rgb(254,191,54)" fg:x="44" fg:w="23094"/><text x="0.3046%" y="207.50">&lt;snow::resolvers::default::CipherAesGcm as sno..</text></g><g><title>&lt;util::polymur::PolymurHasher as core::hash::Hasher&gt;::write (34 samples, 0.04%)</title><rect x="28.8061%" y="133" width="0.0422%" height="15" fill="rgb(241,83,37)" fg:x="23218" fg:w="34"/><text x="29.0561%" y="143.50"></text></g><g><title>scc::hash_map::HashMap&lt;K,V,H&gt;::entry (70 samples, 0.09%)</title><rect x="28.7838%" y="149" width="0.0868%" height="15" fill="rgb(233,36,39)" fg:x="23200" fg:w="70"/><text x="29.0338%" y="159.50"></text></g><g><title>scc::hash_table::bucket::Locker&lt;K,V,L,_&gt;::lock (15 samples, 0.02%)</title><rect x="28.8520%" y="133" width="0.0186%" height="15" fill="rgb(226,3,54)" fg:x="23255" fg:w="15"/><text x="29.1020%" y="143.50"></text></g><g><title>pthread_cond_signal (15 samples, 0.02%)</title><rect x="28.8719%" y="133" width="0.0186%" height="15" fill="rgb(245,192,40)" fg:x="23271" fg:w="15"/><text x="29.1219%" y="143.50"></text></g><g><title>__psynch_cvsignal (15 samples, 0.02%)</title><rect x="28.8719%" y="117" width="0.0186%" height="15" fill="rgb(238,167,29)" fg:x="23271" fg:w="15"/><text x="29.1219%" y="127.50"></text></g><g><title>std::sys::pal::unix::sync::mutex::Mutex::lock (9 samples, 0.01%)</title><rect x="28.8905%" y="133" width="0.0112%" height="15" fill="rgb(232,182,51)" fg:x="23286" fg:w="9"/><text x="29.1405%" y="143.50"></text></g><g><title>_pthread_mutex_firstfit_lock_slow (9 samples, 0.01%)</title><rect x="28.8905%" y="117" width="0.0112%" height="15" fill="rgb(231,60,39)" fg:x="23286" fg:w="9"/><text x="29.1405%" y="127.50"></text></g><g><title>scc::wait_queue::SyncWait::signal (27 samples, 0.03%)</title><rect x="28.8719%" y="149" width="0.0335%" height="15" fill="rgb(208,69,12)" fg:x="23271" fg:w="27"/><text x="29.1219%" y="159.50"></text></g><g><title>CGuard::CGuard(_opaque_pthread_mutex_t&amp;) (10 samples, 0.01%)</title><rect x="28.9277%" y="85" width="0.0124%" height="15" fill="rgb(235,93,37)" fg:x="23316" fg:w="10"/><text x="29.1777%" y="95.50"></text></g><g><title>pthread_mutex_lock (10 samples, 0.01%)</title><rect x="28.9277%" y="69" width="0.0124%" height="15" fill="rgb(213,116,39)" fg:x="23316" fg:w="10"/><text x="29.1777%" y="79.50"></text></g><g><title>CGuard::~CGuard() (38 samples, 0.05%)</title><rect x="28.9401%" y="85" width="0.0471%" height="15" fill="rgb(222,207,29)" fg:x="23326" fg:w="38"/><text x="29.1901%" y="95.50"></text></g><g><title>CRcvBuffer::scanMsg(int&amp;, int&amp;, bool&amp;) (45 samples, 0.06%)</title><rect x="28.9984%" y="69" width="0.0558%" height="15" fill="rgb(206,96,30)" fg:x="23373" fg:w="45"/><text x="29.2484%" y="79.50"></text></g><g><title>CRcvBuffer::readMsg(char*, int) (150 samples, 0.19%)</title><rect x="28.9872%" y="85" width="0.1861%" height="15" fill="rgb(218,138,4)" fg:x="23364" fg:w="150"/><text x="29.2372%" y="95.50"></text></g><g><title>_platform_memmove (95 samples, 0.12%)</title><rect x="29.0555%" y="69" width="0.1179%" height="15" fill="rgb(250,191,14)" fg:x="23419" fg:w="95"/><text x="29.3055%" y="79.50"></text></g><g><title>__cxa_throw (10 samples, 0.01%)</title><rect x="29.1783%" y="85" width="0.0124%" height="15" fill="rgb(239,60,40)" fg:x="23518" fg:w="10"/><text x="29.4283%" y="95.50"></text></g><g><title>_Unwind_RaiseException (10 samples, 0.01%)</title><rect x="29.1783%" y="69" width="0.0124%" height="15" fill="rgb(206,27,48)" fg:x="23518" fg:w="10"/><text x="29.4283%" y="79.50"></text></g><g><title>CUDT::recvmsg(char*, int) (217 samples, 0.27%)</title><rect x="28.9227%" y="101" width="0.2692%" height="15" fill="rgb(225,35,8)" fg:x="23312" fg:w="217"/><text x="29.1727%" y="111.50"></text></g><g><title>CUDTUnited::lookup(int) (23 samples, 0.03%)</title><rect x="29.1919%" y="101" width="0.0285%" height="15" fill="rgb(250,213,24)" fg:x="23529" fg:w="23"/><text x="29.4419%" y="111.50"></text></g><g><title>udt::DatagramConnection::try_recv (372 samples, 0.46%)</title><rect x="28.7602%" y="181" width="0.4615%" height="15" fill="rgb(247,123,22)" fg:x="23181" fg:w="372"/><text x="29.0102%" y="191.50"></text></g><g><title>udt_sys::rpoll::RPoll::with_lock (365 samples, 0.45%)</title><rect x="28.7689%" y="165" width="0.4528%" height="15" fill="rgb(231,138,38)" fg:x="23188" fg:w="365"/><text x="29.0189%" y="175.50"></text></g><g><title>udt_sys::ffi::recvmsg (254 samples, 0.32%)</title><rect x="28.9066%" y="149" width="0.3151%" height="15" fill="rgb(231,145,46)" fg:x="23299" fg:w="254"/><text x="29.1566%" y="159.50"></text></g><g><title>UDT$cxxbridge1$recvmsg (252 samples, 0.31%)</title><rect x="28.9091%" y="133" width="0.3127%" height="15" fill="rgb(251,118,11)" fg:x="23301" fg:w="252"/><text x="29.1591%" y="143.50"></text></g><g><title>CUDT::recvmsg(int, char*, int) (250 samples, 0.31%)</title><rect x="28.9116%" y="117" width="0.3102%" height="15" fill="rgb(217,147,25)" fg:x="23303" fg:w="250"/><text x="29.1616%" y="127.50"></text></g><g><title>udt::DatagramConnection::recv::_{{closure}} (377 samples, 0.47%)</title><rect x="28.7577%" y="197" width="0.4677%" height="15" fill="rgb(247,81,37)" fg:x="23179" fg:w="377"/><text x="29.0077%" y="207.50"></text></g><g><title>transport::SecureTransport::recv::_{{closure}} (23,518 samples, 29.18%)</title><rect x="0.0484%" y="213" width="29.1783%" height="15" fill="rgb(209,12,38)" fg:x="39" fg:w="23518"/><text x="0.2984%" y="223.50">transport::SecureTransport::recv::_{{closure}}</text></g><g><title>mach_absolute_time (51 samples, 0.06%)</title><rect x="29.2416%" y="149" width="0.0633%" height="15" fill="rgb(227,1,9)" fg:x="23569" fg:w="51"/><text x="29.4916%" y="159.50"></text></g><g><title>clock_gettime_nsec_np (58 samples, 0.07%)</title><rect x="29.2379%" y="165" width="0.0720%" height="15" fill="rgb(248,47,43)" fg:x="23566" fg:w="58"/><text x="29.4879%" y="175.50"></text></g><g><title>std::sys::pal::unix::time::Timespec::now (64 samples, 0.08%)</title><rect x="29.2341%" y="197" width="0.0794%" height="15" fill="rgb(221,10,30)" fg:x="23563" fg:w="64"/><text x="29.4841%" y="207.50"></text></g><g><title>clock_gettime (61 samples, 0.08%)</title><rect x="29.2379%" y="181" width="0.0757%" height="15" fill="rgb(210,229,1)" fg:x="23566" fg:w="61"/><text x="29.4879%" y="191.50"></text></g><g><title>tokio::runtime::task::core::Core&lt;T,S&gt;::poll::_{{closure}} (23,606 samples, 29.29%)</title><rect x="0.0273%" y="229" width="29.2875%" height="15" fill="rgb(222,148,37)" fg:x="22" fg:w="23606"/><text x="0.2773%" y="239.50">tokio::runtime::task::core::Core&lt;T,S&gt;::poll::_{..</text></g><g><title>udt_example::main::_{{closure}}::_{{closure}} (68 samples, 0.08%)</title><rect x="29.2304%" y="213" width="0.0844%" height="15" fill="rgb(234,67,33)" fg:x="23560" fg:w="68"/><text x="29.4804%" y="223.50"></text></g><g><title>scc::stack::Stack&lt;T&gt;::peek_with (20 samples, 0.02%)</title><rect x="29.3458%" y="213" width="0.0248%" height="15" fill="rgb(247,98,35)" fg:x="23653" fg:w="20"/><text x="29.5958%" y="223.50"></text></g><g><title>scc::stack::Stack&lt;T&gt;::cleanup_newest (18 samples, 0.02%)</title><rect x="29.3483%" y="197" width="0.0223%" height="15" fill="rgb(247,138,52)" fg:x="23655" fg:w="18"/><text x="29.5983%" y="207.50"></text></g><g><title>&lt;Alg as cipher::block::BlockEncryptMut&gt;::encrypt_with_backend_mut (10 samples, 0.01%)</title><rect x="29.4016%" y="181" width="0.0124%" height="15" fill="rgb(213,79,30)" fg:x="23698" fg:w="10"/><text x="29.6516%" y="191.50"></text></g><g><title>aes::soft::fixslice::bitslice (466 samples, 0.58%)</title><rect x="33.2068%" y="133" width="0.5782%" height="15" fill="rgb(246,177,23)" fg:x="26765" fg:w="466"/><text x="33.4568%" y="143.50"></text></g><g><title>aes::soft::fixslice::inv_bitslice (1,191 samples, 1.48%)</title><rect x="33.7849%" y="133" width="1.4776%" height="15" fill="rgb(230,62,27)" fg:x="27231" fg:w="1191"/><text x="34.0349%" y="143.50"></text></g><g><title>aes::soft::fixslice::mix_columns_1 (2,683 samples, 3.33%)</title><rect x="35.2626%" y="133" width="3.3287%" height="15" fill="rgb(216,154,8)" fg:x="28422" fg:w="2683"/><text x="35.5126%" y="143.50">aes..</text></g><g><title>aes::soft::fixslice::mix_columns_3 (1,726 samples, 2.14%)</title><rect x="38.5913%" y="133" width="2.1414%" height="15" fill="rgb(244,35,45)" fg:x="31105" fg:w="1726"/><text x="38.8413%" y="143.50">a..</text></g><g><title>&lt;Alg as cipher::block::BlockEncryptMut&gt;::encrypt_with_backend_mut (17,076 samples, 21.19%)</title><rect x="29.4512%" y="165" width="21.1858%" height="15" fill="rgb(251,115,12)" fg:x="23738" fg:w="17076"/><text x="29.7012%" y="175.50">&lt;Alg as cipher::block::BlockEncry..</text></g><g><title>aes::soft::fixslice::aes256_encrypt (16,933 samples, 21.01%)</title><rect x="29.6287%" y="149" width="21.0084%" height="15" fill="rgb(240,54,50)" fg:x="23881" fg:w="16933"/><text x="29.8787%" y="159.50">aes::soft::fixslice::aes256_encry..</text></g><g><title>aes::soft::fixslice::sub_bytes (7,983 samples, 9.90%)</title><rect x="40.7327%" y="133" width="9.9043%" height="15" fill="rgb(233,84,52)" fg:x="32831" fg:w="7983"/><text x="40.9827%" y="143.50">aes::soft::fix..</text></g><g><title>&lt;polyval::backend::soft::Polyval as universal_hash::UhfBackend&gt;::proc_block (55 samples, 0.07%)</title><rect x="50.6371%" y="165" width="0.0682%" height="15" fill="rgb(207,117,47)" fg:x="40814" fg:w="55"/><text x="50.8871%" y="175.50"></text></g><g><title>aes::soft::fixslice::bitslice (15 samples, 0.02%)</title><rect x="50.9411%" y="149" width="0.0186%" height="15" fill="rgb(249,43,39)" fg:x="41059" fg:w="15"/><text x="51.1911%" y="159.50"></text></g><g><title>aes::soft::fixslice::inv_bitslice (57 samples, 0.07%)</title><rect x="50.9597%" y="149" width="0.0707%" height="15" fill="rgb(209,38,44)" fg:x="41074" fg:w="57"/><text x="51.2097%" y="159.50"></text></g><g><title>aes::soft::fixslice::mix_columns_1 (119 samples, 0.15%)</title><rect x="51.0304%" y="149" width="0.1476%" height="15" fill="rgb(236,212,23)" fg:x="41131" fg:w="119"/><text x="51.2804%" y="159.50"></text></g><g><title>aes::soft::fixslice::mix_columns_3 (79 samples, 0.10%)</title><rect x="51.1780%" y="149" width="0.0980%" height="15" fill="rgb(242,79,21)" fg:x="41250" fg:w="79"/><text x="51.4280%" y="159.50"></text></g><g><title>aes::soft::fixslice::aes256_encrypt (820 samples, 1.02%)</title><rect x="50.7190%" y="165" width="1.0174%" height="15" fill="rgb(211,96,35)" fg:x="40880" fg:w="820"/><text x="50.9690%" y="175.50"></text></g><g><title>aes::soft::fixslice::sub_bytes (371 samples, 0.46%)</title><rect x="51.2760%" y="149" width="0.4603%" height="15" fill="rgb(253,215,40)" fg:x="41329" fg:w="371"/><text x="51.5260%" y="159.50"></text></g><g><title>&lt;polyval::backend::soft::Polyval as universal_hash::UhfBackend&gt;::proc_block (4,224 samples, 5.24%)</title><rect x="51.8170%" y="149" width="5.2406%" height="15" fill="rgb(211,81,21)" fg:x="41765" fg:w="4224"/><text x="52.0670%" y="159.50">&lt;polyv..</text></g><g><title>&lt;polyval::backend::soft::U64x2 as core::ops::arith::Mul&gt;::mul (4,146 samples, 5.14%)</title><rect x="51.9137%" y="133" width="5.1439%" height="15" fill="rgb(208,190,38)" fg:x="41843" fg:w="4146"/><text x="52.1637%" y="143.50">&lt;polyv..</text></g><g><title>&lt;aes_gcm::AesGcm&lt;Aes,NonceSize,TagSize&gt; as aead::AeadInPlace&gt;::encrypt_in_place_detached (22,285 samples, 27.65%)</title><rect x="29.4140%" y="181" width="27.6485%" height="15" fill="rgb(235,213,38)" fg:x="23708" fg:w="22285"/><text x="29.6640%" y="191.50">&lt;aes_gcm::AesGcm&lt;Aes,NonceSize,TagSize&gt; as a..</text></g><g><title>aes_gcm::AesGcm&lt;Aes,NonceSize,TagSize&gt;::compute_tag (4,293 samples, 5.33%)</title><rect x="51.7363%" y="165" width="5.3262%" height="15" fill="rgb(237,122,38)" fg:x="41700" fg:w="4293"/><text x="51.9863%" y="175.50">aes_gcm..</text></g><g><title>_platform_memmove (52 samples, 0.06%)</title><rect x="57.0650%" y="181" width="0.0645%" height="15" fill="rgb(244,218,35)" fg:x="45995" fg:w="52"/><text x="57.3150%" y="191.50"></text></g><g><title>aes::soft::fixslice::bitslice (49 samples, 0.06%)</title><rect x="57.3119%" y="165" width="0.0608%" height="15" fill="rgb(240,68,47)" fg:x="46194" fg:w="49"/><text x="57.5619%" y="175.50"></text></g><g><title>aes::soft::fixslice::inv_bitslice (51 samples, 0.06%)</title><rect x="57.3727%" y="165" width="0.0633%" height="15" fill="rgb(210,16,53)" fg:x="46243" fg:w="51"/><text x="57.6227%" y="175.50"></text></g><g><title>aes::soft::fixslice::mix_columns_1 (125 samples, 0.16%)</title><rect x="57.4360%" y="165" width="0.1551%" height="15" fill="rgb(235,124,12)" fg:x="46294" fg:w="125"/><text x="57.6860%" y="175.50"></text></g><g><title>aes::soft::fixslice::mix_columns_3 (96 samples, 0.12%)</title><rect x="57.5911%" y="165" width="0.1191%" height="15" fill="rgb(224,169,11)" fg:x="46419" fg:w="96"/><text x="57.8411%" y="175.50"></text></g><g><title>aes::soft::fixslice::aes256_encrypt (831 samples, 1.03%)</title><rect x="57.1308%" y="181" width="1.0310%" height="15" fill="rgb(250,166,2)" fg:x="46048" fg:w="831"/><text x="57.3808%" y="191.50"></text></g><g><title>aes::soft::fixslice::sub_bytes (364 samples, 0.45%)</title><rect x="57.7102%" y="165" width="0.4516%" height="15" fill="rgb(242,216,29)" fg:x="46515" fg:w="364"/><text x="57.9602%" y="175.50"></text></g><g><title>_platform_memmove (33 samples, 0.04%)</title><rect x="58.3119%" y="165" width="0.0409%" height="15" fill="rgb(230,116,27)" fg:x="47000" fg:w="33"/><text x="58.5619%" y="175.50"></text></g><g><title>_platform_memset (9 samples, 0.01%)</title><rect x="58.3529%" y="165" width="0.0112%" height="15" fill="rgb(228,99,48)" fg:x="47033" fg:w="9"/><text x="58.6029%" y="175.50"></text></g><g><title>aes::soft::fixslice::bitslice (46 samples, 0.06%)</title><rect x="58.3640%" y="165" width="0.0571%" height="15" fill="rgb(253,11,6)" fg:x="47042" fg:w="46"/><text x="58.6140%" y="175.50"></text></g><g><title>aes::soft::fixslice::memshift32 (109 samples, 0.14%)</title><rect x="58.4211%" y="165" width="0.1352%" height="15" fill="rgb(247,143,39)" fg:x="47088" fg:w="109"/><text x="58.6711%" y="175.50"></text></g><g><title>aes::soft::fixslice::sub_bytes (238 samples, 0.30%)</title><rect x="58.5563%" y="165" width="0.2953%" height="15" fill="rgb(236,97,10)" fg:x="47197" fg:w="238"/><text x="58.8063%" y="175.50"></text></g><g><title>aes::soft::fixslice::aes256_key_schedule (1,013 samples, 1.26%)</title><rect x="58.1618%" y="181" width="1.2568%" height="15" fill="rgb(233,208,19)" fg:x="46879" fg:w="1013"/><text x="58.4118%" y="191.50"></text></g><g><title>aes::soft::fixslice::xor_columns (457 samples, 0.57%)</title><rect x="58.8516%" y="165" width="0.5670%" height="15" fill="rgb(216,164,2)" fg:x="47435" fg:w="457"/><text x="59.1016%" y="175.50"></text></g><g><title>&lt;snow::resolvers::default::CipherAesGcm as snow::types::Cipher&gt;::encrypt (24,213 samples, 30.04%)</title><rect x="29.3818%" y="197" width="30.0406%" height="15" fill="rgb(220,129,5)" fg:x="23682" fg:w="24213"/><text x="29.6318%" y="207.50">&lt;snow::resolvers::default::CipherAesGcm as snow:..</text></g><g><title>snow::stateless_transportstate::StatelessTransportState::write_message (24,226 samples, 30.06%)</title><rect x="29.3768%" y="213" width="30.0567%" height="15" fill="rgb(242,17,10)" fg:x="23678" fg:w="24226"/><text x="29.6268%" y="223.50">snow::stateless_transportstate::StatelessTranspo..</text></g><g><title>&lt;util::polymur::PolymurHasher as core::hash::Hasher&gt;::write (23 samples, 0.03%)</title><rect x="59.5017%" y="149" width="0.0285%" height="15" fill="rgb(242,107,0)" fg:x="47959" fg:w="23"/><text x="59.7517%" y="159.50"></text></g><g><title>scc::hash_map::HashMap&lt;K,V,H&gt;::entry (71 samples, 0.09%)</title><rect x="59.4658%" y="165" width="0.0881%" height="15" fill="rgb(251,28,31)" fg:x="47930" fg:w="71"/><text x="59.7158%" y="175.50"></text></g><g><title>scc::hash_table::bucket::Locker&lt;K,V,L,_&gt;::lock (17 samples, 0.02%)</title><rect x="59.5328%" y="149" width="0.0211%" height="15" fill="rgb(233,223,10)" fg:x="47984" fg:w="17"/><text x="59.7828%" y="159.50"></text></g><g><title>__psynch_cvsignal (39 samples, 0.05%)</title><rect x="59.5601%" y="133" width="0.0484%" height="15" fill="rgb(215,21,27)" fg:x="48006" fg:w="39"/><text x="59.8101%" y="143.50"></text></g><g><title>pthread_cond_signal (41 samples, 0.05%)</title><rect x="59.5588%" y="149" width="0.0509%" height="15" fill="rgb(232,23,21)" fg:x="48005" fg:w="41"/><text x="59.8088%" y="159.50"></text></g><g><title>std::sys::pal::unix::sync::mutex::Mutex::lock (9 samples, 0.01%)</title><rect x="59.6097%" y="149" width="0.0112%" height="15" fill="rgb(244,5,23)" fg:x="48046" fg:w="9"/><text x="59.8597%" y="159.50"></text></g><g><title>_pthread_mutex_firstfit_lock_slow (9 samples, 0.01%)</title><rect x="59.6097%" y="133" width="0.0112%" height="15" fill="rgb(226,81,46)" fg:x="48046" fg:w="9"/><text x="59.8597%" y="143.50"></text></g><g><title>_pthread_mutex_firstfit_lock_wait (9 samples, 0.01%)</title><rect x="59.6097%" y="117" width="0.0112%" height="15" fill="rgb(247,70,30)" fg:x="48046" fg:w="9"/><text x="59.8597%" y="127.50"></text></g><g><title>__psynch_mutexwait (9 samples, 0.01%)</title><rect x="59.6097%" y="101" width="0.0112%" height="15" fill="rgb(212,68,19)" fg:x="48046" fg:w="9"/><text x="59.8597%" y="111.50"></text></g><g><title>scc::wait_queue::SyncWait::signal (53 samples, 0.07%)</title><rect x="59.5576%" y="165" width="0.0658%" height="15" fill="rgb(240,187,13)" fg:x="48004" fg:w="53"/><text x="59.8076%" y="175.50"></text></g><g><title>CGuard::CGuard(_opaque_pthread_mutex_t&amp;) (10 samples, 0.01%)</title><rect x="59.6444%" y="101" width="0.0124%" height="15" fill="rgb(223,113,26)" fg:x="48074" fg:w="10"/><text x="59.8944%" y="111.50"></text></g><g><title>CGuard::CGuard(_opaque_pthread_mutex_t&amp;) (69 samples, 0.09%)</title><rect x="59.6705%" y="85" width="0.0856%" height="15" fill="rgb(206,192,2)" fg:x="48095" fg:w="69"/><text x="59.9205%" y="95.50"></text></g><g><title>CGuard::~CGuard() (12 samples, 0.01%)</title><rect x="59.7561%" y="85" width="0.0149%" height="15" fill="rgb(241,108,4)" fg:x="48164" fg:w="12"/><text x="60.0061%" y="95.50"></text></g><g><title>__commpage_gettimeofday_internal (101 samples, 0.13%)</title><rect x="59.7747%" y="53" width="0.1253%" height="15" fill="rgb(247,173,49)" fg:x="48179" fg:w="101"/><text x="60.0247%" y="63.50"></text></g><g><title>mach_absolute_time (99 samples, 0.12%)</title><rect x="59.7772%" y="37" width="0.1228%" height="15" fill="rgb(224,114,35)" fg:x="48181" fg:w="99"/><text x="60.0272%" y="47.50"></text></g><g><title>CTimer::getTime() (109 samples, 0.14%)</title><rect x="59.7710%" y="85" width="0.1352%" height="15" fill="rgb(245,159,27)" fg:x="48176" fg:w="109"/><text x="60.0210%" y="95.50"></text></g><g><title>gettimeofday (109 samples, 0.14%)</title><rect x="59.7710%" y="69" width="0.1352%" height="15" fill="rgb(245,172,44)" fg:x="48176" fg:w="109"/><text x="60.0210%" y="79.50"></text></g><g><title>CSndBuffer::addBuffer(char const*, int, int, bool) (215 samples, 0.27%)</title><rect x="59.6655%" y="101" width="0.2667%" height="15" fill="rgb(236,23,11)" fg:x="48091" fg:w="215"/><text x="59.9155%" y="111.50"></text></g><g><title>_platform_memmove (21 samples, 0.03%)</title><rect x="59.9062%" y="85" width="0.0261%" height="15" fill="rgb(205,117,38)" fg:x="48285" fg:w="21"/><text x="60.1562%" y="95.50"></text></g><g><title>_pthread_mutex_firstfit_lock_slow (26 samples, 0.03%)</title><rect x="59.9422%" y="69" width="0.0323%" height="15" fill="rgb(237,72,25)" fg:x="48314" fg:w="26"/><text x="60.1922%" y="79.50"></text></g><g><title>_pthread_mutex_firstfit_lock_wait (25 samples, 0.03%)</title><rect x="59.9434%" y="53" width="0.0310%" height="15" fill="rgb(244,70,9)" fg:x="48315" fg:w="25"/><text x="60.1934%" y="63.50"></text></g><g><title>__psynch_mutexwait (25 samples, 0.03%)</title><rect x="59.9434%" y="37" width="0.0310%" height="15" fill="rgb(217,125,39)" fg:x="48315" fg:w="25"/><text x="60.1934%" y="47.50"></text></g><g><title>CGuard::CGuard(_opaque_pthread_mutex_t&amp;) (40 samples, 0.05%)</title><rect x="59.9347%" y="85" width="0.0496%" height="15" fill="rgb(235,36,10)" fg:x="48308" fg:w="40"/><text x="60.1847%" y="95.50"></text></g><g><title>CGuard::~CGuard() (13 samples, 0.02%)</title><rect x="59.9844%" y="85" width="0.0161%" height="15" fill="rgb(251,123,47)" fg:x="48348" fg:w="13"/><text x="60.2344%" y="95.50"></text></g><g><title>CTimer::interrupt() (31 samples, 0.04%)</title><rect x="60.0030%" y="69" width="0.0385%" height="15" fill="rgb(221,13,13)" fg:x="48363" fg:w="31"/><text x="60.2530%" y="79.50"></text></g><g><title>mach_absolute_time (31 samples, 0.04%)</title><rect x="60.0030%" y="53" width="0.0385%" height="15" fill="rgb(238,131,9)" fg:x="48363" fg:w="31"/><text x="60.2530%" y="63.50"></text></g><g><title>__psynch_cvsignal (12 samples, 0.01%)</title><rect x="60.0414%" y="69" width="0.0149%" height="15" fill="rgb(211,50,8)" fg:x="48394" fg:w="12"/><text x="60.2914%" y="79.50"></text></g><g><title>__psynch_cvsignal (555 samples, 0.69%)</title><rect x="60.0600%" y="53" width="0.6886%" height="15" fill="rgb(245,182,24)" fg:x="48409" fg:w="555"/><text x="60.3100%" y="63.50"></text></g><g><title>CSndUList::insert_(long long, CUDT const*) (606 samples, 0.75%)</title><rect x="60.0005%" y="85" width="0.7519%" height="15" fill="rgb(242,14,37)" fg:x="48361" fg:w="606"/><text x="60.2505%" y="95.50"></text></g><g><title>pthread_cond_signal (560 samples, 0.69%)</title><rect x="60.0576%" y="69" width="0.6948%" height="15" fill="rgb(246,228,12)" fg:x="48407" fg:w="560"/><text x="60.3076%" y="79.50"></text></g><g><title>CSndUList::update(CUDT const*, bool) (667 samples, 0.83%)</title><rect x="59.9335%" y="101" width="0.8275%" height="15" fill="rgb(213,55,15)" fg:x="48307" fg:w="667"/><text x="60.1835%" y="111.50"></text></g><g><title>CUDT::sendmsg(char const*, int, int, bool) (909 samples, 1.13%)</title><rect x="59.6382%" y="117" width="1.1278%" height="15" fill="rgb(209,9,3)" fg:x="48069" fg:w="909"/><text x="59.8882%" y="127.50"></text></g><g><title>CGuard::CGuard(_opaque_pthread_mutex_t&amp;) (13 samples, 0.02%)</title><rect x="60.7920%" y="101" width="0.0161%" height="15" fill="rgb(230,59,30)" fg:x="48999" fg:w="13"/><text x="61.0420%" y="111.50"></text></g><g><title>pthread_mutex_lock (11 samples, 0.01%)</title><rect x="60.7945%" y="85" width="0.0136%" height="15" fill="rgb(209,121,21)" fg:x="49001" fg:w="11"/><text x="61.0445%" y="95.50"></text></g><g><title>CUDT::sendmsg(int, char const*, int, int, bool) (963 samples, 1.19%)</title><rect x="59.6271%" y="133" width="1.1948%" height="15" fill="rgb(220,109,13)" fg:x="48060" fg:w="963"/><text x="59.8771%" y="143.50"></text></g><g><title>CUDTUnited::lookup(int) (45 samples, 0.06%)</title><rect x="60.7660%" y="117" width="0.0558%" height="15" fill="rgb(232,18,1)" fg:x="48978" fg:w="45"/><text x="61.0160%" y="127.50"></text></g><g><title>CGuard::~CGuard() (11 samples, 0.01%)</title><rect x="60.8082%" y="101" width="0.0136%" height="15" fill="rgb(215,41,42)" fg:x="49012" fg:w="11"/><text x="61.0582%" y="111.50"></text></g><g><title>udt::DatagramConnection::send_with::_{{closure}} (1,121 samples, 1.39%)</title><rect x="59.4335%" y="213" width="1.3908%" height="15" fill="rgb(224,123,36)" fg:x="47904" fg:w="1121"/><text x="59.6835%" y="223.50"></text></g><g><title>udt::DatagramConnection::try_send_with (1,116 samples, 1.38%)</title><rect x="59.4397%" y="197" width="1.3846%" height="15" fill="rgb(240,125,3)" fg:x="47909" fg:w="1116"/><text x="59.6897%" y="207.50"></text></g><g><title>udt_sys::rpoll::RPoll::with_lock (1,110 samples, 1.38%)</title><rect x="59.4472%" y="181" width="1.3772%" height="15" fill="rgb(205,98,50)" fg:x="47915" fg:w="1110"/><text x="59.6972%" y="191.50"></text></g><g><title>udt_sys::ffi::sendmsg (968 samples, 1.20%)</title><rect x="59.6233%" y="165" width="1.2010%" height="15" fill="rgb(205,185,37)" fg:x="48057" fg:w="968"/><text x="59.8733%" y="175.50"></text></g><g><title>UDT$cxxbridge1$sendmsg (967 samples, 1.20%)</title><rect x="59.6246%" y="149" width="1.1997%" height="15" fill="rgb(238,207,15)" fg:x="48058" fg:w="967"/><text x="59.8746%" y="159.50"></text></g><g><title>transport::SecureTransport::send_with::_{{closure}} (25,399 samples, 31.51%)</title><rect x="29.3148%" y="229" width="31.5120%" height="15" fill="rgb(213,199,42)" fg:x="23628" fg:w="25399"/><text x="29.5648%" y="239.50">transport::SecureTransport::send_with::_{{closure}}</text></g><g><title>tokio::runtime::scheduler::current_thread::Context::run_task (49,027 samples, 60.83%)</title><rect x="0.0025%" y="277" width="60.8268%" height="15" fill="rgb(235,201,11)" fg:x="2" fg:w="49027"/><text x="0.2525%" y="287.50">tokio::runtime::scheduler::current_thread::Context::run_task</text></g><g><title>tokio::runtime::task::LocalNotified&lt;S&gt;::run (49,027 samples, 60.83%)</title><rect x="0.0025%" y="261" width="60.8268%" height="15" fill="rgb(207,46,11)" fg:x="2" fg:w="49027"/><text x="0.2525%" y="271.50">tokio::runtime::task::LocalNotified&lt;S&gt;::run</text></g><g><title>tokio::runtime::task::harness::poll_future::_{{closure}} (49,027 samples, 60.83%)</title><rect x="0.0025%" y="245" width="60.8268%" height="15" fill="rgb(241,35,35)" fg:x="2" fg:w="49027"/><text x="0.2525%" y="255.50">tokio::runtime::task::harness::poll_future::_{{closure}}</text></g><g><title>start (49,030 samples, 60.83%)</title><rect x="0.0000%" y="421" width="60.8305%" height="15" fill="rgb(243,32,47)" fg:x="0" fg:w="49030"/><text x="0.2500%" y="431.50">start</text></g><g><title>main (49,029 samples, 60.83%)</title><rect x="0.0012%" y="405" width="60.8293%" height="15" fill="rgb(247,202,23)" fg:x="1" fg:w="49029"/><text x="0.2512%" y="415.50">main</text></g><g><title>std::rt::lang_start_internal (49,029 samples, 60.83%)</title><rect x="0.0012%" y="389" width="60.8293%" height="15" fill="rgb(219,102,11)" fg:x="1" fg:w="49029"/><text x="0.2512%" y="399.50">std::rt::lang_start_internal</text></g><g><title>std::rt::lang_start::_{{closure}} (49,028 samples, 60.83%)</title><rect x="0.0025%" y="373" width="60.8280%" height="15" fill="rgb(243,110,44)" fg:x="2" fg:w="49028"/><text x="0.2525%" y="383.50">std::rt::lang_start::_{{closure}}</text></g><g><title>core::ops::function::FnOnce::call_once (49,028 samples, 60.83%)</title><rect x="0.0025%" y="357" width="60.8280%" height="15" fill="rgb(222,74,54)" fg:x="2" fg:w="49028"/><text x="0.2525%" y="367.50">core::ops::function::FnOnce::call_once</text></g><g><title>udt_example::main (49,028 samples, 60.83%)</title><rect x="0.0025%" y="341" width="60.8280%" height="15" fill="rgb(216,99,12)" fg:x="2" fg:w="49028"/><text x="0.2525%" y="351.50">udt_example::main</text></g><g><title>tokio::runtime::scheduler::current_thread::CurrentThread::block_on (49,028 samples, 60.83%)</title><rect x="0.0025%" y="325" width="60.8280%" height="15" fill="rgb(226,22,26)" fg:x="2" fg:w="49028"/><text x="0.2525%" y="335.50">tokio::runtime::scheduler::current_thread::CurrentThread::block_on</text></g><g><title>tokio::runtime::scheduler::current_thread::CurrentThread::block_on::_{{closure}} (49,028 samples, 60.83%)</title><rect x="0.0025%" y="309" width="60.8280%" height="15" fill="rgb(217,163,10)" fg:x="2" fg:w="49028"/><text x="0.2525%" y="319.50">tokio::runtime::scheduler::current_thread::CurrentThread::block_on::_{{closure}}</text></g><g><title>tokio::runtime::context::set_scheduler (49,028 samples, 60.83%)</title><rect x="0.0025%" y="293" width="60.8280%" height="15" fill="rgb(213,25,53)" fg:x="2" fg:w="49028"/><text x="0.2525%" y="303.50">tokio::runtime::context::set_scheduler</text></g><g><title>CPacket::getFlag() const (10 samples, 0.01%)</title><rect x="60.9918%" y="357" width="0.0124%" height="15" fill="rgb(252,105,26)" fg:x="49160" fg:w="10"/><text x="61.2418%" y="367.50"></text></g><g><title>CChannel::recvfrom(sockaddr*, CPacket&amp;) const (6,894 samples, 8.55%)</title><rect x="60.9372%" y="373" width="8.5532%" height="15" fill="rgb(220,39,43)" fg:x="49116" fg:w="6894"/><text x="61.1872%" y="383.50">CChannel::re..</text></g><g><title>__recvmsg (6,830 samples, 8.47%)</title><rect x="61.0166%" y="357" width="8.4738%" height="15" fill="rgb(229,68,48)" fg:x="49180" fg:w="6830"/><text x="61.2666%" y="367.50">__recvmsg</text></g><g><title>CIPAddress::ipcmp(sockaddr const*, sockaddr const*, int) (37 samples, 0.05%)</title><rect x="69.4905%" y="373" width="0.0459%" height="15" fill="rgb(252,8,32)" fg:x="56010" fg:w="37"/><text x="69.7405%" y="383.50"></text></g><g><title>CTimer::rdtsc(unsigned long long&amp;) (55 samples, 0.07%)</title><rect x="69.5488%" y="373" width="0.0682%" height="15" fill="rgb(223,20,43)" fg:x="56057" fg:w="55"/><text x="69.7988%" y="383.50"></text></g><g><title>mach_absolute_time (53 samples, 0.07%)</title><rect x="69.5512%" y="357" width="0.0658%" height="15" fill="rgb(229,81,49)" fg:x="56059" fg:w="53"/><text x="69.8012%" y="367.50"></text></g><g><title>CTimer::rdtsc(unsigned long long&amp;) (48 samples, 0.06%)</title><rect x="69.6555%" y="357" width="0.0596%" height="15" fill="rgb(236,28,36)" fg:x="56143" fg:w="48"/><text x="69.9055%" y="367.50"></text></g><g><title>mach_absolute_time (46 samples, 0.06%)</title><rect x="69.6579%" y="341" width="0.0571%" height="15" fill="rgb(249,185,26)" fg:x="56145" fg:w="46"/><text x="69.9079%" y="351.50"></text></g><g><title>CACKWindow::store(int, int) (25 samples, 0.03%)</title><rect x="69.7212%" y="341" width="0.0310%" height="15" fill="rgb(249,174,33)" fg:x="56196" fg:w="25"/><text x="69.9712%" y="351.50"></text></g><g><title>CTimer::getTime() (23 samples, 0.03%)</title><rect x="69.7237%" y="325" width="0.0285%" height="15" fill="rgb(233,201,37)" fg:x="56198" fg:w="23"/><text x="69.9737%" y="335.50"></text></g><g><title>gettimeofday (18 samples, 0.02%)</title><rect x="69.7299%" y="309" width="0.0223%" height="15" fill="rgb(221,78,26)" fg:x="56203" fg:w="18"/><text x="69.9799%" y="319.50"></text></g><g><title>__commpage_gettimeofday_internal (14 samples, 0.02%)</title><rect x="69.7349%" y="293" width="0.0174%" height="15" fill="rgb(250,127,30)" fg:x="56207" fg:w="14"/><text x="69.9849%" y="303.50"></text></g><g><title>mach_absolute_time (14 samples, 0.02%)</title><rect x="69.7349%" y="277" width="0.0174%" height="15" fill="rgb(230,49,44)" fg:x="56207" fg:w="14"/><text x="69.9849%" y="287.50"></text></g><g><title>CChannel::sendto(sockaddr const*, CPacket&amp;) const (4,469 samples, 5.54%)</title><rect x="69.7597%" y="325" width="5.5446%" height="15" fill="rgb(229,67,23)" fg:x="56227" fg:w="4469"/><text x="70.0097%" y="335.50">CChanne..</text></g><g><title>__sendmsg (4,449 samples, 5.52%)</title><rect x="69.7845%" y="309" width="5.5198%" height="15" fill="rgb(249,83,47)" fg:x="56247" fg:w="4449"/><text x="70.0345%" y="319.50">__sendm..</text></g><g><title>CSndQueue::sendto(sockaddr const*, CPacket&amp;) (4,584 samples, 5.69%)</title><rect x="69.7597%" y="341" width="5.6873%" height="15" fill="rgb(215,43,3)" fg:x="56227" fg:w="4584"/><text x="70.0097%" y="351.50">CSndQue..</text></g><g><title>__sendmsg (115 samples, 0.14%)</title><rect x="75.3043%" y="325" width="0.1427%" height="15" fill="rgb(238,154,13)" fg:x="60696" fg:w="115"/><text x="75.5543%" y="335.50"></text></g><g><title>scc::hash_table::bucket::Bucket&lt;K,V,L,_&gt;::get_entry_ptr (15 samples, 0.02%)</title><rect x="75.5164%" y="277" width="0.0186%" height="15" fill="rgb(219,56,2)" fg:x="60867" fg:w="15"/><text x="75.7664%" y="287.50"></text></g><g><title>__psynch_cvwait (46 samples, 0.06%)</title><rect x="75.5648%" y="229" width="0.0571%" height="15" fill="rgb(233,0,4)" fg:x="60906" fg:w="46"/><text x="75.8148%" y="239.50"></text></g><g><title>_pthread_cond_wait (51 samples, 0.06%)</title><rect x="75.5636%" y="245" width="0.0633%" height="15" fill="rgb(235,30,7)" fg:x="60905" fg:w="51"/><text x="75.8136%" y="255.50"></text></g><g><title>scc::hash_map::HashMap&lt;K,V,H&gt;::entry (125 samples, 0.16%)</title><rect x="75.4767%" y="293" width="0.1551%" height="15" fill="rgb(250,79,13)" fg:x="60835" fg:w="125"/><text x="75.7267%" y="303.50"></text></g><g><title>scc::hash_table::bucket::Locker&lt;K,V,L,_&gt;::lock (78 samples, 0.10%)</title><rect x="75.5350%" y="277" width="0.0968%" height="15" fill="rgb(211,146,34)" fg:x="60882" fg:w="78"/><text x="75.7850%" y="287.50"></text></g><g><title>scc::wait_queue::SyncWait::wait (58 samples, 0.07%)</title><rect x="75.5599%" y="261" width="0.0720%" height="15" fill="rgb(228,22,38)" fg:x="60902" fg:w="58"/><text x="75.8099%" y="271.50"></text></g><g><title>rpoll$cxxbridge1$RPoll$update_events_cxx (151 samples, 0.19%)</title><rect x="75.4581%" y="325" width="0.1873%" height="15" fill="rgb(235,168,5)" fg:x="60820" fg:w="151"/><text x="75.7081%" y="335.50"></text></g><g><title>udt_sys::rpoll::RPoll::update_events (145 samples, 0.18%)</title><rect x="75.4656%" y="309" width="0.1799%" height="15" fill="rgb(221,155,16)" fg:x="60826" fg:w="145"/><text x="75.7156%" y="319.50"></text></g><g><title>scc::wait_queue::SyncWait::signal (9 samples, 0.01%)</title><rect x="75.6343%" y="293" width="0.0112%" height="15" fill="rgb(215,215,53)" fg:x="60962" fg:w="9"/><text x="75.8843%" y="303.50"></text></g><g><title>CUDT::checkTimers() (4,859 samples, 6.03%)</title><rect x="69.6182%" y="373" width="6.0285%" height="15" fill="rgb(223,4,10)" fg:x="56113" fg:w="4859"/><text x="69.8682%" y="383.50">CUDT::ch..</text></g><g><title>CUDT::sendCtrl(int, void*, void*, int) (4,781 samples, 5.93%)</title><rect x="69.7150%" y="357" width="5.9317%" height="15" fill="rgb(234,103,6)" fg:x="56191" fg:w="4781"/><text x="69.9650%" y="367.50">CUDT::se..</text></g><g><title>rpoll::RPoll::update_events(int, unsigned int, bool) const (153 samples, 0.19%)</title><rect x="75.4569%" y="341" width="0.1898%" height="15" fill="rgb(227,97,0)" fg:x="60819" fg:w="153"/><text x="75.7069%" y="351.50"></text></g><g><title>CACKWindow::acknowledge(int, int&amp;) (19 samples, 0.02%)</title><rect x="75.6690%" y="357" width="0.0236%" height="15" fill="rgb(234,150,53)" fg:x="60990" fg:w="19"/><text x="75.9190%" y="367.50"></text></g><g><title>CTimer::getTime() (14 samples, 0.02%)</title><rect x="75.6752%" y="341" width="0.0174%" height="15" fill="rgb(228,201,54)" fg:x="60995" fg:w="14"/><text x="75.9252%" y="351.50"></text></g><g><title>gettimeofday (14 samples, 0.02%)</title><rect x="75.6752%" y="325" width="0.0174%" height="15" fill="rgb(222,22,37)" fg:x="60995" fg:w="14"/><text x="75.9252%" y="335.50"></text></g><g><title>__commpage_gettimeofday_internal (14 samples, 0.02%)</title><rect x="75.6752%" y="309" width="0.0174%" height="15" fill="rgb(237,53,32)" fg:x="60995" fg:w="14"/><text x="75.9252%" y="319.50"></text></g><g><title>mach_absolute_time (14 samples, 0.02%)</title><rect x="75.6752%" y="293" width="0.0174%" height="15" fill="rgb(233,25,53)" fg:x="60995" fg:w="14"/><text x="75.9252%" y="303.50"></text></g><g><title>CGuard::CGuard(_opaque_pthread_mutex_t&amp;) (13 samples, 0.02%)</title><rect x="75.7001%" y="357" width="0.0161%" height="15" fill="rgb(210,40,34)" fg:x="61015" fg:w="13"/><text x="75.9501%" y="367.50"></text></g><g><title>pthread_mutex_lock (11 samples, 0.01%)</title><rect x="75.7025%" y="341" width="0.0136%" height="15" fill="rgb(241,220,44)" fg:x="61017" fg:w="11"/><text x="75.9525%" y="351.50"></text></g><g><title>CGuard::CGuard(_opaque_pthread_mutex_t&amp;) (9 samples, 0.01%)</title><rect x="75.7534%" y="341" width="0.0112%" height="15" fill="rgb(235,28,35)" fg:x="61058" fg:w="9"/><text x="76.0034%" y="351.50"></text></g><g><title>CSndBuffer::ackData(int) (35 samples, 0.04%)</title><rect x="75.7298%" y="357" width="0.0434%" height="15" fill="rgb(210,56,17)" fg:x="61039" fg:w="35"/><text x="75.9798%" y="367.50"></text></g><g><title>CGuard::CGuard(_opaque_pthread_mutex_t&amp;) (10 samples, 0.01%)</title><rect x="75.7745%" y="341" width="0.0124%" height="15" fill="rgb(224,130,29)" fg:x="61075" fg:w="10"/><text x="76.0245%" y="351.50"></text></g><g><title>CSndLossList::remove(int) (12 samples, 0.01%)</title><rect x="75.7733%" y="357" width="0.0149%" height="15" fill="rgb(235,212,8)" fg:x="61074" fg:w="12"/><text x="76.0233%" y="367.50"></text></g><g><title>CChannel::sendto(sockaddr const*, CPacket&amp;) const (5,767 samples, 7.15%)</title><rect x="75.7943%" y="341" width="7.1550%" height="15" fill="rgb(223,33,50)" fg:x="61091" fg:w="5767"/><text x="76.0443%" y="351.50">CChannel::..</text></g><g><title>__sendmsg (5,741 samples, 7.12%)</title><rect x="75.8266%" y="325" width="7.1227%" height="15" fill="rgb(219,149,13)" fg:x="61117" fg:w="5741"/><text x="76.0766%" y="335.50">__sendmsg</text></g><g><title>CSndQueue::sendto(sockaddr const*, CPacket&amp;) (5,924 samples, 7.35%)</title><rect x="75.7881%" y="357" width="7.3498%" height="15" fill="rgb(250,156,29)" fg:x="61086" fg:w="5924"/><text x="76.0381%" y="367.50">CSndQueue:..</text></g><g><title>__sendmsg (152 samples, 0.19%)</title><rect x="82.9493%" y="341" width="0.1886%" height="15" fill="rgb(216,193,19)" fg:x="66858" fg:w="152"/><text x="83.1993%" y="351.50"></text></g><g><title>_pthread_mutex_firstfit_lock_slow (17 samples, 0.02%)</title><rect x="83.1416%" y="325" width="0.0211%" height="15" fill="rgb(216,135,14)" fg:x="67013" fg:w="17"/><text x="83.3916%" y="335.50"></text></g><g><title>_pthread_mutex_firstfit_lock_wait (16 samples, 0.02%)</title><rect x="83.1429%" y="309" width="0.0199%" height="15" fill="rgb(241,47,5)" fg:x="67014" fg:w="16"/><text x="83.3929%" y="319.50"></text></g><g><title>__psynch_mutexwait (16 samples, 0.02%)</title><rect x="83.1429%" y="293" width="0.0199%" height="15" fill="rgb(233,42,35)" fg:x="67014" fg:w="16"/><text x="83.3929%" y="303.50"></text></g><g><title>CGuard::CGuard(_opaque_pthread_mutex_t&amp;) (24 samples, 0.03%)</title><rect x="83.1404%" y="341" width="0.0298%" height="15" fill="rgb(231,13,6)" fg:x="67012" fg:w="24"/><text x="83.3904%" y="351.50"></text></g><g><title>CGuard::~CGuard() (11 samples, 0.01%)</title><rect x="83.1702%" y="341" width="0.0136%" height="15" fill="rgb(207,181,40)" fg:x="67036" fg:w="11"/><text x="83.4202%" y="351.50"></text></g><g><title>CSndUList::update(CUDT const*, bool) (45 samples, 0.06%)</title><rect x="83.1379%" y="357" width="0.0558%" height="15" fill="rgb(254,173,49)" fg:x="67010" fg:w="45"/><text x="83.3879%" y="367.50"></text></g><g><title>CTimer::getTime() (15 samples, 0.02%)</title><rect x="83.1938%" y="357" width="0.0186%" height="15" fill="rgb(221,1,38)" fg:x="67055" fg:w="15"/><text x="83.4438%" y="367.50"></text></g><g><title>gettimeofday (15 samples, 0.02%)</title><rect x="83.1938%" y="341" width="0.0186%" height="15" fill="rgb(206,124,46)" fg:x="67055" fg:w="15"/><text x="83.4438%" y="351.50"></text></g><g><title>__commpage_gettimeofday_internal (11 samples, 0.01%)</title><rect x="83.1987%" y="325" width="0.0136%" height="15" fill="rgb(249,21,11)" fg:x="67059" fg:w="11"/><text x="83.4487%" y="335.50"></text></g><g><title>mach_absolute_time (11 samples, 0.01%)</title><rect x="83.1987%" y="309" width="0.0136%" height="15" fill="rgb(222,201,40)" fg:x="67059" fg:w="11"/><text x="83.4487%" y="319.50"></text></g><g><title>CTimer::rdtsc(unsigned long long&amp;) (62 samples, 0.08%)</title><rect x="83.2124%" y="357" width="0.0769%" height="15" fill="rgb(235,61,29)" fg:x="67070" fg:w="62"/><text x="83.4624%" y="367.50"></text></g><g><title>mach_absolute_time (53 samples, 0.07%)</title><rect x="83.2235%" y="341" width="0.0658%" height="15" fill="rgb(219,207,3)" fg:x="67079" fg:w="53"/><text x="83.4735%" y="351.50"></text></g><g><title>__commpage_gettimeofday_internal (39 samples, 0.05%)</title><rect x="83.3067%" y="309" width="0.0484%" height="15" fill="rgb(222,56,46)" fg:x="67146" fg:w="39"/><text x="83.5567%" y="319.50"></text></g><g><title>mach_absolute_time (38 samples, 0.05%)</title><rect x="83.3079%" y="293" width="0.0471%" height="15" fill="rgb(239,76,54)" fg:x="67147" fg:w="38"/><text x="83.5579%" y="303.50"></text></g><g><title>CTimer::getTime() (49 samples, 0.06%)</title><rect x="83.2955%" y="341" width="0.0608%" height="15" fill="rgb(231,124,27)" fg:x="67137" fg:w="49"/><text x="83.5455%" y="351.50"></text></g><g><title>gettimeofday (46 samples, 0.06%)</title><rect x="83.2992%" y="325" width="0.0571%" height="15" fill="rgb(249,195,6)" fg:x="67140" fg:w="46"/><text x="83.5492%" y="335.50"></text></g><g><title>CUDTCC::onACK(int) (55 samples, 0.07%)</title><rect x="83.2893%" y="357" width="0.0682%" height="15" fill="rgb(237,174,47)" fg:x="67132" fg:w="55"/><text x="83.5393%" y="367.50"></text></g><g><title>scc::hash_map::Entry&lt;K,V,H&gt;::or_default (11 samples, 0.01%)</title><rect x="83.3861%" y="309" width="0.0136%" height="15" fill="rgb(206,201,31)" fg:x="67210" fg:w="11"/><text x="83.6361%" y="319.50"></text></g><g><title>&lt;util::polymur::PolymurHasher as core::hash::Hasher&gt;::write (25 samples, 0.03%)</title><rect x="83.4208%" y="293" width="0.0310%" height="15" fill="rgb(231,57,52)" fg:x="67238" fg:w="25"/><text x="83.6708%" y="303.50"></text></g><g><title>polymur_hash::PolymurHash::hash_with_tweak (17 samples, 0.02%)</title><rect x="83.4307%" y="277" width="0.0211%" height="15" fill="rgb(248,177,22)" fg:x="67246" fg:w="17"/><text x="83.6807%" y="287.50"></text></g><g><title>scc::hash_table::bucket::Bucket&lt;K,V,L,_&gt;::get_entry_ptr (12 samples, 0.01%)</title><rect x="83.4555%" y="293" width="0.0149%" height="15" fill="rgb(215,211,37)" fg:x="67266" fg:w="12"/><text x="83.7055%" y="303.50"></text></g><g><title>__psynch_cvwait (46 samples, 0.06%)</title><rect x="83.4903%" y="245" width="0.0571%" height="15" fill="rgb(241,128,51)" fg:x="67294" fg:w="46"/><text x="83.7403%" y="255.50"></text></g><g><title>_pthread_cond_wait (53 samples, 0.07%)</title><rect x="83.4878%" y="261" width="0.0658%" height="15" fill="rgb(227,165,31)" fg:x="67292" fg:w="53"/><text x="83.7378%" y="271.50"></text></g><g><title>scc::hash_map::HashMap&lt;K,V,H&gt;::entry (132 samples, 0.16%)</title><rect x="83.3997%" y="309" width="0.1638%" height="15" fill="rgb(228,167,24)" fg:x="67221" fg:w="132"/><text x="83.6497%" y="319.50"></text></g><g><title>scc::hash_table::bucket::Locker&lt;K,V,L,_&gt;::lock (75 samples, 0.09%)</title><rect x="83.4704%" y="293" width="0.0931%" height="15" fill="rgb(228,143,12)" fg:x="67278" fg:w="75"/><text x="83.7204%" y="303.50"></text></g><g><title>scc::wait_queue::SyncWait::wait (63 samples, 0.08%)</title><rect x="83.4853%" y="277" width="0.0782%" height="15" fill="rgb(249,149,8)" fg:x="67290" fg:w="63"/><text x="83.7353%" y="287.50"></text></g><g><title>pthread_cond_signal (9 samples, 0.01%)</title><rect x="83.5684%" y="293" width="0.0112%" height="15" fill="rgb(243,35,44)" fg:x="67357" fg:w="9"/><text x="83.8184%" y="303.50"></text></g><g><title>CUDT::processCtrl(CPacket&amp;) (6,396 samples, 7.94%)</title><rect x="75.6467%" y="373" width="7.9354%" height="15" fill="rgb(246,89,9)" fg:x="60972" fg:w="6396"/><text x="75.8967%" y="383.50">CUDT::proce..</text></g><g><title>rpoll::RPoll::update_events(int, unsigned int, bool) const (178 samples, 0.22%)</title><rect x="83.3612%" y="357" width="0.2208%" height="15" fill="rgb(233,213,13)" fg:x="67190" fg:w="178"/><text x="83.6112%" y="367.50"></text></g><g><title>rpoll$cxxbridge1$RPoll$update_events_cxx (176 samples, 0.22%)</title><rect x="83.3637%" y="341" width="0.2184%" height="15" fill="rgb(233,141,41)" fg:x="67192" fg:w="176"/><text x="83.6137%" y="351.50"></text></g><g><title>udt_sys::rpoll::RPoll::update_events (171 samples, 0.21%)</title><rect x="83.3699%" y="325" width="0.2122%" height="15" fill="rgb(239,167,4)" fg:x="67197" fg:w="171"/><text x="83.6199%" y="335.50"></text></g><g><title>scc::wait_queue::SyncWait::signal (13 samples, 0.02%)</title><rect x="83.5660%" y="309" width="0.0161%" height="15" fill="rgb(209,217,16)" fg:x="67355" fg:w="13"/><text x="83.8160%" y="319.50"></text></g><g><title>__commpage_gettimeofday_internal (26 samples, 0.03%)</title><rect x="83.6081%" y="309" width="0.0323%" height="15" fill="rgb(219,88,35)" fg:x="67389" fg:w="26"/><text x="83.8581%" y="319.50"></text></g><g><title>mach_absolute_time (23 samples, 0.03%)</title><rect x="83.6119%" y="293" width="0.0285%" height="15" fill="rgb(220,193,23)" fg:x="67392" fg:w="23"/><text x="83.8619%" y="303.50"></text></g><g><title>CPktTimeWindow::onPktArrival() (29 samples, 0.04%)</title><rect x="83.6057%" y="357" width="0.0360%" height="15" fill="rgb(230,90,52)" fg:x="67387" fg:w="29"/><text x="83.8557%" y="367.50"></text></g><g><title>CTimer::getTime() (28 samples, 0.03%)</title><rect x="83.6069%" y="341" width="0.0347%" height="15" fill="rgb(252,106,19)" fg:x="67388" fg:w="28"/><text x="83.8569%" y="351.50"></text></g><g><title>gettimeofday (27 samples, 0.03%)</title><rect x="83.6081%" y="325" width="0.0335%" height="15" fill="rgb(206,74,20)" fg:x="67389" fg:w="27"/><text x="83.8581%" y="335.50"></text></g><g><title>CRcvBuffer::addData(CUnit*, int) (11 samples, 0.01%)</title><rect x="83.6441%" y="357" width="0.0136%" height="15" fill="rgb(230,138,44)" fg:x="67418" fg:w="11"/><text x="83.8941%" y="367.50"></text></g><g><title>CTimer::rdtsc(unsigned long long&amp;) (95 samples, 0.12%)</title><rect x="83.6578%" y="357" width="0.1179%" height="15" fill="rgb(235,182,43)" fg:x="67429" fg:w="95"/><text x="83.9078%" y="367.50"></text></g><g><title>mach_absolute_time (94 samples, 0.12%)</title><rect x="83.6590%" y="341" width="0.1166%" height="15" fill="rgb(242,16,51)" fg:x="67430" fg:w="94"/><text x="83.9090%" y="351.50"></text></g><g><title>CUDT::processData(CUnit*) (157 samples, 0.19%)</title><rect x="83.5821%" y="373" width="0.1948%" height="15" fill="rgb(248,9,4)" fg:x="67368" fg:w="157"/><text x="83.8321%" y="383.50"></text></g><g><title>__recvmsg (210 samples, 0.26%)</title><rect x="83.7843%" y="373" width="0.2605%" height="15" fill="rgb(210,31,22)" fg:x="67531" fg:w="210"/><text x="84.0343%" y="383.50"></text></g><g><title>CRcvQueue::worker(void*) (18,723 samples, 23.23%)</title><rect x="60.8380%" y="389" width="23.2292%" height="15" fill="rgb(239,54,39)" fg:x="49036" fg:w="18723"/><text x="61.0880%" y="399.50">CRcvQueue::worker(void*)</text></g><g><title>pthread_cond_signal (17 samples, 0.02%)</title><rect x="84.0461%" y="373" width="0.0211%" height="15" fill="rgb(230,99,41)" fg:x="67742" fg:w="17"/><text x="84.2961%" y="383.50"></text></g><g><title>__psynch_cvsignal (13 samples, 0.02%)</title><rect x="84.0511%" y="357" width="0.0161%" height="15" fill="rgb(253,106,12)" fg:x="67746" fg:w="13"/><text x="84.3011%" y="367.50"></text></g><g><title>CChannel::sendto(sockaddr const*, CPacket&amp;) const (10,857 samples, 13.47%)</title><rect x="84.1454%" y="373" width="13.4701%" height="15" fill="rgb(213,46,41)" fg:x="67822" fg:w="10857"/><text x="84.3954%" y="383.50">CChannel::sendto(soc..</text></g><g><title>__sendmsg (10,837 samples, 13.45%)</title><rect x="84.1702%" y="357" width="13.4452%" height="15" fill="rgb(215,133,35)" fg:x="67842" fg:w="10837"/><text x="84.4202%" y="367.50">__sendmsg</text></g><g><title>CGuard::CGuard(_opaque_pthread_mutex_t&amp;) (24 samples, 0.03%)</title><rect x="97.6154%" y="373" width="0.0298%" height="15" fill="rgb(213,28,5)" fg:x="78679" fg:w="24"/><text x="97.8654%" y="383.50"></text></g><g><title>pthread_mutex_lock (14 samples, 0.02%)</title><rect x="97.6278%" y="357" width="0.0174%" height="15" fill="rgb(215,77,49)" fg:x="78689" fg:w="14"/><text x="97.8778%" y="367.50"></text></g><g><title>CGuard::~CGuard() (23 samples, 0.03%)</title><rect x="97.6452%" y="373" width="0.0285%" height="15" fill="rgb(248,100,22)" fg:x="78703" fg:w="23"/><text x="97.8952%" y="383.50"></text></g><g><title>pthread_mutex_unlock (16 samples, 0.02%)</title><rect x="97.6539%" y="357" width="0.0199%" height="15" fill="rgb(208,67,9)" fg:x="78710" fg:w="16"/><text x="97.9039%" y="367.50"></text></g><g><title>_pthread_mutex_firstfit_unlock_slow (36 samples, 0.04%)</title><rect x="97.7159%" y="341" width="0.0447%" height="15" fill="rgb(219,133,21)" fg:x="78760" fg:w="36"/><text x="97.9659%" y="351.50"></text></g><g><title>_pthread_mutex_firstfit_wake (34 samples, 0.04%)</title><rect x="97.7184%" y="325" width="0.0422%" height="15" fill="rgb(246,46,29)" fg:x="78762" fg:w="34"/><text x="97.9684%" y="335.50"></text></g><g><title>__psynch_mutexdrop (34 samples, 0.04%)</title><rect x="97.7184%" y="309" width="0.0422%" height="15" fill="rgb(246,185,52)" fg:x="78762" fg:w="34"/><text x="97.9684%" y="319.50"></text></g><g><title>CGuard::~CGuard() (48 samples, 0.06%)</title><rect x="97.7085%" y="357" width="0.0596%" height="15" fill="rgb(252,136,11)" fg:x="78754" fg:w="48"/><text x="97.9585%" y="367.50"></text></g><g><title>CTimer::interrupt() (39 samples, 0.05%)</title><rect x="97.7693%" y="341" width="0.0484%" height="15" fill="rgb(219,138,53)" fg:x="78803" fg:w="39"/><text x="98.0193%" y="351.50"></text></g><g><title>mach_absolute_time (37 samples, 0.05%)</title><rect x="97.7717%" y="325" width="0.0459%" height="15" fill="rgb(211,51,23)" fg:x="78805" fg:w="37"/><text x="98.0217%" y="335.50"></text></g><g><title>pthread_cond_signal (14 samples, 0.02%)</title><rect x="97.8176%" y="341" width="0.0174%" height="15" fill="rgb(247,221,28)" fg:x="78842" fg:w="14"/><text x="98.0676%" y="351.50"></text></g><g><title>CSndUList::insert_(long long, CUDT const*) (58 samples, 0.07%)</title><rect x="97.7680%" y="357" width="0.0720%" height="15" fill="rgb(251,222,45)" fg:x="78802" fg:w="58"/><text x="98.0180%" y="367.50"></text></g><g><title>CTimer::rdtsc(unsigned long long&amp;) (50 samples, 0.06%)</title><rect x="97.8400%" y="357" width="0.0620%" height="15" fill="rgb(217,162,53)" fg:x="78860" fg:w="50"/><text x="98.0900%" y="367.50"></text></g><g><title>mach_absolute_time (49 samples, 0.06%)</title><rect x="97.8412%" y="341" width="0.0608%" height="15" fill="rgb(229,93,14)" fg:x="78861" fg:w="49"/><text x="98.0912%" y="351.50"></text></g><g><title>CTimer::getTime() (38 samples, 0.05%)</title><rect x="97.9343%" y="341" width="0.0471%" height="15" fill="rgb(209,67,49)" fg:x="78936" fg:w="38"/><text x="98.1843%" y="351.50"></text></g><g><title>gettimeofday (34 samples, 0.04%)</title><rect x="97.9392%" y="325" width="0.0422%" height="15" fill="rgb(213,87,29)" fg:x="78940" fg:w="34"/><text x="98.1892%" y="335.50"></text></g><g><title>__commpage_gettimeofday_internal (28 samples, 0.03%)</title><rect x="97.9467%" y="309" width="0.0347%" height="15" fill="rgb(205,151,52)" fg:x="78946" fg:w="28"/><text x="98.1967%" y="319.50"></text></g><g><title>mach_absolute_time (26 samples, 0.03%)</title><rect x="97.9492%" y="293" width="0.0323%" height="15" fill="rgb(253,215,39)" fg:x="78948" fg:w="26"/><text x="98.1992%" y="303.50"></text></g><g><title>CTimer::rdtsc(unsigned long long&amp;) (33 samples, 0.04%)</title><rect x="97.9814%" y="341" width="0.0409%" height="15" fill="rgb(221,220,41)" fg:x="78974" fg:w="33"/><text x="98.2314%" y="351.50"></text></g><g><title>mach_absolute_time (32 samples, 0.04%)</title><rect x="97.9827%" y="325" width="0.0397%" height="15" fill="rgb(218,133,21)" fg:x="78975" fg:w="32"/><text x="98.2327%" y="335.50"></text></g><g><title>CUDT::packData(CPacket&amp;, unsigned long long&amp;) (98 samples, 0.12%)</title><rect x="97.9020%" y="357" width="0.1216%" height="15" fill="rgb(221,193,43)" fg:x="78910" fg:w="98"/><text x="98.1520%" y="367.50"></text></g><g><title>CSndUList::pop(sockaddr*&amp;, CPacket&amp;) (279 samples, 0.35%)</title><rect x="97.6812%" y="373" width="0.3461%" height="15" fill="rgb(240,128,52)" fg:x="78732" fg:w="279"/><text x="97.9312%" y="383.50"></text></g><g><title>CTimer::rdtsc(unsigned long long&amp;) (148 samples, 0.18%)</title><rect x="98.0273%" y="373" width="0.1836%" height="15" fill="rgb(253,114,12)" fg:x="79011" fg:w="148"/><text x="98.2773%" y="383.50"></text></g><g><title>mach_absolute_time (143 samples, 0.18%)</title><rect x="98.0335%" y="357" width="0.1774%" height="15" fill="rgb(215,223,47)" fg:x="79016" fg:w="143"/><text x="98.2835%" y="367.50"></text></g><g><title>__psynch_cvwait (20 samples, 0.02%)</title><rect x="98.2246%" y="341" width="0.0248%" height="15" fill="rgb(248,225,23)" fg:x="79170" fg:w="20"/><text x="98.4746%" y="351.50"></text></g><g><title>_pthread_cond_wait (29 samples, 0.04%)</title><rect x="98.2159%" y="357" width="0.0360%" height="15" fill="rgb(250,108,0)" fg:x="79163" fg:w="29"/><text x="98.4659%" y="367.50"></text></g><g><title>CTimer::sleepto(unsigned long long) (34 samples, 0.04%)</title><rect x="98.2109%" y="373" width="0.0422%" height="15" fill="rgb(228,208,7)" fg:x="79159" fg:w="34"/><text x="98.4609%" y="383.50"></text></g><g><title>DYLD-STUB$$pthread_mutex_unlock (9 samples, 0.01%)</title><rect x="98.2531%" y="373" width="0.0112%" height="15" fill="rgb(244,45,10)" fg:x="79193" fg:w="9"/><text x="98.5031%" y="383.50"></text></g><g><title>__psynch_cvwait (20 samples, 0.02%)</title><rect x="98.2643%" y="373" width="0.0248%" height="15" fill="rgb(207,125,25)" fg:x="79202" fg:w="20"/><text x="98.5143%" y="383.50"></text></g><g><title>__sendmsg (307 samples, 0.38%)</title><rect x="98.2891%" y="373" width="0.3809%" height="15" fill="rgb(210,195,18)" fg:x="79222" fg:w="307"/><text x="98.5391%" y="383.50"></text></g><g><title>__psynch_cvwait (954 samples, 1.18%)</title><rect x="98.7457%" y="357" width="1.1836%" height="15" fill="rgb(249,80,12)" fg:x="79590" fg:w="954"/><text x="98.9957%" y="367.50"></text></g><g><title>pthread_mutex_lock (16 samples, 0.02%)</title><rect x="99.9380%" y="357" width="0.0199%" height="15" fill="rgb(221,65,9)" fg:x="80551" fg:w="16"/><text x="100.1880%" y="367.50"></text></g><g><title>_pthread_cond_wait (1,058 samples, 1.31%)</title><rect x="98.6700%" y="373" width="1.3126%" height="15" fill="rgb(235,49,36)" fg:x="79529" fg:w="1058"/><text x="98.9200%" y="383.50"></text></g><g><title>pthread_testcancel (20 samples, 0.02%)</title><rect x="99.9578%" y="357" width="0.0248%" height="15" fill="rgb(225,32,20)" fg:x="80567" fg:w="20"/><text x="100.2078%" y="367.50"></text></g><g><title>CSndQueue::worker(void*) (12,835 samples, 15.92%)</title><rect x="84.0684%" y="389" width="15.9241%" height="15" fill="rgb(215,141,46)" fg:x="67760" fg:w="12835"/><text x="84.3184%" y="399.50">CSndQueue::worker(void*)</text></g><g><title>all (80,601 samples, 100%)</title><rect x="0.0000%" y="437" width="100.0000%" height="15" fill="rgb(250,160,47)" fg:x="0" fg:w="80601"/><text x="0.2500%" y="447.50"></text></g><g><title>thread_start (31,571 samples, 39.17%)</title><rect x="60.8305%" y="421" width="39.1695%" height="15" fill="rgb(216,222,40)" fg:x="49030" fg:w="31571"/><text x="61.0805%" y="431.50">thread_start</text></g><g><title>_pthread_start (31,571 samples, 39.17%)</title><rect x="60.8305%" y="405" width="39.1695%" height="15" fill="rgb(234,217,39)" fg:x="49030" fg:w="31571"/><text x="61.0805%" y="415.50">_pthread_start</text></g></svg></svg>

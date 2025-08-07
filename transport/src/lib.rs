@@ -1,14 +1,14 @@
-use std::{future::ready, io, net::SocketAddr, ops::RangeInclusive, sync::{atomic::{AtomicU64, Ordering}, Arc}};
+use std::{io, net::SocketAddr, ops::RangeInclusive, sync::{atomic::{AtomicU64, Ordering}, Arc}};
 
 use parking_lot::Mutex;
 use range_set::RangeSet;
 use scc::Bag;
 use snow::StatelessTransportState;
-use udt::{DatagramConnection, Endpoint};
+use udt::{Connection, Endpoint};
 
 #[derive(Debug)]
 pub struct SecureTransport {
-    inner: DatagramConnection,
+    inner: Connection,
     crypto: StatelessTransportState,
     buffers: Bag<Vec<u8>>,
     nonce_outgoing: AtomicU64,
@@ -29,7 +29,8 @@ impl SecureTransport {
     // Feature: add support for 0/0.5 RTT data (e.g. a fast Tversion/Rversion)
     // Of course, fast-open is a pipe dream considering the very nature of rendezvous sockets.
     pub async fn connect(ep: &Arc<Endpoint>, addr: SocketAddr, side: Side<'_>) -> io::Result<Self> {
-        let inner = ep.connect_datagram_async(addr, true).await?;
+        let inner = ep.connect_datagram(addr, true).await?;
+        // TODO: negotiate ChaCha20Poly1305 for hosts without accelerated AES
         let crypto = snow::Builder::new("Noise_NK_25519_AESGCM_SHA256".parse().unwrap());
         let mut crypto = match side {
             Side::Initiator { remote_public_key } => crypto
@@ -121,7 +122,6 @@ impl SecureTransport {
     }
 
     pub fn flush(&self) -> impl Future<Output = io::Result<()>> {
-        // TODO: implement a proper flush (i.e. wait until UDT_SNDDATA is zero)
-        ready(Ok(()))
+        self.inner.flush()
     }
 }

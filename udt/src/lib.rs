@@ -81,12 +81,12 @@ pub struct Endpoint {
 }
 
 #[derive(Debug)]
-pub struct DatagramListener {
+pub struct Listener {
     u: Socket
 }
 
 #[derive(Debug)]
-pub struct DatagramConnection {
+pub struct Connection {
     u: Socket
 }
 
@@ -192,30 +192,28 @@ impl Endpoint {
         Ok(Socket { _inst: inst, inner: u })
     }
 
-    pub fn listen_datagram(&self, backlog: u32) -> io::Result<DatagramListener> {
+    pub fn listen_datagram(&self, backlog: u32) -> io::Result<Listener> {
         let u = self.listen(libc::SOCK_DGRAM, backlog)?;
-        Ok(DatagramListener { u })
+        Ok(Listener { u })
     }
 
-    pub fn connect_datagram(&self, addr: SocketAddr, rendezvous: bool) -> io::Result<DatagramConnection> {
-        let u = self.connect(libc::SOCK_DGRAM, addr, rendezvous)?;
-        Ok(DatagramConnection { u })
-    }
-
-    pub async fn connect_datagram_async(self: &Arc<Self>, addr: SocketAddr, rendezvous: bool) -> io::Result<DatagramConnection> {
+    pub async fn connect_datagram(self: &Arc<Self>, addr: SocketAddr, rendezvous: bool) -> io::Result<Connection> {
         let inner = self.clone();
-        let con = spawn_blocking(move || inner.connect_datagram(addr, rendezvous)).await.unwrap()?;
+        let con = spawn_blocking(move || {
+            let u = inner.connect(libc::SOCK_DGRAM, addr, rendezvous)?;
+            Ok::<_, io::Error>(Connection { u })
+        }).await.unwrap()?;
         
         Ok(con)
     }
 }
 
-impl DatagramListener {
+impl Listener {
     pub fn local_addr(&self) -> io::Result<SocketAddr> {
         self.u.local_addr()
     }
 
-    pub fn try_accept(&self) -> io::Result<DatagramConnection> {
+    pub fn try_accept(&self) -> io::Result<Connection> {
         let inst = Instance::default();
         let rpoll = unsafe { udt_sys::getrpoll() };
         rpoll.with_lock(self.u.inner, |s| {
@@ -228,11 +226,11 @@ impl DatagramListener {
                 }
                 return Err(e);
             }
-            Ok(DatagramConnection { u: Socket { _inst: inst, inner: u } })
+            Ok(Connection { u: Socket { _inst: inst, inner: u } })
         })
     }
 
-    pub async fn accept(&self) -> io::Result<DatagramConnection> {
+    pub async fn accept(&self) -> io::Result<Connection> {
         loop {
             match self.try_accept() {
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => (),
@@ -243,7 +241,7 @@ impl DatagramListener {
     }
 }
 
-impl DatagramConnection {
+impl Connection {
     pub fn local_addr(&self) -> io::Result<SocketAddr> {
         self.u.local_addr()
     }
@@ -261,6 +259,16 @@ impl DatagramConnection {
     }
 
     fn send_with_inner(&self, buf: &[u8], ttl: Option<Duration>, inorder: bool) -> io::Result<usize> {
+        // TODO: inorder=false has a flawed implementation. UDT still applies windowing
+        // in order to avoid replay attacks, so if a large burst of reliable out-of-order
+        // datagrams are sent, the earliest ones will get stuck in retransmission hell
+        // and UDT will livelock.
+
+        // Therefore, inorder should always be set to true as a stopgap, excepting if there's a TTL.
+        // We can instead mitigate replay attacks at a higher level (i.e. Noise).
+
+        let inorder = inorder || ttl.is_none();
+
         let res = unsafe { udt_sys::sendmsg(
             self.u.inner,
             buf.as_ptr().cast(),
@@ -321,5 +329,10 @@ impl DatagramConnection {
 
     pub async fn send(&self, buf: &[u8]) -> io::Result<usize> {
         self.send_with(buf, None, true).await
+    }
+
+    pub async fn flush(&self) -> io::Result<()> {
+        // TODO
+        Ok(())
     }
 }

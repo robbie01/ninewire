@@ -4777,14 +4777,10 @@ dependencies = [
 name = "udt"
 version = "0.1.0"
 dependencies = [
- "cfg-if",
  "libc",
  "os_socketaddr",
- "parking_lot",
- "rustix 1.0.5",
  "tokio",
  "udt-sys",
- "weak-table",
 ]
 
 [[package]]
@@ -4802,7 +4798,6 @@ name = "udt-sys"
 version = "0.1.0"
 dependencies = [
  "bitflags 2.9.0",
- "cfg-if",
  "cxx",
  "cxx-build",
  "md-5",
@@ -5138,12 +5133,6 @@ dependencies = [
  "once_cell",
  "pkg-config",
 ]
-
-[[package]]
-name = "weak-table"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "323f4da9523e9a669e1eaf9c6e763892769b1d38c623913647bfdc1532fe4549"
 
 [[package]]
 name = "web-sys"

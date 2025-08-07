@@ -328,24 +328,6 @@ CGuard::~CGuard()
    #endif
 }
 
-void CGuard::enterCS(udt_pthread_mutex_t& lock)
-{
-   #ifndef WINDOWS
-      pthread_mutex_lock(&lock);
-   #else
-      WaitForSingleObject(lock, INFINITE);
-   #endif
-}
-
-void CGuard::leaveCS(udt_pthread_mutex_t& lock)
-{
-   #ifndef WINDOWS
-      pthread_mutex_unlock(&lock);
-   #else
-      ReleaseMutex(lock);
-   #endif
-}
-
 void CGuard::createMutex(udt_pthread_mutex_t& lock)
 {
    #ifndef WINDOWS

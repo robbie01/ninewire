@@ -14,6 +14,7 @@ async fn main() -> anyhow::Result<()> {
         let l = Arc::new(udt::Endpoint::bind("[::]:25583".parse()?)?);//.listen_datagram(16)?;
         println!("A: bound to {:?}", l.local_addr()?);
         let r = SecureTransport::connect(&l, "[::1]:25584".parse()?, transport::Side::Responder { local_private_key: &PRIVATE_KEY }).await?;
+        // let r = l.accept().await?;
         println!("A: connected to {:?}", r.peer_addr()?);
         let mut msg = [0; 30000];
         let mut t = Instant::now();
@@ -44,6 +45,7 @@ async fn main() -> anyhow::Result<()> {
         let l = Arc::new(udt::Endpoint::bind("[::]:25584".parse()?)?);
         println!("B: bound to {:?}", l.local_addr()?);
         let c = SecureTransport::connect(&l, "[::1]:25583".parse()?, transport::Side::Initiator { remote_public_key: &PUBLIC_KEY }).await?;
+        // let c = l.connect_datagram("[::1]:25583".parse()?, false).await?;
         println!("B: connected to {:?}", c.peer_addr()?);
         loop {
             c.send_with(&[b'o'; 1192], true).await?;
@@ -53,7 +55,9 @@ async fn main() -> anyhow::Result<()> {
         Ok::<(), anyhow::Error>(())
     });
         
-    println!("{:?}", js.join_all().await);
+    while let Some(res) = js.join_next().await {
+        println!("{res:?}");
+    }
     sleep(Duration::from_millis(10)).await;
     Ok(())
 }

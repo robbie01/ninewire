@@ -14,14 +14,16 @@ impl FilesystemInner {
         
         let (tag, rcv) = {
             let mut inflight = self.inflight.lock();
+            let mut iter = inflight.keys();
             let mut tag = 0;
-            while inflight.contains_key(&tag) {
-                // todo: prevent tags from equaling NOTAG (!0) and wait if the queue is full
-                tag = tag.checked_add(1).unwrap();
+            while iter.next().copied() == Some(tag) {
+                // todo: wait if the queue is full
+                tag = tag.checked_add(1).and_then(|t| if t == !0 { None } else { Some(t) }).unwrap();
             }
 
             let (reply_to, rcv) = oneshot::channel();
-            inflight.insert(tag, reply_to);
+            let unique = inflight.insert(tag, reply_to).is_none();
+            assert!(unique);
             (tag, rcv)
         };
 

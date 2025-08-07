@@ -102,8 +102,6 @@ CUDT::CUDT()
    m_iFlightFlagSize = 25600;
    m_iSndBufSize = 8192;
    m_iRcvBufSize = 8192; //Rcv buffer MUST NOT be bigger than Flight Flag size
-   m_Linger.l_onoff = 1;
-   m_Linger.l_linger = 180;
    m_iUDPSndBufSize = 65536;
    m_iUDPRcvBufSize = m_iRcvBufSize * m_iMSS;
    m_iSockType = UDT_STREAM;
@@ -125,7 +123,6 @@ CUDT::CUDT()
    m_bShutdown = false;
    m_bBroken = false;
    m_bPeerHealth = true;
-   m_ullLingerExpiration = 0;
 }
 
 CUDT::CUDT(const CUDT& ancestor)
@@ -153,7 +150,6 @@ CUDT::CUDT(const CUDT& ancestor)
    m_iFlightFlagSize = ancestor.m_iFlightFlagSize;
    m_iSndBufSize = ancestor.m_iSndBufSize;
    m_iRcvBufSize = ancestor.m_iRcvBufSize;
-   m_Linger = ancestor.m_Linger;
    m_iUDPSndBufSize = ancestor.m_iUDPSndBufSize;
    m_iUDPRcvBufSize = ancestor.m_iUDPRcvBufSize;
    m_iSockType = ancestor.m_iSockType;
@@ -175,7 +171,6 @@ CUDT::CUDT(const CUDT& ancestor)
    m_bShutdown = false;
    m_bBroken = false;
    m_bPeerHealth = true;
-   m_ullLingerExpiration = 0;
 }
 
 CUDT::~CUDT()
@@ -291,10 +286,6 @@ void CUDT::setOpt(UDTOpt optName, const void* optval, int)
 
       break;
 
-   case UDT_LINGER:
-      m_Linger = *(linger*)optval;
-      break;
-
    case UDP_SNDBUF:
       if (m_bOpened)
          throw CUDTException(5, 1, 0);
@@ -375,14 +366,6 @@ void CUDT::getOpt(UDTOpt optName, void* optval, int& optlen)
    case UDT_RCVBUF:
       *(int*)optval = m_iRcvBufSize * (m_iMSS - 28);
       optlen = sizeof(int);
-      break;
-
-   case UDT_LINGER:
-      if (optlen < (int)(sizeof(linger)))
-         throw CUDTException(5, 3, 0);
-
-      *(linger*)optval = m_Linger;
-      optlen = sizeof(linger);
       break;
 
    case UDP_SNDBUF:
@@ -884,33 +867,10 @@ void CUDT::connect(const sockaddr* peer, CHandShake* hs)
    delete [] buffer;
 }
 
-void CUDT::flush()
-{
-   uint64_t entertime = CTimer::getTime();
-
-   if (!m_bBroken && m_bConnected && (m_pSndBuffer->getCurrBufSize() > 0) && (CTimer::getTime() - entertime < m_Linger.l_linger * 1000000ULL))
-   {
-      // linger has been checked by previous close() call and has expired
-      if (m_ullLingerExpiration >= entertime)
-         return;
-
-      // if this socket enables asynchronous sending, return immediately and let GC to close it later
-      if (0 == m_ullLingerExpiration)
-         m_ullLingerExpiration = entertime + m_Linger.l_linger * 1000000ULL;
-
-      return;
-   }
-}
-
 void CUDT::close()
 {
    if (!m_bOpened)
       return;
-
-   if (0 != m_Linger.l_onoff)
-   {
-      flush();
-   }
 
    // remove this socket from the snd queue
    if (m_bConnected)
@@ -1529,30 +1489,29 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
          m_iSndLastAck = ack;
       }
 
-      // protect packet retransmission
-      CGuard::enterCS(m_AckLock);
-
-      int offset = CSeqNo::seqoff(m_iSndLastDataAck, ack);
-      if (offset <= 0)
       {
-         // discard it if it is a repeated ACK
-         CGuard::leaveCS(m_AckLock);
-         break;
+         // protect packet retransmission
+         CGuard guard(m_AckLock);
+
+         int offset = CSeqNo::seqoff(m_iSndLastDataAck, ack);
+         if (offset <= 0)
+         {
+            // discard it if it is a repeated ACK
+            break;
+         }
+
+         // acknowledge the sending buffer
+         m_pSndBuffer->ackData(offset);
+
+         // record total time used for sending
+         m_llSndDuration += currtime - m_llSndDurationCounter;
+         m_llSndDurationTotal += currtime - m_llSndDurationCounter;
+         m_llSndDurationCounter = currtime;
+
+         // update sending variables
+         m_iSndLastDataAck = ack;
+         m_pSndLossList->remove(CSeqNo::decseq(m_iSndLastDataAck));
       }
-
-      // acknowledge the sending buffer
-      m_pSndBuffer->ackData(offset);
-
-      // record total time used for sending
-      m_llSndDuration += currtime - m_llSndDurationCounter;
-      m_llSndDurationTotal += currtime - m_llSndDurationCounter;
-      m_llSndDurationCounter = currtime;
-
-      // update sending variables
-      m_iSndLastDataAck = ack;
-      m_pSndLossList->remove(CSeqNo::decseq(m_iSndLastDataAck));
-
-      CGuard::leaveCS(m_AckLock);
 
       // acknowledde any waiting epolls to write
       s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_OUT, true);

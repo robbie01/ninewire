@@ -83,7 +83,6 @@ public: //API
    static int listen(UDTSOCKET u, int backlog);
    static UDTSOCKET accept(UDTSOCKET u, sockaddr* addr, int* addrlen);
    static int connect(UDTSOCKET u, const sockaddr* name, int namelen);
-   static int flush(UDTSOCKET u);
    static int close(UDTSOCKET u);
    static int getpeername(UDTSOCKET u, sockaddr* name, int* namelen);
    static int getsockname(UDTSOCKET u, sockaddr* name, int* namelen);
@@ -150,15 +149,6 @@ private:
 
       // Functionality:
       //    Flush all buffered data.
-      // Parameters:
-      //    None.
-      // Returned value:
-      //    None.
-
-   void flush();
-
-      // Functionality:
-      //    Close the opened UDT entity.
       // Parameters:
       //    None.
       // Returned value:
@@ -263,7 +253,6 @@ private: // Options
    int m_iFlightFlagSize;                       // Maximum number of packets in flight from the peer side
    int m_iSndBufSize;                           // Maximum UDT sender buffer size
    int m_iRcvBufSize;                           // Maximum UDT receiver buffer size
-   linger m_Linger;                             // Linger information on close
    int m_iUDPSndBufSize;                        // UDP sending buffer size
    int m_iUDPRcvBufSize;                        // UDP receiving buffer size
    int m_iIPversion;                            // IP version
@@ -292,8 +281,6 @@ private: // Status
    int m_iRTT;                                  // RTT, in microseconds
    int m_iRTTVar;                               // RTT variance
    int m_iDeliveryRate;				// Packet arrival rate at the receiver side
-
-   uint64_t m_ullLingerExpiration;		// Linger expiration time (for GC to close a socket with data in sending buffer)
 
    CHandShake m_ConnReq;			// connection request
    CHandShake m_ConnRes;			// connection response

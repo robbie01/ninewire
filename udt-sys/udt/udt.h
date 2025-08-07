@@ -104,8 +104,8 @@ enum UDTOpt
    UDT_FC,		// Flight flag size (window size)
    UDT_SNDBUF,          // maximum buffer in sending queue
    UDT_RCVBUF,          // UDT receiving buffer size
-   UDT_LINGER,          // waiting for unsent data when closing
-   UDP_SNDBUF,          // UDP sending buffer size
+   // UDT_LINGER,          // waiting for unsent data when closing
+   UDP_SNDBUF = 8,          // UDP sending buffer size
    UDP_RCVBUF,          // UDP receiving buffer size
    UDT_MAXMSG,          // maximum datagram message size
    UDT_MSGTTL,          // time-to-live of a datagram message
@@ -229,7 +229,6 @@ UDT_API int bind(UDTSOCKET u, const struct sockaddr* name, int namelen);
 UDT_API int listen(UDTSOCKET u, int backlog);
 UDT_API UDTSOCKET accept(UDTSOCKET u, struct sockaddr* addr, int* addrlen);
 UDT_API int connect(UDTSOCKET u, const struct sockaddr* name, int namelen);
-UDT_API int flush(UDTSOCKET u);
 UDT_API int close(UDTSOCKET u);
 UDT_API int getpeername(UDTSOCKET u, struct sockaddr* name, int* namelen);
 UDT_API int getsockname(UDTSOCKET u, struct sockaddr* name, int* namelen);

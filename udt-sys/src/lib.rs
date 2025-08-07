@@ -1,7 +1,6 @@
 mod rpoll;
 
 use std::os::raw::c_int;
-use cfg_if::cfg_if;
 
 use cxx::CxxString;
 pub use rpoll::*;
@@ -10,28 +9,11 @@ pub use rpoll::*;
 #[derive(PartialEq, Eq, Hash, Debug, Clone, Copy)]
 pub struct Socket(c_int);
 
-cfg_if! {
-    if #[cfg(windows)] {
-        #[repr(transparent)]
-        #[derive(Debug, Clone, Copy)]
-        pub struct SysSocket(pub std::os::windows::raw::SOCKET);
-    } else {
-        #[repr(transparent)]
-        #[derive(Debug, Clone, Copy)]
-        pub struct SysSocket(pub c_int);
-    }
-}
-
 // Don't know how to do extern variables with cxx. Luckily this will never change.
 pub const INVALID_SOCK: Socket = Socket(-1);
 
 unsafe impl cxx::ExternType for Socket {
     type Id = cxx::type_id!("UDTSOCKET");
-    type Kind = cxx::kind::Trivial;
-}
-
-unsafe impl cxx::ExternType for SysSocket {
-    type Id = cxx::type_id!("SYSSOCKET");
     type Kind = cxx::kind::Trivial;
 }
 
@@ -85,10 +67,10 @@ mod ffi {
         UDT_SNDBUF,
         #[rust_name = "RecvBuf"]
         UDT_RCVBUF,
-        #[rust_name = "Linger"]
-        UDT_LINGER,
+        // #[rust_name = "Linger"]
+        // UDT_LINGER,
         #[rust_name = "UdpSendBuf"]
-        UDP_SNDBUF,
+        UDP_SNDBUF = 8,
         #[rust_name = "UdpRecvBuf"]
         UDP_RCVBUF,
         #[rust_name = "MaxMsg"]
