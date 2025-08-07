@@ -507,47 +507,6 @@ int CUDTUnited::bind(const UDTSOCKET u, const sockaddr* name, int namelen)
    return 0;
 }
 
-int CUDTUnited::bind(UDTSOCKET u, UDPSOCKET udpsock)
-{
-   CUDTSocket* s = locate(u);
-   if (NULL == s)
-      throw CUDTException(5, 4, 0);
-
-   CGuard cg(s->m_ControlLock);
-
-   // cannot bind a socket more than once
-   if (INIT != s->m_Status)
-      throw CUDTException(5, 0, 0);
-
-   sockaddr_in name4;
-   sockaddr_in6 name6;
-   sockaddr* name;
-   socklen_t namelen;
-
-   if (AF_INET == s->m_iIPversion)
-   {
-      namelen = sizeof(sockaddr_in);
-      name = (sockaddr*)&name4;
-   }
-   else
-   {
-      namelen = sizeof(sockaddr_in6);
-      name = (sockaddr*)&name6;
-   }
-
-   if (-1 == ::getsockname(udpsock, name, &namelen))
-      throw CUDTException(5, 3);
-
-   s->m_pUDT->open();
-   updateMux(s, name, &udpsock);
-   s->m_Status = OPENED;
-
-   // copy address information of local node
-   s->m_pUDT->m_pSndQueue->m_pChannel->getSockAddr(s->m_pSelfAddr);
-
-   return 0;
-}
-
 int CUDTUnited::listen(const UDTSOCKET u, int backlog)
 {
    CUDTSocket* s = locate(u);
@@ -1293,29 +1252,6 @@ int CUDT::bind(UDTSOCKET u, const sockaddr* name, int namelen)
    }
 }
 
-int CUDT::bind(UDTSOCKET u, UDPSOCKET udpsock)
-{
-   try
-   {
-      return s_UDTUnited.bind(u, udpsock);
-   }
-   catch (CUDTException& e)
-   {
-      s_UDTUnited.setError(new CUDTException(e));
-      return ERROR;
-   }
-   catch (bad_alloc&)
-   {
-      s_UDTUnited.setError(new CUDTException(3, 2, 0));
-      return ERROR;
-   }
-   catch (...)
-   {
-      s_UDTUnited.setError(new CUDTException(-1, 0, 0));
-      return ERROR;
-   }
-}
-
 int CUDT::listen(UDTSOCKET u, int backlog)
 {
    try
@@ -1654,11 +1590,6 @@ UDTSOCKET socket(int af, int type, int protocol)
 int bind(UDTSOCKET u, const struct sockaddr* name, int namelen)
 {
    return CUDT::bind(u, name, namelen);
-}
-
-int bind2(UDTSOCKET u, UDPSOCKET udpsock)
-{
-   return CUDT::bind(u, udpsock);
 }
 
 int listen(UDTSOCKET u, int backlog)

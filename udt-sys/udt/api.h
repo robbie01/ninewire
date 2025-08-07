@@ -164,7 +164,6 @@ public:
       // socket APIs
 
    int bind(const UDTSOCKET u, const sockaddr* name, int namelen);
-   int bind(const UDTSOCKET u, UDPSOCKET udpsock);
    int listen(const UDTSOCKET u, int backlog);
    UDTSOCKET accept(const UDTSOCKET listen, sockaddr* addr, int* addrlen);
    int connect(const UDTSOCKET u, const sockaddr* name, int namelen);

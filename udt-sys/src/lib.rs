@@ -209,16 +209,10 @@ mod ffi {
         #[cxx_name = "UDTSOCKET"]
         type Socket = crate::Socket;
 
-        #[namespace = ""]
-        #[cxx_name = "SYSSOCKET"]
-        type SysSocket = crate::SysSocket;
-
         unsafe fn startup() -> i32;
         unsafe fn cleanup() -> i32;
         unsafe fn socket(af: i32, type_: i32, _unused: i32) -> Socket;
         unsafe fn bind(u: Socket, name: *const sockaddr, namelen: i32) -> i32;
-        #[rust_name = "bind_syssock"]
-        unsafe fn bind2(u: Socket, s: SysSocket) -> i32;
         unsafe fn listen(u: Socket, backlog: i32) -> i32;
         unsafe fn accept(u: Socket, addr: *mut sockaddr, addrlen: *mut i32) -> Socket;
         unsafe fn connect(u: Socket, name: *const sockaddr, namelen: i32) -> i32;
