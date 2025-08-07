@@ -103,10 +103,12 @@ void CChannel::open(const sockaddr* addr)
    if (m_iIPversion == AF_INET6) {
 #ifdef WINDOWS
       DWORD v6only = 1;
+      const char *p_v6only = (const char *)&v6only;
 #else
       int v6only = 1;
+      const void *p_v6only = (const void *)&v6only;
 #endif
-      if (0 != ::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_V6ONLY, &v6only, sizeof v6only))
+      if (0 != ::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_V6ONLY, p_v6only, sizeof v6only))
          throw CUDTException(1, 3, NET_ERROR);
    }
 
