@@ -4,7 +4,7 @@ use parking_lot::Mutex;
 use range_set::RangeSet;
 use scc::Bag;
 use snow::StatelessTransportState;
-use udt::{nb::DatagramConnection, Endpoint};
+use udt::{DatagramConnection, Endpoint};
 
 #[derive(Debug)]
 pub struct SecureTransport {
