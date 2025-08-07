@@ -964,7 +964,7 @@ void CUDTUnited::setError(int major, int minor)
    #else
       CGuard tg(m_TLSLock);
       CUDTException* ex = (CUDTException*)TlsGetValue(m_TLSError);
-      if (ex->getErrorCode() != major*1000 + minor) {
+      if (!ex || ex->getErrorCode() != major*1000 + minor) {
          delete ex;
          auto e = new CUDTException(major, minor, 0);
          TlsSetValue(m_TLSError, e);
