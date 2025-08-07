@@ -20,6 +20,8 @@ async fn main() -> anyhow::Result<()> {
         let mut int = interval(Duration::from_secs(5));
         let mut ctr = 0;
 
+        let mut rem = 12;
+
         int.reset();
         loop {
             tokio::select! {
@@ -28,6 +30,10 @@ async fn main() -> anyhow::Result<()> {
                     let mbps = ctr as f64 * 8. / (1_000_000. * int.period().as_secs_f64());
                     ctr = 0;
                     println!("A: {mbps} mbps");
+                    rem -= 1;
+                    if rem == 0 {
+                        std::process::exit(0);
+                    }
                 }
                 len = r.recv(&mut msg) => {
                     ctr += len?;
