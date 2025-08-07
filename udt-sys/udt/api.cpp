@@ -64,18 +64,15 @@ m_iISN(0),
 m_pUDT(NULL),
 m_pQueuedSockets(NULL),
 m_pAcceptSockets(NULL),
-m_AcceptCond(),
 m_AcceptLock(),
 m_uiBackLog(0),
 m_iMuxID(-1)
 {
    #ifndef WINDOWS
       pthread_mutex_init(&m_AcceptLock, NULL);
-      pthread_cond_init(&m_AcceptCond, NULL);
       pthread_mutex_init(&m_ControlLock, NULL);
    #else
       m_AcceptLock = CreateMutex(NULL, false, NULL);
-      m_AcceptCond = CreateEvent(NULL, false, false, NULL);
       m_ControlLock = CreateMutex(NULL, false, NULL);
    #endif
 }
@@ -101,11 +98,9 @@ CUDTSocket::~CUDTSocket()
 
    #ifndef WINDOWS
       pthread_mutex_destroy(&m_AcceptLock);
-      pthread_cond_destroy(&m_AcceptCond);
       pthread_mutex_destroy(&m_ControlLock);
    #else
       CloseHandle(m_AcceptLock);
-      CloseHandle(m_AcceptCond);
       CloseHandle(m_ControlLock);
    #endif
 }
@@ -441,15 +436,6 @@ int CUDTUnited::newConnection(const UDTSOCKET listener, const sockaddr* peer, CH
       return -1;
    }
 
-   // wake up a waiting accept() call
-   #ifndef WINDOWS
-      pthread_mutex_lock(&(ls->m_AcceptLock));
-      pthread_cond_signal(&(ls->m_AcceptCond));
-      pthread_mutex_unlock(&(ls->m_AcceptLock));
-   #else
-      SetEvent(ls->m_AcceptCond);
-   #endif
-
    return 1;
 }
 
@@ -625,80 +611,22 @@ UDTSOCKET CUDTUnited::accept(const UDTSOCKET listener, sockaddr* addr, int* addr
       throw CUDTException(5, 7, 0);
 
    UDTSOCKET u = CUDT::INVALID_SOCK;
-   bool accepted = false;
 
    // !!only one conection can be set up each time!!
-   #ifndef WINDOWS
-      while (!accepted)
-      {
-         pthread_mutex_lock(&(ls->m_AcceptLock));
 
-         if ((LISTENING != ls->m_Status) || ls->m_pUDT->m_bBroken)
-         {
-            // This socket has been closed.
-            accepted = true;
-         }
-         else if (ls->m_pQueuedSockets->size() > 0)
-         {
-            u = *(ls->m_pQueuedSockets->begin());
-            ls->m_pAcceptSockets->insert(ls->m_pAcceptSockets->end(), u);
-            ls->m_pQueuedSockets->erase(ls->m_pQueuedSockets->begin());
-            accepted = true;
-         }
-         else if (!ls->m_pUDT->m_bSynRecving)
-         {
-            accepted = true;
-         }
-
-         if (!accepted && (LISTENING == ls->m_Status))
-            pthread_cond_wait(&(ls->m_AcceptCond), &(ls->m_AcceptLock));
-
-         if (ls->m_pQueuedSockets->empty())
-            m_RPoll->update_events(listener, UDT_EPOLL_IN, false);
-
-         pthread_mutex_unlock(&(ls->m_AcceptLock));
-      }
-   #else
-      while (!accepted)
-      {
-         WaitForSingleObject(ls->m_AcceptLock, INFINITE);
-
-         if (ls->m_pQueuedSockets->size() > 0)
-         {
-            u = *(ls->m_pQueuedSockets->begin());
-            ls->m_pAcceptSockets->insert(ls->m_pAcceptSockets->end(), u);
-            ls->m_pQueuedSockets->erase(ls->m_pQueuedSockets->begin());
-
-            accepted = true;
-         }
-         else if (!ls->m_pUDT->m_bSynRecving)
-            accepted = true;
-
-         ReleaseMutex(ls->m_AcceptLock);
-
-         if  (!accepted & (LISTENING == ls->m_Status))
-            WaitForSingleObject(ls->m_AcceptCond, INFINITE);
-
-         if ((LISTENING != ls->m_Status) || ls->m_pUDT->m_bBroken)
-         {
-            // Send signal to other threads that are waiting to accept.
-            SetEvent(ls->m_AcceptCond);
-            accepted = true;
-         }
-
-         if (ls->m_pQueuedSockets->empty())
-            m_RPoll->update_events(listener, UDT_EPOLL_IN, false);
-      }
-   #endif
+   CGuard::enterCS(ls->m_AcceptLock);
+   if (ls->m_pQueuedSockets->size() > 0)
+   {
+      u = *(ls->m_pQueuedSockets->begin());
+      ls->m_pAcceptSockets->insert(ls->m_pAcceptSockets->end(), u);
+      ls->m_pQueuedSockets->erase(ls->m_pQueuedSockets->begin());
+   }
+   CGuard::leaveCS(ls->m_AcceptLock);
 
    if (u == CUDT::INVALID_SOCK)
    {
       // non-blocking receiving, no connection available
-      if (!ls->m_pUDT->m_bSynRecving)
-         throw CUDTException(6, 2, 0);
-
-      // listening socket is closed
-      throw CUDTException(5, 6, 0);
+      throw CUDTException(6, 2, 0);
    }
 
    if ((addr != NULL) && (addrlen != NULL))
@@ -820,15 +748,6 @@ int CUDTUnited::close(const UDTSOCKET u)
 
       s->m_TimeStamp = CTimer::getTime();
       s->m_pUDT->m_bBroken = true;
-
-      // broadcast all "accept" waiting
-      #ifndef WINDOWS
-         pthread_mutex_lock(&(s->m_AcceptLock));
-         pthread_cond_broadcast(&(s->m_AcceptCond));
-         pthread_mutex_unlock(&(s->m_AcceptLock));
-      #else
-         SetEvent(s->m_AcceptCond);
-      #endif
 
       return 0;
    }

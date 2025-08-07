@@ -78,7 +78,6 @@ public:
    std::set<UDTSOCKET>* m_pQueuedSockets;    // set of connections waiting for accept()
    std::set<UDTSOCKET>* m_pAcceptSockets;    // set of accept()ed connections
 
-   udt_pthread_cond_t m_AcceptCond;              // used to block "accept" call
    udt_pthread_mutex_t m_AcceptLock;             // mutex associated to m_AcceptCond
 
    unsigned int m_uiBackLog;                 // maximum number of connections in queue
