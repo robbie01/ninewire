@@ -269,8 +269,6 @@ private: // Options
    int m_iUDPRcvBufSize;                        // UDP receiving buffer size
    int m_iIPversion;                            // IP version
    bool m_bRendezvous;                          // Rendezvous connection mode
-   int m_iSndTimeOut;                           // sending timeout in milliseconds
-   int m_iRcvTimeOut;                           // receiving timeout in milliseconds
    bool m_bReuseAddr;				// reuse an exiting port or not, for UDP multiplexer
    int64_t m_llMaxBW;				// maximum data transfer rate (threshold)
 

@@ -99,12 +99,12 @@ mod ffi {
         UDT_MSGTTL,
         #[rust_name = "Rendezvous"]
         UDT_RENDEZVOUS,
-        #[rust_name = "SendTimeout"]
-        UDT_SNDTIMEO,
-        #[rust_name = "RecvTimeout"]
-        UDT_RCVTIMEO,
+        // #[rust_name = "SendTimeout"]
+        // UDT_SNDTIMEO,
+        // #[rust_name = "RecvTimeout"]
+        // UDT_RCVTIMEO,
         #[rust_name = "ReuseAddr"]
-        UDT_REUSEADDR,
+        UDT_REUSEADDR = 15,
         #[rust_name = "MaxBandwidth"]
         UDT_MAXBW,
         #[rust_name = "State"]

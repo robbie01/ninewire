@@ -109,8 +109,6 @@ CUDT::CUDT()
    m_iSockType = UDT_STREAM;
    m_iIPversion = AF_INET;
    m_bRendezvous = false;
-   m_iSndTimeOut = -1;
-   m_iRcvTimeOut = -1;
    m_bReuseAddr = true;
    m_llMaxBW = -1;
 
@@ -161,8 +159,6 @@ CUDT::CUDT(const CUDT& ancestor)
    m_iSockType = ancestor.m_iSockType;
    m_iIPversion = ancestor.m_iIPversion;
    m_bRendezvous = ancestor.m_bRendezvous;
-   m_iSndTimeOut = ancestor.m_iSndTimeOut;
-   m_iRcvTimeOut = ancestor.m_iRcvTimeOut;
    m_bReuseAddr = true;	// this must be true, because all accepted sockets shared the same port with the listener
    m_llMaxBW = ancestor.m_llMaxBW;
 
@@ -327,14 +323,6 @@ void CUDT::setOpt(UDTOpt optName, const void* optval, int)
       m_bRendezvous = *(bool *)optval;
       break;
 
-   case UDT_SNDTIMEO:
-      m_iSndTimeOut = *(int*)optval;
-      break;
-
-   case UDT_RCVTIMEO:
-      m_iRcvTimeOut = *(int*)optval;
-      break;
-
    case UDT_REUSEADDR:
       if (m_bOpened)
          throw CUDTException(5, 1, 0);
@@ -410,16 +398,6 @@ void CUDT::getOpt(UDTOpt optName, void* optval, int& optlen)
    case UDT_RENDEZVOUS:
       *(bool *)optval = m_bRendezvous;
       optlen = sizeof(bool);
-      break;
-
-   case UDT_SNDTIMEO:
-      *(int*)optval = m_iSndTimeOut;
-      optlen = sizeof(int);
-      break;
-
-   case UDT_RCVTIMEO:
-      *(int*)optval = m_iRcvTimeOut;
-      optlen = sizeof(int);
       break;
 
    case UDT_REUSEADDR:
@@ -1033,9 +1011,6 @@ int CUDT::send(const char* data, int len)
 
    if (m_iSndBufSize <= m_pSndBuffer->getCurrBufSize())
    {
-      if (m_iSndTimeOut >= 0)
-         throw CUDTException(6, 3, 0);
-
       return 0;
    }
 
@@ -1097,9 +1072,6 @@ int CUDT::recv(char* data, int len)
       // s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_IN, false);
    }
 
-   if ((res <= 0) && (m_iRcvTimeOut >= 0))
-      throw CUDTException(6, 3, 0);
-
    return res;
 }
 
@@ -1137,9 +1109,6 @@ int CUDT::sendmsg(const char* data, int len, int msttl, bool inorder)
 
    if ((m_iSndBufSize - m_pSndBuffer->getCurrBufSize()) * m_iPayloadSize < len)
    {
-      if (m_iSndTimeOut >= 0)
-         throw CUDTException(6, 3, 0);
-
       return 0;
    }
 
