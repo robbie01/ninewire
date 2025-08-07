@@ -345,9 +345,6 @@ private: // synchronization: mutexes and conditions
 
    udt_pthread_mutex_t m_AckLock;                   // used to protected sender's loss list when processing ACK
 
-   udt_pthread_cond_t m_RecvDataCond;               // used to block "recv" when there is no data
-   udt_pthread_mutex_t m_RecvDataLock;              // lock associated to m_RecvDataCond
-
    udt_pthread_mutex_t m_SendLock;                  // used to synchronize "send" call
    udt_pthread_mutex_t m_RecvLock;                  // used to synchronize "recv" call
 

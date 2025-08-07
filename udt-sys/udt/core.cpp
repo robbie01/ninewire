@@ -1080,53 +1080,7 @@ int CUDT::recv(char* data, int len)
 
    if (0 == m_pRcvBuffer->getRcvDataSize())
    {
-      if (!m_bSynRecving)
-         throw CUDTException(6, 2, 0);
-      else
-      {
-         #ifndef WINDOWS
-            pthread_mutex_lock(&m_RecvDataLock);
-            if (m_iRcvTimeOut < 0)
-            {
-               while (!m_bBroken && m_bConnected && !m_bClosing && (0 == m_pRcvBuffer->getRcvDataSize()))
-                  pthread_cond_wait(&m_RecvDataCond, &m_RecvDataLock);
-            }
-            else
-            {
-               uint64_t exptime = CTimer::getTime() + m_iRcvTimeOut * 1000ULL;
-               timespec locktime;
-
-               locktime.tv_sec = exptime / 1000000;
-               locktime.tv_nsec = (exptime % 1000000) * 1000;
-
-               while (!m_bBroken && m_bConnected && !m_bClosing && (0 == m_pRcvBuffer->getRcvDataSize()))
-               {
-                  pthread_cond_timedwait(&m_RecvDataCond, &m_RecvDataLock, &locktime);
-                  if (CTimer::getTime() >= exptime)
-                     break;
-               }
-            }
-            pthread_mutex_unlock(&m_RecvDataLock);
-         #else
-            if (m_iRcvTimeOut < 0)
-            {
-               while (!m_bBroken && m_bConnected && !m_bClosing && (0 == m_pRcvBuffer->getRcvDataSize()))
-                  WaitForSingleObject(m_RecvDataCond, INFINITE);
-            }
-            else
-            {
-               uint64_t enter_time = CTimer::getTime();
-
-               while (!m_bBroken && m_bConnected && !m_bClosing && (0 == m_pRcvBuffer->getRcvDataSize()))
-               {
-                  int diff = int(CTimer::getTime() - enter_time) / 1000;
-                  if (diff >= m_iRcvTimeOut)
-                      break;
-                  WaitForSingleObject(m_RecvDataCond, DWORD(m_iRcvTimeOut - diff ));
-               }
-            }
-         #endif
-      }
+      throw CUDTException(6, 2, 0);
    }
 
    // throw an exception if not connected
@@ -1238,73 +1192,11 @@ int CUDT::recvmsg(char* data, int len)
          return res;
    }
 
-   if (!m_bSynRecving)
-   {
-      int res = m_pRcvBuffer->readMsg(data, len);
-      if (0 == res)
-         throw CUDTException(6, 2, 0);
-      else
-         return res;
-   }
-
-   int res = 0;
-   bool timeout = false;
-
-   do
-   {
-      #ifndef WINDOWS
-         pthread_mutex_lock(&m_RecvDataLock);
-
-         if (m_iRcvTimeOut < 0)
-         {
-            while (!m_bBroken && m_bConnected && !m_bClosing && (0 == (res = m_pRcvBuffer->readMsg(data, len))))
-               pthread_cond_wait(&m_RecvDataCond, &m_RecvDataLock);
-         }
-         else
-         {
-            uint64_t exptime = CTimer::getTime() + m_iRcvTimeOut * 1000ULL;
-            timespec locktime;
-
-            locktime.tv_sec = exptime / 1000000;
-            locktime.tv_nsec = (exptime % 1000000) * 1000;
-
-            if (pthread_cond_timedwait(&m_RecvDataCond, &m_RecvDataLock, &locktime) == ETIMEDOUT)
-               timeout = true;
-
-            res = m_pRcvBuffer->readMsg(data, len);
-         }
-         pthread_mutex_unlock(&m_RecvDataLock);
-      #else
-         if (m_iRcvTimeOut < 0)
-         {
-            while (!m_bBroken && m_bConnected && !m_bClosing && (0 == (res = m_pRcvBuffer->readMsg(data, len))))
-               WaitForSingleObject(m_RecvDataCond, INFINITE);
-         }
-         else
-         {
-            if (WaitForSingleObject(m_RecvDataCond, DWORD(m_iRcvTimeOut)) == WAIT_TIMEOUT)
-               timeout = true;
-
-            res = m_pRcvBuffer->readMsg(data, len);
-         }
-      #endif
-
-      if (m_bBroken || m_bClosing)
-         throw CUDTException(2, 1, 0);
-      else if (!m_bConnected)
-         throw CUDTException(2, 2, 0);
-   } while ((0 == res) && !timeout);
-
-   if (m_pRcvBuffer->getRcvMsgNum() <= 0)
-   {
-      // read is not available any more
-      // s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_IN, false);
-   }
-
-   if ((res <= 0) && (m_iRcvTimeOut >= 0))
-      throw CUDTException(6, 3, 0);
-
-   return res;
+   int res = m_pRcvBuffer->readMsg(data, len);
+   if (0 == res)
+      throw CUDTException(6, 2, 0);
+   else
+      return res;
 }
 
 void CUDT::sample(CPerfMon& perf, bool clear)
@@ -1395,15 +1287,11 @@ void CUDT::CCUpdate()
 void CUDT::initSynch()
 {
    #ifndef WINDOWS
-      pthread_mutex_init(&m_RecvDataLock, NULL);
-      pthread_cond_init(&m_RecvDataCond, NULL);
       pthread_mutex_init(&m_SendLock, NULL);
       pthread_mutex_init(&m_RecvLock, NULL);
       pthread_mutex_init(&m_AckLock, NULL);
       pthread_mutex_init(&m_ConnectionLock, NULL);
    #else
-      m_RecvDataLock = CreateMutex(NULL, false, NULL);
-      m_RecvDataCond = CreateEvent(NULL, false, false, NULL);
       m_SendLock = CreateMutex(NULL, false, NULL);
       m_RecvLock = CreateMutex(NULL, false, NULL);
       m_AckLock = CreateMutex(NULL, false, NULL);
@@ -1414,15 +1302,11 @@ void CUDT::initSynch()
 void CUDT::destroySynch()
 {
    #ifndef WINDOWS
-      pthread_mutex_destroy(&m_RecvDataLock);
-      pthread_cond_destroy(&m_RecvDataCond);
       pthread_mutex_destroy(&m_SendLock);
       pthread_mutex_destroy(&m_RecvLock);
       pthread_mutex_destroy(&m_AckLock);
       pthread_mutex_destroy(&m_ConnectionLock);
    #else
-      CloseHandle(m_RecvDataLock);
-      CloseHandle(m_RecvDataCond);
       CloseHandle(m_SendLock);
       CloseHandle(m_RecvLock);
       CloseHandle(m_AckLock);
@@ -1438,16 +1322,11 @@ void CUDT::releaseSynch()
       pthread_mutex_lock(&m_SendLock);
       pthread_mutex_unlock(&m_SendLock);
 
-      pthread_mutex_lock(&m_RecvDataLock);
-      pthread_cond_signal(&m_RecvDataCond);
-      pthread_mutex_unlock(&m_RecvDataLock);
-
       pthread_mutex_lock(&m_RecvLock);
       pthread_mutex_unlock(&m_RecvLock);
    #else
       WaitForSingleObject(m_SendLock, INFINITE);
       ReleaseMutex(m_SendLock);
-      SetEvent(m_RecvDataCond);
       WaitForSingleObject(m_RecvLock, INFINITE);
       ReleaseMutex(m_RecvLock);
    #endif
@@ -1495,17 +1374,6 @@ void CUDT::sendCtrl(int pkttype, void* lparam, void* rparam, int size)
          m_iRcvLastAck = ack;
 
          m_pRcvBuffer->ackData(acksize);
-
-         // signal a waiting "recv" call if there is any data available
-         #ifndef WINDOWS
-            pthread_mutex_lock(&m_RecvDataLock);
-            if (m_bSynRecving)
-               pthread_cond_signal(&m_RecvDataCond);
-            pthread_mutex_unlock(&m_RecvDataLock);
-         #else
-            if (m_bSynRecving)
-               SetEvent(m_RecvDataCond);
-         #endif
 
          // acknowledge any waiting epolls to read
          s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_IN, true);
