@@ -182,6 +182,7 @@ public:
       //    None.
 
    void setError(CUDTException* e);
+   void setError(int major, int minor);
 
       // Functionality:
       //    look up the most recent UDT exception.

@@ -1,6 +1,6 @@
 use std::{sync::Arc, time::{Duration, Instant}};
 
-use tokio::{task::JoinSet, time::{interval, sleep}};
+use tokio::{task::JoinSet, time::{sleep, timeout}};
 use transport::SecureTransport;
 
 const PRIVATE_KEY: [u8; 32] = [127, 93, 161, 223, 213, 211, 245, 80, 69, 165, 77, 133, 169, 40, 130, 112, 218, 255, 225, 74, 78, 69, 83, 20, 154, 244, 58, 224, 51, 34, 61, 102];
@@ -19,12 +19,9 @@ async fn main() -> anyhow::Result<()> {
         let mut msg = [0; 30000];
         let mut t = Instant::now();
         let mut timeout = t + Duration::from_secs(5);
-        // let mut n = 1;
         let mut ctr = 0;
         loop {
             let len = r.recv(&mut msg).await?;
-            // n += 1;
-            // println!("A: recv {n}");
             if len == 0 { break }
 
             ctr += len;
@@ -36,9 +33,6 @@ async fn main() -> anyhow::Result<()> {
                 t = now;
                 timeout = now + Duration::from_secs(5);
             }
-
-            // let msg = String::from_utf8_lossy(&msg[..len]);
-            // println!("A: received message {:?}", msg.len());
         }
         Ok::<(), anyhow::Error>(())
     });
@@ -50,18 +44,14 @@ async fn main() -> anyhow::Result<()> {
         let c = SecureTransport::connect(&l, "[::1]:25583".parse()?, transport::Side::Initiator { remote_public_key: &PUBLIC_KEY }).await?;
         // let c = l.connect_datagram("[::1]:25583".parse()?, false).await?;
         println!("B: connected to {:?}", c.peer_addr()?);
-        // let mut n = 1;
 
-        // NOTE: at gigabit speed, UDT will livelock. This needs to be investigated!!!
-        // This throttling is imperfect but still allows for a demo.
-        let mut int = interval(Duration::from_micros(10));
+        // NOTE: at high sending rates, writable won't fire off correctly.
+        // By timing out sends, we can force a recheck.
         loop {
-            int.tick().await;
-            c.send_with(&[b'o'; 1192], true).await?;
-            // n += 1;
-            // println!("B: sent {n}");
+            if let Ok(r) = timeout(Duration::from_micros(1), c.send_with(&[b'o'; 1192], true)).await {
+                r?;
+            }
         }
-        // println!("B: sent {len} bytes");
         #[allow(unreachable_code)]
         Ok::<(), anyhow::Error>(())
     });
@@ -69,6 +59,6 @@ async fn main() -> anyhow::Result<()> {
     while let Some(res) = js.join_next().await {
         println!("{res:?}");
     }
-    sleep(Duration::from_millis(10)).await;
+
     Ok(())
 }

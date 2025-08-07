@@ -952,6 +952,27 @@ void CUDTUnited::setError(CUDTException* e)
    #endif
 }
 
+void CUDTUnited::setError(int major, int minor)
+{
+   #ifndef WINDOWS
+      CUDTException* ex = (CUDTException*)pthread_getspecific(m_TLSError);
+      if (!ex || ex->getErrorCode() != major*1000 + minor) {
+         delete ex;
+         auto e = new CUDTException(major, minor, 0);
+         pthread_setspecific(m_TLSError, e);
+      }
+   #else
+      CGuard tg(m_TLSLock);
+      CUDTException* ex = (CUDTException*)TlsGetValue(m_TLSError);
+      if (ex->getErrorCode() != major*1000 + minor) {
+         delete ex;
+         auto e = new CUDTException(major, minor, 0);
+         TlsSetValue(m_TLSError, e);
+         m_mTLSRecord[GetCurrentThreadId()] = e;
+      }
+   #endif
+}
+
 rpoll::RPoll const &CUDTUnited::getrpoll() { return *m_RPoll; }
 
 CUDTException* CUDTUnited::getError()
@@ -1204,12 +1225,12 @@ UDTSOCKET CUDT::socket(int af, int type, int)
    }
    catch (bad_alloc&)
    {
-      s_UDTUnited.setError(new CUDTException(3, 2, 0));
+      s_UDTUnited.setError(3, 2);
       return INVALID_SOCK;
    }
    catch (...)
    {
-      s_UDTUnited.setError(new CUDTException(-1, 0, 0));
+      s_UDTUnited.setError(-1, 0);
       return INVALID_SOCK;
    }
 }
@@ -1227,12 +1248,12 @@ int CUDT::bind(UDTSOCKET u, const sockaddr* name, int namelen)
    }
    catch (bad_alloc&)
    {
-      s_UDTUnited.setError(new CUDTException(3, 2, 0));
+      s_UDTUnited.setError(3, 2);
       return ERROR;
    }
    catch (...)
    {
-      s_UDTUnited.setError(new CUDTException(-1, 0, 0));
+      s_UDTUnited.setError(-1, 0);
       return ERROR;
    }
 }
@@ -1250,12 +1271,12 @@ int CUDT::listen(UDTSOCKET u, int backlog)
    }
    catch (bad_alloc&)
    {
-      s_UDTUnited.setError(new CUDTException(3, 2, 0));
+      s_UDTUnited.setError(3, 2);
       return ERROR;
    }
    catch (...)
    {
-      s_UDTUnited.setError(new CUDTException(-1, 0, 0));
+      s_UDTUnited.setError(-1, 0);
       return ERROR;
    }
 }
@@ -1273,7 +1294,7 @@ UDTSOCKET CUDT::accept(UDTSOCKET u, sockaddr* addr, int* addrlen)
    }
    catch (...)
    {
-      s_UDTUnited.setError(new CUDTException(-1, 0, 0));
+      s_UDTUnited.setError(-1, 0);
       return INVALID_SOCK;
    }
 }
@@ -1291,12 +1312,12 @@ int CUDT::connect(UDTSOCKET u, const sockaddr* name, int namelen)
    }
    catch (bad_alloc&)
    {
-      s_UDTUnited.setError(new CUDTException(3, 2, 0));
+      s_UDTUnited.setError(3, 2);
       return ERROR;
    }
    catch (...)
    {
-      s_UDTUnited.setError(new CUDTException(-1, 0, 0));
+      s_UDTUnited.setError(-1, 0);
       return ERROR;
    }
 }
@@ -1314,7 +1335,7 @@ int CUDT::close(UDTSOCKET u)
    }
    catch (...)
    {
-      s_UDTUnited.setError(new CUDTException(-1, 0, 0));
+      s_UDTUnited.setError(-1, 0);
       return ERROR;
    }
 }
@@ -1332,7 +1353,7 @@ int CUDT::getpeername(UDTSOCKET u, sockaddr* name, int* namelen)
    }
    catch (...)
    {
-      s_UDTUnited.setError(new CUDTException(-1, 0, 0));
+      s_UDTUnited.setError(-1, 0);
       return ERROR;
    }
 }
@@ -1350,7 +1371,7 @@ int CUDT::getsockname(UDTSOCKET u, sockaddr* name, int* namelen)
    }
    catch (...)
    {
-      s_UDTUnited.setError(new CUDTException(-1, 0, 0));
+      s_UDTUnited.setError(-1, 0);
       return ERROR;
    }
 }
@@ -1370,7 +1391,7 @@ int CUDT::getsockopt(UDTSOCKET u, int, UDTOpt optname, void* optval, int* optlen
    }
    catch (...)
    {
-      s_UDTUnited.setError(new CUDTException(-1, 0, 0));
+      s_UDTUnited.setError(-1, 0);
       return ERROR;
    }
 }
@@ -1390,7 +1411,7 @@ int CUDT::setsockopt(UDTSOCKET u, int, UDTOpt optname, const void* optval, int o
    }
    catch (...)
    {
-      s_UDTUnited.setError(new CUDTException(-1, 0, 0));
+      s_UDTUnited.setError(-1, 0);
       return ERROR;
    }
 }
@@ -1409,12 +1430,12 @@ int CUDT::send(UDTSOCKET u, const char* buf, int len, int)
    }
    catch (bad_alloc&)
    {
-      s_UDTUnited.setError(new CUDTException(3, 2, 0));
+      s_UDTUnited.setError(3, 2);
       return ERROR;
    }
    catch (...)
    {
-      s_UDTUnited.setError(new CUDTException(-1, 0, 0));
+      s_UDTUnited.setError(-1, 0);
       return ERROR;
    }
 }
@@ -1433,7 +1454,7 @@ int CUDT::recv(UDTSOCKET u, char* buf, int len, int)
    }
    catch (...)
    {
-      s_UDTUnited.setError(new CUDTException(-1, 0, 0));
+      s_UDTUnited.setError(-1, 0);
       return ERROR;
    }
 }
@@ -1448,11 +1469,10 @@ int CUDT::sendmsg(UDTSOCKET u, const char* buf, int len, int ttl, bool inorder)
       // r: hot path optimization.
       if (res < 0) {
          res = -res;
-         s_UDTUnited.setError(new CUDTException(
+         s_UDTUnited.setError(
             res / 1000,
-            res % 1000,
-            0
-         ));
+            res % 1000
+         );
          return ERROR;
       }
       return res;
@@ -1464,12 +1484,12 @@ int CUDT::sendmsg(UDTSOCKET u, const char* buf, int len, int ttl, bool inorder)
    }
    catch (bad_alloc&)
    {
-      s_UDTUnited.setError(new CUDTException(3, 2, 0));
+      s_UDTUnited.setError(3, 2);
       return ERROR;
    }
    catch (...)
    {
-      s_UDTUnited.setError(new CUDTException(-1, 0, 0));
+      s_UDTUnited.setError(-1, 0);
       return ERROR;
    }
 }
@@ -1484,11 +1504,10 @@ int CUDT::recvmsg(UDTSOCKET u, char* buf, int len)
       // r: hot path optimization. C++ exceptions are *really* slow.
       if (res < 0) {
          res = -res;
-         s_UDTUnited.setError(new CUDTException(
+         s_UDTUnited.setError(
             res / 1000,
-            res % 1000,
-            0
-         ));
+            res % 1000
+         );
          return ERROR;
       }
       return res;
@@ -1500,7 +1519,7 @@ int CUDT::recvmsg(UDTSOCKET u, char* buf, int len)
    }
    catch (...)
    {
-      s_UDTUnited.setError(new CUDTException(-1, 0, 0));
+      s_UDTUnited.setError(-1, 0);
       return ERROR;
    }
 }
@@ -1527,7 +1546,7 @@ int CUDT::perfmon(UDTSOCKET u, CPerfMon& perf, bool clear)
    }
    catch (...)
    {
-      s_UDTUnited.setError(new CUDTException(-1, 0, 0));
+      s_UDTUnited.setError(-1, 0);
       return ERROR;
    }
 }
@@ -1552,7 +1571,7 @@ UDTSTATUS CUDT::getsockstate(UDTSOCKET u)
    }
    catch (...)
    {
-      s_UDTUnited.setError(new CUDTException(-1, 0, 0));
+      s_UDTUnited.setError(-1, 0);
       return NONEXIST;
    }
 }
