@@ -4748,11 +4748,13 @@ dependencies = [
 name = "udt"
 version = "0.1.0"
 dependencies = [
+ "cfg-if",
  "futures",
  "libc",
  "os_socketaddr",
  "tokio",
  "udt-sys",
+ "winapi",
 ]
 
 [[package]]

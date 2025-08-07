@@ -9,6 +9,14 @@ use util::*;
 use os_socketaddr::OsSocketAddr;
 use udt_sys::{INVALID_SOCK};
 
+cfg_if::cfg_if! {
+    if #[cfg(windows)] {
+        use winapi::shared::ws2def::{AF_INET, AF_INET6, SOCK_DGRAM};
+    } else {
+        use libc::{AF_INET, AF_INET6, SOCK_DGRAM};
+    }
+}
+
 #[derive(Debug)]
 struct Socket {
     _inst: Instance,
@@ -81,9 +89,9 @@ impl Endpoint {
         let inst = Instance::default();
         let binding = unsafe { udt_sys::socket(
             match addr {
-                SocketAddr::V4(_) => libc::AF_INET,
-                SocketAddr::V6(_) => libc::AF_INET6
-            }, libc::SOCK_DGRAM, 0
+                SocketAddr::V4(_) => AF_INET,
+                SocketAddr::V6(_) => AF_INET6
+            }, SOCK_DGRAM, 0
         ) };
         if binding == INVALID_SOCK {
             return Err(unsafe { udt_getlasterror() });
@@ -112,8 +120,8 @@ impl Endpoint {
         let addr = self.binding.local_addr_os()?;
         let u = unsafe { udt_sys::socket(
             match addr.into_addr().unwrap() {
-                SocketAddr::V4(_) => libc::AF_INET,
-                SocketAddr::V6(_) => libc::AF_INET6
+                SocketAddr::V4(_) => AF_INET,
+                SocketAddr::V6(_) => AF_INET6
             }, type_, 0
         ) };
         if u == INVALID_SOCK {
@@ -141,8 +149,8 @@ impl Endpoint {
         let local_addr = self.binding.local_addr_os()?;
         let u = unsafe { udt_sys::socket(
             match local_addr.into_addr().unwrap() {
-                SocketAddr::V4(_) => libc::AF_INET,
-                SocketAddr::V6(_) => libc::AF_INET6
+                SocketAddr::V4(_) => AF_INET,
+                SocketAddr::V6(_) => AF_INET6
             }, type_, 0
         ) };
         if u == INVALID_SOCK {
@@ -179,14 +187,14 @@ impl Endpoint {
     }
 
     pub fn listen_datagram(&self, backlog: u32) -> io::Result<Listener> {
-        let u = self.listen(libc::SOCK_DGRAM, backlog)?;
+        let u = self.listen(SOCK_DGRAM, backlog)?;
         Ok(Listener { u })
     }
 
     pub async fn connect_datagram(self: &Arc<Self>, addr: SocketAddr, rendezvous: bool) -> io::Result<Connection> {
         let inner = self.clone();
         let con = spawn_blocking(move || {
-            let u = inner.connect(libc::SOCK_DGRAM, addr, rendezvous)?;
+            let u = inner.connect(SOCK_DGRAM, addr, rendezvous)?;
             Ok::<_, io::Error>(Connection { u })
         }).await.unwrap()?;
         
