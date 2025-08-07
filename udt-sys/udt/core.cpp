@@ -916,9 +916,6 @@ void CUDT::close()
    if (m_bConnected)
       m_pSndQueue->m_pSndUList->remove(this);
 
-   // trigger any pending IO events.
-   // s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_ERR, true);
-
    // BARCHART: Trigger pending events as errors; CEPoll::wait does error cleanup.
    s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_IN, false);
    s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_OUT, false);
@@ -1009,11 +1006,6 @@ int CUDT::send(const char* data, int len)
       throw CUDTException(6, 1, 0);
    }
 
-   if (m_iSndBufSize <= m_pSndBuffer->getCurrBufSize())
-   {
-      return 0;
-   }
-
    int size = (m_iSndBufSize - m_pSndBuffer->getCurrBufSize()) * m_iPayloadSize;
    if (size > len)
       size = len;
@@ -1027,12 +1019,6 @@ int CUDT::send(const char* data, int len)
 
    // insert this socket to snd list if it is not on the list yet
    m_pSndQueue->m_pSndUList->update(this, false);
-
-   if (m_iSndBufSize <= m_pSndBuffer->getCurrBufSize())
-   {
-      // write is not available any more
-      // s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_OUT, false);
-   }
 
    return size;
 }
@@ -1065,12 +1051,6 @@ int CUDT::recv(char* data, int len)
       throw CUDTException(2, 1, 0);
 
    int res = m_pRcvBuffer->readBuffer(data, len);
-
-   if (m_pRcvBuffer->getRcvDataSize() <= 0)
-   {
-      // read is not available any more
-      // s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_IN, false);
-   }
 
    return res;
 }
@@ -1107,11 +1087,6 @@ int CUDT::sendmsg(const char* data, int len, int msttl, bool inorder)
       throw CUDTException(6, 1, 0);
    }
 
-   if ((m_iSndBufSize - m_pSndBuffer->getCurrBufSize()) * m_iPayloadSize < len)
-   {
-      return 0;
-   }
-
    // record total time used for sending
    if (0 == m_pSndBuffer->getCurrBufSize())
       m_llSndDurationCounter = CTimer::getTime();
@@ -1121,12 +1096,6 @@ int CUDT::sendmsg(const char* data, int len, int msttl, bool inorder)
 
    // insert this socket to the snd list if it is not on the list yet
    m_pSndQueue->m_pSndUList->update(this, false);
-
-   if (m_iSndBufSize <= m_pSndBuffer->getCurrBufSize())
-   {
-      // write is not available any more
-      // s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_OUT, false);
-   }
 
    return len;
 }
@@ -1148,12 +1117,6 @@ int CUDT::recvmsg(char* data, int len)
    if (m_bBroken || m_bClosing)
    {
       int res = m_pRcvBuffer->readMsg(data, len);
-
-      if (m_pRcvBuffer->getRcvMsgNum() <= 0)
-      {
-         // read is not available any more
-         // s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_IN, false);
-      }
 
       if (0 == res)
          throw CUDTException(2, 1, 0);
