@@ -415,16 +415,7 @@ impl Drop for StreamListener {
 
 impl Drop for StreamConnection {
     fn drop(&mut self) {
-        // Force a non-blocking close. UDT will send lingering data in a background thread.
-        let sndsyn = false;
         unsafe {
-            udt_sys::setsockopt(
-                self.u,
-                0,
-                udt_sys::SocketOption::SendSyn,
-                (&sndsyn as *const bool).cast(),
-                mem::size_of::<bool>() as i32
-            );
             udt_sys::close(self.u)
         };
     }
@@ -438,16 +429,7 @@ impl Drop for DatagramListener {
 
 impl Drop for DatagramConnection {
     fn drop(&mut self) {
-        // Force a non-blocking close. UDT will send lingering data in a background thread.
-        let sndsyn = false;
         unsafe {
-            udt_sys::setsockopt(
-                self.u,
-                0,
-                udt_sys::SocketOption::SendSyn,
-                (&sndsyn as *const bool).cast(),
-                mem::size_of::<bool>() as i32
-            );
             udt_sys::close(self.u)
         };
     }

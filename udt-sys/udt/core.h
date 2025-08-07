@@ -260,7 +260,6 @@ private: // Packet sizes
 
 private: // Options
    int m_iMSS;                                  // Maximum Segment Size, in bytes
-   bool m_bSynSending;                          // Sending syncronization mode
    bool m_bSynRecving;                          // Receiving syncronization mode
    int m_iFlightFlagSize;                       // Maximum number of packets in flight from the peer side
    int m_iSndBufSize;                           // Maximum UDT sender buffer size
@@ -343,9 +342,6 @@ private: // Receiving related data
 
 private: // synchronization: mutexes and conditions
    udt_pthread_mutex_t m_ConnectionLock;            // used to synchronize connection operation
-
-   udt_pthread_cond_t m_SendBlockCond;              // used to block "send" call
-   udt_pthread_mutex_t m_SendBlockLock;             // lock associated to m_SendBlockCond
 
    udt_pthread_mutex_t m_AckLock;                   // used to protected sender's loss list when processing ACK
 

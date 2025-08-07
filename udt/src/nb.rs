@@ -17,16 +17,6 @@ impl super::Endpoint {
         let res = unsafe { udt_sys::setsockopt(
             con.0.u,
             0,
-            udt_sys::SocketOption::SendSyn,
-            (&syn as *const bool).cast(),
-            mem::size_of::<bool>() as i32
-        ) };
-        if res < 0 {
-            return Err(unsafe { udt_getlasterror() });
-        }
-        let res = unsafe { udt_sys::setsockopt(
-            con.0.u,
-            0,
             udt_sys::SocketOption::RecvSyn,
             (&syn as *const bool).cast(),
             mem::size_of::<bool>() as i32

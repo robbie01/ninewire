@@ -98,7 +98,6 @@ CUDT::CUDT()
 
    // Default UDT configurations
    m_iMSS = 1500;
-   m_bSynSending = true;
    m_bSynRecving = true;
    m_iFlightFlagSize = 25600;
    m_iSndBufSize = 8192;
@@ -152,7 +151,6 @@ CUDT::CUDT(const CUDT& ancestor)
 
    // Default UDT configurations
    m_iMSS = ancestor.m_iMSS;
-   m_bSynSending = ancestor.m_bSynSending;
    m_bSynRecving = ancestor.m_bSynRecving;
    m_iFlightFlagSize = ancestor.m_iFlightFlagSize;
    m_iSndBufSize = ancestor.m_iSndBufSize;
@@ -237,10 +235,6 @@ void CUDT::setOpt(UDTOpt optName, const void* optval, int)
       if (m_iMSS > m_iUDPRcvBufSize)
          m_iMSS = m_iUDPRcvBufSize;
 
-      break;
-
-   case UDT_SNDSYN:
-      m_bSynSending = *(bool *)optval;
       break;
 
    case UDT_RCVSYN:
@@ -365,11 +359,6 @@ void CUDT::getOpt(UDTOpt optName, void* optval, int& optlen)
    case UDT_MSS:
       *(int*)optval = m_iMSS;
       optlen = sizeof(int);
-      break;
-
-   case UDT_SNDSYN:
-      *(bool*)optval = m_bSynSending;
-      optlen = sizeof(bool);
       break;
 
    case UDT_RCVSYN:
@@ -921,29 +910,17 @@ void CUDT::flush()
 {
    uint64_t entertime = CTimer::getTime();
 
-   while (!m_bBroken && m_bConnected && (m_pSndBuffer->getCurrBufSize() > 0) && (CTimer::getTime() - entertime < m_Linger.l_linger * 1000000ULL))
+   if (!m_bBroken && m_bConnected && (m_pSndBuffer->getCurrBufSize() > 0) && (CTimer::getTime() - entertime < m_Linger.l_linger * 1000000ULL))
    {
       // linger has been checked by previous close() call and has expired
       if (m_ullLingerExpiration >= entertime)
-         break;
-
-      if (!m_bSynSending)
-      {
-         // if this socket enables asynchronous sending, return immediately and let GC to close it later
-         if (0 == m_ullLingerExpiration)
-            m_ullLingerExpiration = entertime + m_Linger.l_linger * 1000000ULL;
-
          return;
-      }
 
-      #ifndef WINDOWS
-         timespec ts;
-         ts.tv_sec = 0;
-         ts.tv_nsec = 1000000;
-         nanosleep(&ts, NULL);
-      #else
-         Sleep(1);
-      #endif
+      // if this socket enables asynchronous sending, return immediately and let GC to close it later
+      if (0 == m_ullLingerExpiration)
+         m_ullLingerExpiration = entertime + m_Linger.l_linger * 1000000ULL;
+
+      return;
    }
 }
 
@@ -1051,56 +1028,7 @@ int CUDT::send(const char* data, int len)
 
    if (m_iSndBufSize <= m_pSndBuffer->getCurrBufSize())
    {
-      if (!m_bSynSending)
-         throw CUDTException(6, 1, 0);
-      else
-      {
-         // wait here during a blocking sending
-         #ifndef WINDOWS
-            pthread_mutex_lock(&m_SendBlockLock);
-            if (m_iSndTimeOut < 0)
-            {
-               while (!m_bBroken && m_bConnected && !m_bClosing && (m_iSndBufSize <= m_pSndBuffer->getCurrBufSize()) && m_bPeerHealth)
-                  pthread_cond_wait(&m_SendBlockCond, &m_SendBlockLock);
-            }
-            else
-            {
-               uint64_t exptime = CTimer::getTime() + m_iSndTimeOut * 1000ULL;
-               timespec locktime;
-
-               locktime.tv_sec = exptime / 1000000;
-               locktime.tv_nsec = (exptime % 1000000) * 1000;
-
-               while (!m_bBroken && m_bConnected && !m_bClosing && (m_iSndBufSize <= m_pSndBuffer->getCurrBufSize()) && m_bPeerHealth && (CTimer::getTime() < exptime))
-                  pthread_cond_timedwait(&m_SendBlockCond, &m_SendBlockLock, &locktime);
-            }
-            pthread_mutex_unlock(&m_SendBlockLock);
-         #else
-            if (m_iSndTimeOut < 0)
-            {
-               while (!m_bBroken && m_bConnected && !m_bClosing && (m_iSndBufSize <= m_pSndBuffer->getCurrBufSize()) && m_bPeerHealth)
-                  WaitForSingleObject(m_SendBlockCond, INFINITE);
-            }
-            else
-            {
-               uint64_t exptime = CTimer::getTime() + m_iSndTimeOut * 1000ULL;
-
-               while (!m_bBroken && m_bConnected && !m_bClosing && (m_iSndBufSize <= m_pSndBuffer->getCurrBufSize()) && m_bPeerHealth && (CTimer::getTime() < exptime))
-                  WaitForSingleObject(m_SendBlockCond, DWORD((exptime - CTimer::getTime()) / 1000));
-            }
-         #endif
-
-         // check the connection status
-         if (m_bBroken || m_bClosing)
-            throw CUDTException(2, 1, 0);
-         else if (!m_bConnected)
-            throw CUDTException(2, 2, 0);
-         else if (!m_bPeerHealth)
-         {
-            m_bPeerHealth = true;
-            throw CUDTException(7);
-         }
-      }
+      throw CUDTException(6, 1, 0);
    }
 
    if (m_iSndBufSize <= m_pSndBuffer->getCurrBufSize())
@@ -1250,51 +1178,7 @@ int CUDT::sendmsg(const char* data, int len, int msttl, bool inorder)
 
    if ((m_iSndBufSize - m_pSndBuffer->getCurrBufSize()) * m_iPayloadSize < len)
    {
-      if (!m_bSynSending)
-         throw CUDTException(6, 1, 0);
-      else
-      {
-         // wait here during a blocking sending
-         #ifndef WINDOWS
-            pthread_mutex_lock(&m_SendBlockLock);
-            if (m_iSndTimeOut < 0)
-            {
-               while (!m_bBroken && m_bConnected && !m_bClosing && ((m_iSndBufSize - m_pSndBuffer->getCurrBufSize()) * m_iPayloadSize < len))
-                  pthread_cond_wait(&m_SendBlockCond, &m_SendBlockLock);
-            }
-            else
-            {
-               uint64_t exptime = CTimer::getTime() + m_iSndTimeOut * 1000ULL;
-               timespec locktime;
-
-               locktime.tv_sec = exptime / 1000000;
-               locktime.tv_nsec = (exptime % 1000000) * 1000;
-
-               while (!m_bBroken && m_bConnected && !m_bClosing && ((m_iSndBufSize - m_pSndBuffer->getCurrBufSize()) * m_iPayloadSize < len) && (CTimer::getTime() < exptime))
-                  pthread_cond_timedwait(&m_SendBlockCond, &m_SendBlockLock, &locktime);
-            }
-            pthread_mutex_unlock(&m_SendBlockLock);
-         #else
-            if (m_iSndTimeOut < 0)
-            {
-               while (!m_bBroken && m_bConnected && !m_bClosing && ((m_iSndBufSize - m_pSndBuffer->getCurrBufSize()) * m_iPayloadSize < len))
-                  WaitForSingleObject(m_SendBlockCond, INFINITE);
-            }
-            else
-            {
-               uint64_t exptime = CTimer::getTime() + m_iSndTimeOut * 1000ULL;
-
-               while (!m_bBroken && m_bConnected && !m_bClosing && ((m_iSndBufSize - m_pSndBuffer->getCurrBufSize()) * m_iPayloadSize < len) && (CTimer::getTime() < exptime))
-                  WaitForSingleObject(m_SendBlockCond, DWORD((exptime - CTimer::getTime()) / 1000));
-            }
-         #endif
-
-         // check the connection status
-         if (m_bBroken || m_bClosing)
-            throw CUDTException(2, 1, 0);
-         else if (!m_bConnected)
-            throw CUDTException(2, 2, 0);
-      }
+      throw CUDTException(6, 1, 0);
    }
 
    if ((m_iSndBufSize - m_pSndBuffer->getCurrBufSize()) * m_iPayloadSize < len)
@@ -1511,8 +1395,6 @@ void CUDT::CCUpdate()
 void CUDT::initSynch()
 {
    #ifndef WINDOWS
-      pthread_mutex_init(&m_SendBlockLock, NULL);
-      pthread_cond_init(&m_SendBlockCond, NULL);
       pthread_mutex_init(&m_RecvDataLock, NULL);
       pthread_cond_init(&m_RecvDataCond, NULL);
       pthread_mutex_init(&m_SendLock, NULL);
@@ -1520,8 +1402,6 @@ void CUDT::initSynch()
       pthread_mutex_init(&m_AckLock, NULL);
       pthread_mutex_init(&m_ConnectionLock, NULL);
    #else
-      m_SendBlockLock = CreateMutex(NULL, false, NULL);
-      m_SendBlockCond = CreateEvent(NULL, false, false, NULL);
       m_RecvDataLock = CreateMutex(NULL, false, NULL);
       m_RecvDataCond = CreateEvent(NULL, false, false, NULL);
       m_SendLock = CreateMutex(NULL, false, NULL);
@@ -1534,8 +1414,6 @@ void CUDT::initSynch()
 void CUDT::destroySynch()
 {
    #ifndef WINDOWS
-      pthread_mutex_destroy(&m_SendBlockLock);
-      pthread_cond_destroy(&m_SendBlockCond);
       pthread_mutex_destroy(&m_RecvDataLock);
       pthread_cond_destroy(&m_RecvDataCond);
       pthread_mutex_destroy(&m_SendLock);
@@ -1543,8 +1421,6 @@ void CUDT::destroySynch()
       pthread_mutex_destroy(&m_AckLock);
       pthread_mutex_destroy(&m_ConnectionLock);
    #else
-      CloseHandle(m_SendBlockLock);
-      CloseHandle(m_SendBlockCond);
       CloseHandle(m_RecvDataLock);
       CloseHandle(m_RecvDataCond);
       CloseHandle(m_SendLock);
@@ -1558,9 +1434,6 @@ void CUDT::releaseSynch()
 {
    #ifndef WINDOWS
       // wake up user calls
-      pthread_mutex_lock(&m_SendBlockLock);
-      pthread_cond_signal(&m_SendBlockCond);
-      pthread_mutex_unlock(&m_SendBlockLock);
 
       pthread_mutex_lock(&m_SendLock);
       pthread_mutex_unlock(&m_SendLock);
@@ -1572,7 +1445,6 @@ void CUDT::releaseSynch()
       pthread_mutex_lock(&m_RecvLock);
       pthread_mutex_unlock(&m_RecvLock);
    #else
-      SetEvent(m_SendBlockCond);
       WaitForSingleObject(m_SendLock, INFINITE);
       ReleaseMutex(m_SendLock);
       SetEvent(m_RecvDataCond);
@@ -1881,16 +1753,6 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
       m_pSndLossList->remove(CSeqNo::decseq(m_iSndLastDataAck));
 
       CGuard::leaveCS(m_AckLock);
-
-      #ifndef WINDOWS
-         pthread_mutex_lock(&m_SendBlockLock);
-         if (m_bSynSending)
-            pthread_cond_signal(&m_SendBlockCond);
-         pthread_mutex_unlock(&m_SendBlockLock);
-      #else
-         if (m_bSynSending)
-            SetEvent(m_SendBlockCond);
-      #endif
 
       // acknowledde any waiting epolls to write
       s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_OUT, true);
