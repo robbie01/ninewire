@@ -75,8 +75,8 @@ mod ffi {
         UDT_MSS,
         // #[rust_name = "SendSyn"]
         // UDT_SNDSYN,
-        #[rust_name = "RecvSyn"]
-        UDT_RCVSYN = 2,
+        #[rust_name = "ConnSyn"]
+        UDT_CONNSYN = 2,
         #[rust_name = "Cc"]
         UDT_CC,
         #[rust_name = "Fc"]

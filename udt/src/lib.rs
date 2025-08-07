@@ -1,6 +1,6 @@
 mod instance;
 mod util;
-use std::{future::poll_fn, i32, io, mem, net::SocketAddr, ptr, sync::Arc, task::Poll, time::Duration};
+use std::{future::poll_fn, i32, io, mem, net::SocketAddr, ptr, sync::Arc, task::{Context, Poll}, time::Duration};
 
 use instance::*;
 use tokio::task::spawn_blocking;
@@ -43,19 +43,21 @@ impl Socket {
         self.peer_addr_os().map(|addr| addr.into_addr().unwrap())
     }
 
+    fn poll(&self, interest: udt_sys::Event, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        let rpoll = unsafe { udt_sys::getrpoll() };
+        if rpoll.query(self.inner).intersects(interest) {
+            return Poll::Ready(Ok(()));
+        }
+        rpoll.register(self.inner, interest, cx.waker());
+        if rpoll.query(self.inner).intersects(interest) {
+            Poll::Ready(Ok(()))
+        } else {
+            Poll::Pending
+        }
+    }
+
     fn register(&self, interest: udt_sys::Event) -> impl Future<Output = io::Result<()>> {
-        poll_fn(move |cx| {
-            let rpoll = unsafe { udt_sys::getrpoll() };
-            if rpoll.query(self.inner).intersects(interest) {
-                return Poll::Ready(Ok(()));
-            }
-            rpoll.register(self.inner, interest, cx.waker());
-            if rpoll.query(self.inner).intersects(interest) {
-                Poll::Ready(Ok(()))
-            } else {
-                Poll::Pending
-            }
-        })
+        poll_fn(move |cx| self.poll(interest, cx))
     }
 
     fn readable(&self) -> impl Future<Output = io::Result<()>> {
@@ -203,18 +205,6 @@ impl Endpoint {
     pub async fn connect_datagram_async(self: &Arc<Self>, addr: SocketAddr, rendezvous: bool) -> io::Result<DatagramConnection> {
         let inner = self.clone();
         let con = spawn_blocking(move || inner.connect_datagram(addr, rendezvous)).await.unwrap()?;
-
-        let syn = false;
-        let res = unsafe { udt_sys::setsockopt(
-            con.u.inner,
-            0,
-            udt_sys::SocketOption::RecvSyn,
-            (&syn as *const bool).cast(),
-            mem::size_of::<bool>() as i32
-        ) };
-        if res < 0 {
-            return Err(unsafe { udt_getlasterror() });
-        }
         
         Ok(con)
     }

@@ -260,7 +260,7 @@ private: // Packet sizes
 
 private: // Options
    int m_iMSS;                                  // Maximum Segment Size, in bytes
-   bool m_bSynRecving;                          // Receiving syncronization mode
+   bool m_bSynConnect;                          // Receiving syncronization mode
    int m_iFlightFlagSize;                       // Maximum number of packets in flight from the peer side
    int m_iSndBufSize;                           // Maximum UDT sender buffer size
    int m_iRcvBufSize;                           // Maximum UDT receiver buffer size

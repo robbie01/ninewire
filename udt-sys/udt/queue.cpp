@@ -1023,7 +1023,7 @@ void CRcvQueue::init(int qsize, int payload, int version, int hsize, CChannel* c
          {
             // asynchronous connect: call connect here
             // otherwise wait for the UDT socket to retrieve this packet
-            if (!u->m_bSynRecving)
+            if (!u->m_bSynConnect)
                u->connect(unit->m_Packet);
             else
                self->storePkt(id, unit->m_Packet.clone());
@@ -1049,7 +1049,7 @@ void CRcvQueue::init(int qsize, int payload, int version, int hsize, CChannel* c
          }
          else if (NULL != (u = self->m_pRendezvousQueue->retrieve(addr, id)))
          {
-            if (!u->m_bSynRecving)
+            if (!u->m_bSynConnect)
                u->connect(unit->m_Packet);
             else
                self->storePkt(id, unit->m_Packet.clone());

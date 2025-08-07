@@ -98,7 +98,7 @@ CUDT::CUDT()
 
    // Default UDT configurations
    m_iMSS = 1500;
-   m_bSynRecving = true;
+   m_bSynConnect = true;
    m_iFlightFlagSize = 25600;
    m_iSndBufSize = 8192;
    m_iRcvBufSize = 8192; //Rcv buffer MUST NOT be bigger than Flight Flag size
@@ -149,7 +149,7 @@ CUDT::CUDT(const CUDT& ancestor)
 
    // Default UDT configurations
    m_iMSS = ancestor.m_iMSS;
-   m_bSynRecving = ancestor.m_bSynRecving;
+   m_bSynConnect = ancestor.m_bSynConnect;
    m_iFlightFlagSize = ancestor.m_iFlightFlagSize;
    m_iSndBufSize = ancestor.m_iSndBufSize;
    m_iRcvBufSize = ancestor.m_iRcvBufSize;
@@ -233,8 +233,8 @@ void CUDT::setOpt(UDTOpt optName, const void* optval, int)
 
       break;
 
-   case UDT_RCVSYN:
-      m_bSynRecving = *(bool *)optval;
+   case UDT_CONNSYN:
+      m_bSynConnect = *(bool *)optval;
       break;
 
    case UDT_CC:
@@ -349,8 +349,8 @@ void CUDT::getOpt(UDTOpt optName, void* optval, int& optlen)
       optlen = sizeof(int);
       break;
 
-   case UDT_RCVSYN:
-      *(bool*)optval = m_bSynRecving;
+   case UDT_CONNSYN:
+      *(bool*)optval = m_bSynConnect;
       optlen = sizeof(bool);
       break;
 
@@ -601,7 +601,7 @@ void CUDT::connect(const sockaddr* serv_addr)
    m_bConnecting = true;
 
    // asynchronous connect, return immediately
-   if (!m_bSynRecving)
+   if (!m_bSynConnect)
    {
       delete [] reqdata;
       return;
