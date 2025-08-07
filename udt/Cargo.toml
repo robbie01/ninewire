@@ -8,3 +8,4 @@ udt-sys = { path = "../udt-sys" }
 os_socketaddr = "0.2"
 libc = "0.2"
 tokio = { workspace = true, features = ["rt"] }
+futures = "0.3"

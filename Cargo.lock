@@ -4777,6 +4777,7 @@ dependencies = [
 name = "udt"
 version = "0.1.0"
 dependencies = [
+ "futures",
  "libc",
  "os_socketaddr",
  "tokio",
@@ -4798,10 +4799,13 @@ name = "udt-sys"
 version = "0.1.0"
 dependencies = [
  "bitflags 2.9.0",
+ "crossbeam-utils",
  "cxx",
  "cxx-build",
  "md-5",
  "scc",
+ "static_assertions",
+ "tokio",
  "util",
 ]
 

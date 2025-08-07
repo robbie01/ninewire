@@ -1,7 +1,8 @@
 mod instance;
 mod util;
-use std::{future::poll_fn, i32, io, mem, net::SocketAddr, ptr, sync::Arc, task::{Context, Poll}, time::Duration};
+use std::{i32, io, mem, net::SocketAddr, ptr, sync::Arc, time::Duration};
 
+use futures::FutureExt;
 use instance::*;
 use tokio::task::spawn_blocking;
 use util::*;
@@ -43,29 +44,14 @@ impl Socket {
         self.peer_addr_os().map(|addr| addr.into_addr().unwrap())
     }
 
-    fn poll(&self, interest: udt_sys::Event, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        let rpoll = unsafe { udt_sys::getrpoll() };
-        if rpoll.query(self.inner).intersects(interest) {
-            return Poll::Ready(Ok(()));
-        }
-        rpoll.register(self.inner, interest, cx.waker());
-        if rpoll.query(self.inner).intersects(interest) {
-            Poll::Ready(Ok(()))
-        } else {
-            Poll::Pending
-        }
-    }
-
-    fn register(&self, interest: udt_sys::Event) -> impl Future<Output = io::Result<()>> {
-        poll_fn(move |cx| self.poll(interest, cx))
-    }
-
     fn readable(&self) -> impl Future<Output = io::Result<()>> {
-        self.register(udt_sys::Event::IN | udt_sys::Event::ERR)
+        let rpoll = unsafe { udt_sys::getrpoll() };
+        rpoll.readable(self.inner).unwrap().map(|_| Ok(()))
     }
 
     fn writable(&self) -> impl Future<Output = io::Result<()>> {
-        self.register(udt_sys::Event::OUT | udt_sys::Event::ERR)
+        let rpoll = unsafe { udt_sys::getrpoll() };
+        rpoll.writable(self.inner).unwrap().map(|_| Ok(()))
     }
 }
 
@@ -215,19 +201,11 @@ impl Listener {
 
     pub fn try_accept(&self) -> io::Result<Connection> {
         let inst = Instance::default();
-        let rpoll = unsafe { udt_sys::getrpoll() };
-        rpoll.with_lock(self.u.inner, |s| {
-            // This might deadlock.
-            let u = unsafe { udt_sys::accept(self.u.inner, ptr::null_mut(), ptr::null_mut()) };
-            if u == INVALID_SOCK {
-                let e = unsafe { udt_getlasterror() };
-                if e.kind() == io::ErrorKind::WouldBlock {
-                    *s = s.difference(udt_sys::Event::IN);
-                }
-                return Err(e);
-            }
-            Ok(Connection { u: Socket { _inst: inst, inner: u } })
-        })
+        let u = unsafe { udt_sys::accept(self.u.inner, ptr::null_mut(), ptr::null_mut()) };
+        if u == INVALID_SOCK {
+            return Err(unsafe { udt_getlasterror() });
+        }
+        Ok(Connection { u: Socket { _inst: inst, inner: u } })
     }
 
     pub async fn accept(&self) -> io::Result<Connection> {
@@ -236,7 +214,12 @@ impl Listener {
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => (),
                 v => break v
             }
-            self.u.readable().await?;
+            let readable = self.u.readable();
+            match self.try_accept() {
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => (),
+                v => break v
+            }
+            readable.await?;
         }
     }
 }
@@ -250,7 +233,7 @@ impl Connection {
         self.u.peer_addr()
     }
 
-    fn recv_inner(&self, buf: &mut [u8]) -> io::Result<usize> {
+    pub fn try_recv(&self, buf: &mut [u8]) -> io::Result<usize> {
         let res = unsafe { udt_sys::recvmsg(self.u.inner, buf.as_mut_ptr().cast(), buf.len().try_into().unwrap_or(i32::MAX)) };
         if res == -1 {
             return Err(unsafe { udt_getlasterror() });
@@ -258,7 +241,7 @@ impl Connection {
         Ok(res.try_into().unwrap())
     }
 
-    fn send_with_inner(&self, buf: &[u8], ttl: Option<Duration>, inorder: bool) -> io::Result<usize> {
+    pub fn try_send_with(&self, buf: &[u8], ttl: Option<Duration>, inorder: bool) -> io::Result<usize> {
         // TODO: inorder=false has a flawed implementation. UDT still applies windowing
         // in order to avoid replay attacks, so if a large burst of reliable out-of-order
         // datagrams are sent, the earliest ones will get stuck in retransmission hell
@@ -282,38 +265,18 @@ impl Connection {
         Ok(res.try_into().unwrap())
     }
 
-    pub fn try_recv(&self, buf: &mut [u8]) -> io::Result<usize> {
-        let rpoll = unsafe { udt_sys::getrpoll() };
-        rpoll.with_lock(self.u.inner, |s| {
-            // This might deadlock.
-            let res = self.recv_inner(buf);
-            if res.as_ref().is_err_and(|e| e.kind() == io::ErrorKind::WouldBlock) {
-                *s = s.difference(udt_sys::Event::IN);
-            }
-            res
-        })
-    }
-    
-    pub fn try_send_with(&self, buf: &[u8], ttl: Option<Duration>, inorder: bool) -> io::Result<usize> {
-        let rpoll = unsafe { udt_sys::getrpoll() };
-        rpoll.with_lock(self.u.inner, |s| {
-            // This might deadlock.
-            let res = self.send_with_inner(buf, ttl, inorder);
-            if res.as_ref().is_err_and(|e| e.kind() == io::ErrorKind::WouldBlock) {
-                *s = s.difference(udt_sys::Event::OUT);
-            }
-            res
-        })
-    }
-
     pub async fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
         loop {
             match self.try_recv(buf) {
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => (),
                 v => break v
             }
-            // println!("waiting for readable");
-            self.u.readable().await?;
+            let readable = self.u.readable();
+            match self.try_recv(buf) {
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => (),
+                v => break v
+            }
+            readable.await?;
         }
     }
 
@@ -323,7 +286,12 @@ impl Connection {
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => (),
                 v => break v
             }
-            self.u.writable().await?;
+            let writable = self.u.writable();
+            match self.try_send_with(buf, ttl, inorder) {
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => (),
+                v => break v
+            }
+            writable.await?;
         }
     }
 

@@ -139,9 +139,8 @@ async fn main() -> anyhow::Result<()> {
         }
     }));
 
-    let (listener, handle) = abortable(listener);
-
-    ctrlc::set_handler(move || handle.abort())?;
+    let (listener, _handle) = abortable(listener);
+    // ctrlc::set_handler(move || handle.abort())?;
 
     np::serve_mux(Arc::new(Handler::new([
         ("forfun".into(), "forfun".into()),

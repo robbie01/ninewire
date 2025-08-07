@@ -843,7 +843,7 @@ void CRendezvousQueue::updateConnStatus()
          {
             // connection timer expired, acknowledge app via epoll
             i->m_pUDT->m_bConnecting = false;
-            CUDT::s_UDTUnited.m_RPoll->update_events(i->m_iID, UDT_EPOLL_ERR, true);
+            CUDT::s_UDTUnited.m_RPoll->update_events(i->m_iID, UDT_EPOLL_IN | UDT_EPOLL_OUT | UDT_EPOLL_ERR, true);
             continue;
          }
 

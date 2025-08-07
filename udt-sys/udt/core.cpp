@@ -877,9 +877,7 @@ void CUDT::close()
       m_pSndQueue->m_pSndUList->remove(this);
 
    // BARCHART: Trigger pending events as errors; CEPoll::wait does error cleanup.
-   s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_IN, false);
-   s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_OUT, false);
-   s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_ERR, true);
+   s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_IN | UDT_EPOLL_OUT | UDT_EPOLL_ERR, true);
 
    // remove itself from all epoll monitoring
    try
