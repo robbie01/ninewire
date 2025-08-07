@@ -8,8 +8,6 @@ cxx = "1"
 scc = "2.3"
 bitflags = "2.9"
 md-5 = "0.11.0-rc.0"
-crossbeam-utils = "0.8"
-static_assertions = "1.1"
 tokio = { workspace = true, features = ["sync"] }
 util.workspace = true
 

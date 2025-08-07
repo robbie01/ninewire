@@ -1,9 +1,7 @@
 use std::sync::Arc;
 
 use bitflags::bitflags;
-use crossbeam_utils::atomic::AtomicCell;
-use static_assertions::const_assert;
-use tokio::sync::Notify;
+use tokio::sync::{futures::OwnedNotified, Notify};
 use util::polymur;
 
 bitflags! {
@@ -14,8 +12,6 @@ bitflags! {
         const OUT = 4;
     }
 }
-
-const_assert!(AtomicCell::<Event>::is_lock_free());
 
 #[derive(Debug, Default)]
 pub struct SocketData {
@@ -49,11 +45,11 @@ impl RPoll {
         self.evts.remove(&socket);
     }
 
-    pub fn readable(&self, socket: super::Socket) -> Option<impl Future<Output = ()>> {
+    pub fn readable(&self, socket: super::Socket) -> Option<OwnedNotified> {
         self.evts.read(&socket, |_, ent| ent.readable.clone().notified_owned())
     }
 
-    pub fn writable(&self, socket: super::Socket) -> Option<impl Future<Output = ()>> {
+    pub fn writable(&self, socket: super::Socket) -> Option<OwnedNotified> {
         self.evts.read(&socket, |_, ent| ent.writable.clone().notified_owned())
     }
 }

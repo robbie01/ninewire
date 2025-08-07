@@ -7,6 +7,4 @@ edition = "2024"
 tokio.workspace = true
 rand.workspace = true
 
-arc-swap = "1.7"
 polymur-hash = "0.2"
-rpds = "1.1"
