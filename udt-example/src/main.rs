@@ -1,6 +1,6 @@
-use std::{sync::Arc, time::{Duration, Instant}};
+use std::{sync::Arc, time::Duration};
 
-use tokio::{task::JoinSet, time::sleep};
+use tokio::{task::JoinSet, time::{interval, sleep}};
 use transport::SecureTransport;
 
 const PRIVATE_KEY: [u8; 32] = [127, 93, 161, 223, 213, 211, 245, 80, 69, 165, 77, 133, 169, 40, 130, 112, 218, 255, 225, 74, 78, 69, 83, 20, 154, 244, 58, 224, 51, 34, 61, 102];
@@ -17,24 +17,23 @@ async fn main() -> anyhow::Result<()> {
         // let r = l.accept().await?;
         println!("A: connected to {:?}", r.peer_addr()?);
         let mut msg = [0; 30000];
-        let mut t = Instant::now();
-        let mut timeout = t + Duration::from_secs(5);
+        let mut int = interval(Duration::from_secs(5));
         let mut ctr = 0;
-        loop {
-            let len = r.recv(&mut msg).await?;
-            if len == 0 { break }
 
-            ctr += len;
-            let now = Instant::now();
-            if now > timeout {
-                let mbps = ctr as f64 * 8. / (1_000_000. * (now - t).as_secs_f64());
-                ctr = 0;
-                println!("A: {mbps} mbps");
-                t = now;
-                timeout = now + Duration::from_secs(5);
+        int.reset();
+        loop {
+            tokio::select! {
+                biased;
+                _ = int.tick() => {
+                    let mbps = ctr as f64 * 8. / (1_000_000. * int.period().as_secs_f64());
+                    ctr = 0;
+                    println!("A: {mbps} mbps");
+                }
+                len = r.recv(&mut msg) => {
+                    ctr += len?;
+                }
             }
         }
-        Ok::<(), anyhow::Error>(())
     });
 
     js.spawn(async {
