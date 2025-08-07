@@ -1042,7 +1042,9 @@ int CUDT::sendmsg(const char* data, int len, int msttl, bool inorder)
 
    if ((m_iSndBufSize - m_pSndBuffer->getCurrBufSize()) * m_iPayloadSize < len)
    {
-      throw CUDTException(6, 1, 0);
+      // r: hot path optimization.
+      return -6001;
+      // throw CUDTException(6, 1, 0);
    }
 
    // record total time used for sending
@@ -1083,8 +1085,11 @@ int CUDT::recvmsg(char* data, int len)
    }
 
    int res = m_pRcvBuffer->readMsg(data, len);
+
+   // r: hot path optimization. C++ exceptions are *really* slow.
    if (0 == res)
-      throw CUDTException(6, 2, 0);
+      return -6002;
+      //throw CUDTException(6, 2, 0);
    else
       return res;
 }

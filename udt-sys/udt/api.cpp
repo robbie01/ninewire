@@ -1443,7 +1443,19 @@ int CUDT::sendmsg(UDTSOCKET u, const char* buf, int len, int ttl, bool inorder)
    try
    {
       CUDT* udt = s_UDTUnited.lookup(u);
-      return udt->sendmsg(buf, len, ttl, inorder);
+      int res = udt->sendmsg(buf, len, ttl, inorder);
+
+      // r: hot path optimization.
+      if (res < 0) {
+         res = -res;
+         s_UDTUnited.setError(new CUDTException(
+            res / 1000,
+            res % 1000,
+            0
+         ));
+         return ERROR;
+      }
+      return res;
    }
    catch (CUDTException e)
    {
@@ -1467,7 +1479,19 @@ int CUDT::recvmsg(UDTSOCKET u, char* buf, int len)
    try
    {
       CUDT* udt = s_UDTUnited.lookup(u);
-      return udt->recvmsg(buf, len);
+      int res = udt->recvmsg(buf, len);
+
+      // r: hot path optimization. C++ exceptions are *really* slow.
+      if (res < 0) {
+         res = -res;
+         s_UDTUnited.setError(new CUDTException(
+            res / 1000,
+            res % 1000,
+            0
+         ));
+         return ERROR;
+      }
+      return res;
    }
    catch (CUDTException e)
    {
