@@ -36,7 +36,7 @@ impl RPoll {
                 ent.readable.notify_waiters();
             }
             if events.contains(Event::OUT) {
-                ent.readable.notify_waiters();
+                ent.writable.notify_waiters();
             }
         }
     }

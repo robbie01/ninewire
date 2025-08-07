@@ -9,3 +9,4 @@ snow = { version = "0.10", features = ["ring-accelerated"] }
 range-set = "0.0.13"
 parking_lot = "0.12"
 scc = "2.3"
+tracing.workspace = true

@@ -4,6 +4,7 @@ use parking_lot::Mutex;
 use range_set::RangeSet;
 use scc::Bag;
 use snow::StatelessTransportState;
+use tracing::trace;
 use udt::{Connection, Endpoint};
 
 #[derive(Debug)]
@@ -123,5 +124,11 @@ impl SecureTransport {
 
     pub fn flush(&self) -> impl Future<Output = io::Result<()>> {
         self.inner.flush()
+    }
+}
+
+impl Drop for SecureTransport {
+    fn drop(&mut self) {
+        trace!(name: "closed", num_buffers = self.buffers.len());
     }
 }

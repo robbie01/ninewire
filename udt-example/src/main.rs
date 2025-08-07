@@ -1,6 +1,6 @@
 use std::{sync::Arc, time::{Duration, Instant}};
 
-use tokio::{task::JoinSet, time::{sleep, timeout}};
+use tokio::{task::JoinSet, time::sleep};
 use transport::SecureTransport;
 
 const PRIVATE_KEY: [u8; 32] = [127, 93, 161, 223, 213, 211, 245, 80, 69, 165, 77, 133, 169, 40, 130, 112, 218, 255, 225, 74, 78, 69, 83, 20, 154, 244, 58, 224, 51, 34, 61, 102];
@@ -45,12 +45,8 @@ async fn main() -> anyhow::Result<()> {
         // let c = l.connect_datagram("[::1]:25583".parse()?, false).await?;
         println!("B: connected to {:?}", c.peer_addr()?);
 
-        // NOTE: at high sending rates, writable won't fire off correctly.
-        // By timing out sends, we can force a recheck.
         loop {
-            if let Ok(r) = timeout(Duration::from_micros(1), c.send_with(&[b'o'; 1192], true)).await {
-                r?;
-            }
+            c.send_with(&[b'o'; 1192], true).await?;
         }
         #[allow(unreachable_code)]
         Ok::<(), anyhow::Error>(())
