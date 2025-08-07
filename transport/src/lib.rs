@@ -1,4 +1,4 @@
-use std::{io, net::SocketAddr, ops::RangeInclusive, sync::{atomic::{AtomicU64, Ordering}, Arc}};
+use std::{future::ready, io, net::SocketAddr, ops::RangeInclusive, sync::{atomic::{AtomicU64, Ordering}, Arc}};
 
 use parking_lot::Mutex;
 use range_set::RangeSet;
@@ -121,6 +121,7 @@ impl SecureTransport {
     }
 
     pub fn flush(&self) -> impl Future<Output = io::Result<()>> {
-        self.inner.flush()
+        // TODO: implement a proper flush (i.e. wait until UDT_SNDDATA is zero)
+        ready(Ok(()))
     }
 }

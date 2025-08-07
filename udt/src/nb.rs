@@ -109,9 +109,4 @@ impl DatagramConnection {
     pub async fn send(&self, buf: &[u8]) -> io::Result<usize> {
         self.send_with(buf, None, true).await
     }
-
-    pub async fn flush(&self) -> io::Result<()> {
-        let inner = self.0.clone();
-        spawn_blocking(move || inner.flush()).await.unwrap()
-    }
 }

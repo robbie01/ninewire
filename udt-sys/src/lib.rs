@@ -224,7 +224,6 @@ mod ffi {
         unsafe fn listen(u: Socket, backlog: i32) -> i32;
         unsafe fn accept(u: Socket, addr: *mut sockaddr, addrlen: *mut i32) -> Socket;
         unsafe fn connect(u: Socket, name: *const sockaddr, namelen: i32) -> i32;
-        unsafe fn flush(u: Socket) -> i32;
         unsafe fn close(u: Socket) -> i32;
         unsafe fn getpeername(u: Socket, name: *mut sockaddr, namelen: *mut i32) -> i32;
         unsafe fn getsockname(u: Socket, name: *mut sockaddr, namelen: *mut i32) -> i32;
