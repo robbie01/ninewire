@@ -5,13 +5,13 @@ use tokio::task::spawn_blocking;
 use crate::util::udt_getlasterror;
 
 #[derive(Debug)]
-pub struct DatagramConnection(Arc<super::DatagramConnection>);
+pub struct DatagramConnection(super::DatagramConnection);
 
 impl super::Endpoint {
     pub async fn connect_datagram_async(self: &Arc<Self>, addr: SocketAddr, rendezvous: bool) -> io::Result<DatagramConnection> {
         let inner = self.clone();
         let con = spawn_blocking(move || inner.connect_datagram(addr, rendezvous)).await.unwrap()
-            .map(|c| DatagramConnection(c.into()))?;
+            .map(|c| DatagramConnection(c))?;
 
         let syn = false;
         let res = unsafe { udt_sys::setsockopt(

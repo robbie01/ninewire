@@ -483,33 +483,6 @@ const std::string &CUDTException::getErrorMessage()
 
         break;
 
-      case 4:
-        m_strMsg = "File system failure";
-
-        switch (m_iMinor)
-        {
-        case 1:
-           m_strMsg += ": cannot seek read position";
-           break;
-
-        case 2:
-           m_strMsg += ": failure in read";
-           break;
-
-        case 3:
-           m_strMsg += ": cannot seek write position";
-           break;
-
-        case 4:
-           m_strMsg += ": failure in write";
-           break;
-
-        default:
-           break;
-        }
-
-        break;
-
       case 5:
         m_strMsg = "Operation not supported";
 
@@ -563,10 +536,6 @@ const std::string &CUDTException::getErrorMessage()
            m_strMsg += ": Message is too large to send (it must be less than the UDT send buffer size)";
            break;
 
-        case 13:
-           m_strMsg += ": Invalid epoll ID";
-           break;
-
         default:
            break;
         }
@@ -589,11 +558,6 @@ const std::string &CUDTException::getErrorMessage()
         default:
            break;
         }
-
-        break;
-
-     case 7:
-        m_strMsg = "The peer side has signalled an error";
 
         break;
 
@@ -643,17 +607,10 @@ const int CUDTException::ENOSERVER = 1001;
 const int CUDTException::ECONNREJ = 1002;
 const int CUDTException::ESOCKFAIL = 1003;
 const int CUDTException::ESECFAIL = 1004;
-const int CUDTException::ECONNFAIL = 2000;
 const int CUDTException::ECONNLOST = 2001;
 const int CUDTException::ENOCONN = 2002;
-const int CUDTException::ERESOURCE = 3000;
 const int CUDTException::ETHREAD = 3001;
 const int CUDTException::ENOBUF = 3002;
-const int CUDTException::EFILE = 4000;
-const int CUDTException::EINVRDOFF = 4001;
-const int CUDTException::ERDPERM = 4002;
-const int CUDTException::EINVWROFF = 4003;
-const int CUDTException::EWRPERM = 4004;
 const int CUDTException::EINVOP = 5000;
 const int CUDTException::EBOUNDSOCK = 5001;
 const int CUDTException::ECONNSOCK = 5002;
@@ -667,11 +624,8 @@ const int CUDTException::ESTREAMILL = 5009;
 const int CUDTException::EDGRAMILL = 5010;
 const int CUDTException::EDUPLISTEN = 5011;
 const int CUDTException::ELARGEMSG = 5012;
-const int CUDTException::EINVPOLLID = 5013;
-const int CUDTException::EASYNCFAIL = 6000;
 const int CUDTException::EASYNCSND = 6001;
 const int CUDTException::EASYNCRCV = 6002;
-const int CUDTException::ETIMEOUT = 6003;
 const int CUDTException::EPEERERR = 7000;
 const int CUDTException::EUNKNOWN = -1;
 

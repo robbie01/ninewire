@@ -40,8 +40,8 @@ pub const ECONNREJ: i32 = 1002;
 pub const ESECFAIL: i32 = 1004;
 pub const ECONNLOST: i32 = 2001;
 pub const ENOCONN: i32 = 2002;
-pub const EFILE: i32 = 4000;
-pub const EINVOP: i32 = 4000;
+pub const EINVOP: i32 = 5000;
+pub const EBOUNDSOCK: i32 = 5001;
 pub const ECONNSOCK: i32 = 5002;
 pub const EINVPARAM: i32 = 5003;
 pub const EINVSOCK: i32 = 5004;
@@ -52,10 +52,8 @@ pub const ERDVUNBOUND: i32 = 5008;
 pub const ESTREAMILL: i32 = 5009;
 pub const EDGRAMILL: i32 = 5010;
 pub const ELARGEMSG: i32 = 5012;
-pub const EINVPOLLID: i32 = 5013;
 pub const EASYNCSND: i32 = 6001;
 pub const EASYNCRCV: i32 = 6002;
-pub const ETIMEOUT: i32 = 6003;
 pub const EPEERERR: i32 = 7000;
 
 fn new_rpoll() -> Box<RPoll> {
