@@ -78,13 +78,13 @@ public:
    std::set<UDTSOCKET>* m_pQueuedSockets;    // set of connections waiting for accept()
    std::set<UDTSOCKET>* m_pAcceptSockets;    // set of accept()ed connections
 
-   udt_pthread_mutex_t m_AcceptLock;             // mutex associated to m_AcceptCond
+   std::mutex m_AcceptLock;             // mutex associated to m_AcceptCond
 
    unsigned int m_uiBackLog;                 // maximum number of connections in queue
 
    int m_iMuxID;                             // multiplexer ID
 
-   udt_pthread_mutex_t m_ControlLock;            // lock this socket exclusively for control APIs: bind/listen/connect
+   std::mutex m_ControlLock;            // lock this socket exclusively for control APIs: bind/listen/connect
 
 private:
    CUDTSocket(const CUDTSocket&);
@@ -199,9 +199,9 @@ private:
 private:
    std::map<UDTSOCKET, CUDTSocket*> m_Sockets;       // stores all the socket structures
 
-   udt_pthread_mutex_t m_ControlLock;                // used to synchronize UDT API
+   std::mutex m_ControlLock;                // used to synchronize UDT API
 
-   udt_pthread_mutex_t m_IDLock;                     // used to synchronize ID generation
+   std::mutex m_IDLock;                     // used to synchronize ID generation
    UDTSOCKET m_SocketID;                             // seed to generate a new unique socket ID
 
    std::map<int64_t, std::set<UDTSOCKET> > m_PeerRec;// record sockets from peers to avoid repeated connection request, int64_t = (socker_id << 30) + isn
@@ -213,7 +213,7 @@ private:
    #else
       std::map<DWORD, CUDTException*> m_mTLSRecord;
       void checkTLSValue();
-      udt_pthread_mutex_t m_TLSLock;
+      std::mutex m_TLSLock;
    #endif
 
 private:
@@ -225,17 +225,17 @@ private:
 
 private:
    std::map<int, CMultiplexer> m_mMultiplexer;		// UDP multiplexer
-   udt_pthread_mutex_t m_MultiplexerLock;
+   std::mutex m_MultiplexerLock;
 
 private:
    std::unique_ptr<CCache<CInfoBlock>> m_pCache;			// UDT network information cache
 
 private:
    volatile bool m_bClosing;
-   udt_pthread_mutex_t m_GCStopLock;
-   udt_pthread_cond_t m_GCStopCond;
+   std::mutex m_GCStopLock;
+   std::condition_variable m_GCStopCond;
 
-   udt_pthread_mutex_t m_InitLock;
+   std::mutex m_InitLock;
    int m_iInstanceCount;				// number of startup() called by application
    bool m_bGCStatus;					// if the GC thread is working (true)
 

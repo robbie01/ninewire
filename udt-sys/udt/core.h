@@ -303,12 +303,12 @@ private: // Receiving related data
    int32_t m_iPeerISN;                          // Initial Sequence Number of the peer side
 
 private: // synchronization: mutexes and conditions
-   udt_pthread_mutex_t m_ConnectionLock;            // used to synchronize connection operation
+   std::mutex m_ConnectionLock;            // used to synchronize connection operation
 
-   udt_pthread_mutex_t m_AckLock;                   // used to protected sender's loss list when processing ACK
+   std::mutex m_AckLock;                   // used to protected sender's loss list when processing ACK
 
-   udt_pthread_mutex_t m_SendLock;                  // used to synchronize "send" call
-   udt_pthread_mutex_t m_RecvLock;                  // used to synchronize "recv" call
+   std::mutex m_SendLock;                  // used to synchronize "send" call
+   std::mutex m_RecvLock;                  // used to synchronize "recv" call
 
    void initSynch();
    void destroySynch();

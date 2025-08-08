@@ -231,26 +231,16 @@ m_pWindowCond(NULL),
 m_pTimer(NULL)
 {
    m_pHeap = new CSNode*[m_iArrayLength];
-
-   #ifndef WINDOWS
-      pthread_mutex_init(&m_ListLock, NULL);
-   #else
-      InitializeSRWLock(&m_ListLock);
-   #endif
 }
 
 CSndUList::~CSndUList()
 {
    delete [] m_pHeap;
-
-   #ifndef WINDOWS
-      pthread_mutex_destroy(&m_ListLock);
-   #endif
 }
 
 void CSndUList::insert(int64_t ts, const CUDT* u)
 {
-   CGuard listguard(m_ListLock);
+   std::lock_guard<std::mutex> listguard(m_ListLock);
 
    // increase the heap array size if necessary
    if (m_iLastEntry == m_iArrayLength - 1)
@@ -277,7 +267,7 @@ void CSndUList::insert(int64_t ts, const CUDT* u)
 
 void CSndUList::update(const CUDT* u, bool reschedule)
 {
-   CGuard listguard(m_ListLock);
+   std::lock_guard<std::mutex> listguard(m_ListLock);
 
    CSNode* n = u->m_pSNode;
 
@@ -301,7 +291,7 @@ void CSndUList::update(const CUDT* u, bool reschedule)
 
 int CSndUList::pop(sockaddr*& addr, CPacket& pkt)
 {
-   CGuard listguard(m_ListLock);
+   std::lock_guard<std::mutex> listguard(m_ListLock);
 
    if (-1 == m_iLastEntry)
       return -1;
@@ -333,14 +323,14 @@ int CSndUList::pop(sockaddr*& addr, CPacket& pkt)
 
 void CSndUList::remove(const CUDT* u)
 {
-   CGuard listguard(m_ListLock);
+   std::lock_guard<std::mutex> listguard(m_ListLock);
 
    remove_(u);
 }
 
 uint64_t CSndUList::getNextProcTime()
 {
-   CGuard listguard(m_ListLock);
+   std::lock_guard<std::mutex> listguard(m_ListLock);
 
    if (-1 == m_iLastEntry)
       return 0;
@@ -386,13 +376,7 @@ void CSndUList::insert_(int64_t ts, const CUDT* u)
    // first entry, activate the sending queue
    if (0 == m_iLastEntry)
    {
-      #ifndef WINDOWS
-         pthread_mutex_lock(m_pWindowLock);
-         pthread_cond_signal(m_pWindowCond);
-         pthread_mutex_unlock(m_pWindowLock);
-      #else
-         WakeConditionVariable(m_pWindowCond);
-      #endif
+      m_pWindowCond->notify_one();
    }
 }
 
@@ -446,30 +430,17 @@ m_pTimer(NULL),
 m_WindowLock(),
 m_WindowCond(),
 m_bClosing(false)
-{
-   #ifndef WINDOWS
-      pthread_cond_init(&m_WindowCond, NULL);
-      pthread_mutex_init(&m_WindowLock, NULL);
-   #else
-      InitializeSRWLock(&m_WindowLock);
-      InitializeConditionVariable(&m_WindowCond);
-   #endif
-}
+{}
 
 CSndQueue::~CSndQueue()
 {
    m_bClosing = true;
 
+   m_WindowCond.notify_one();
    #ifndef WINDOWS
-      pthread_mutex_lock(&m_WindowLock);
-      pthread_cond_signal(&m_WindowCond);
-      pthread_mutex_unlock(&m_WindowLock);
       if (0 != m_WorkerThread)
          pthread_join(m_WorkerThread, NULL);
-      pthread_cond_destroy(&m_WindowCond);
-      pthread_mutex_destroy(&m_WindowLock);
    #else
-      WakeConditionVariable(&m_WindowCond);
       if (NULL != m_WorkerThread)
          WaitForSingleObject(m_WorkerThread, INFINITE);
       CloseHandle(m_WorkerThread);
@@ -533,15 +504,10 @@ void CSndQueue::init(CChannel* c, CTimer* t)
       {
          // wait here if there is no sockets with data to be sent
 
-         CGuard guard(self->m_WindowLock);
+         std::unique_lock<std::mutex> guard(self->m_WindowLock);
 
-         #ifndef WINDOWS
-            if (!self->m_bClosing && (self->m_pSndUList->m_iLastEntry < 0))
-               pthread_cond_wait(&self->m_WindowCond, &self->m_WindowLock);
-         #else
-            if (!self->m_bClosing && (self->m_pSndUList->m_iLastEntry < 0))
-               SleepConditionVariableSRW(&self->m_WindowCond, &self->m_WindowLock, INFINITE, 0);
-         #endif
+         if (!self->m_bClosing && (self->m_pSndUList->m_iLastEntry < 0))
+            self->m_WindowCond.wait(guard);
       }
    }
 
@@ -742,20 +708,10 @@ void CHash::remove(int32_t id)
 CRendezvousQueue::CRendezvousQueue():
 m_lRendezvousID(),
 m_RIDVectorLock()
-{
-   #ifndef WINDOWS
-      pthread_mutex_init(&m_RIDVectorLock, NULL);
-   #else
-      InitializeSRWLock(&m_RIDVectorLock);
-   #endif
-}
+{}
 
 CRendezvousQueue::~CRendezvousQueue()
 {
-   #ifndef WINDOWS
-      pthread_mutex_destroy(&m_RIDVectorLock);
-   #endif
-
    for (list<CRL>::iterator i = m_lRendezvousID.begin(); i != m_lRendezvousID.end(); ++ i)
    {
       if (AF_INET == i->m_iIPversion)
@@ -769,7 +725,7 @@ CRendezvousQueue::~CRendezvousQueue()
 
 void CRendezvousQueue::insert(const UDTSOCKET& id, CUDT* u, int ipv, const sockaddr* addr, uint64_t ttl)
 {
-   CGuard vg(m_RIDVectorLock);
+   std::lock_guard<std::mutex> vg(m_RIDVectorLock);
 
    CRL r;
    r.m_iID = id;
@@ -784,7 +740,7 @@ void CRendezvousQueue::insert(const UDTSOCKET& id, CUDT* u, int ipv, const socka
 
 void CRendezvousQueue::remove(const UDTSOCKET& id)
 {
-   CGuard vg(m_RIDVectorLock);
+   std::lock_guard<std::mutex> vg(m_RIDVectorLock);
 
    for (list<CRL>::iterator i = m_lRendezvousID.begin(); i != m_lRendezvousID.end(); ++ i)
    {
@@ -804,7 +760,7 @@ void CRendezvousQueue::remove(const UDTSOCKET& id)
 
 CUDT* CRendezvousQueue::retrieve(const sockaddr* addr, UDTSOCKET& id)
 {
-   CGuard vg(m_RIDVectorLock);
+   std::lock_guard<std::mutex> vg(m_RIDVectorLock);
 
    // TODO: optimize search
    for (list<CRL>::iterator i = m_lRendezvousID.begin(); i != m_lRendezvousID.end(); ++ i)
@@ -824,7 +780,7 @@ void CRendezvousQueue::updateConnStatus()
    if (m_lRendezvousID.empty())
       return;
 
-   CGuard vg(m_RIDVectorLock);
+   std::lock_guard<std::mutex> vg(m_RIDVectorLock);
 
    for (list<CRL>::iterator i = m_lRendezvousID.begin(); i != m_lRendezvousID.end(); ++ i)
    {
@@ -872,19 +828,7 @@ m_IDLock(),
 m_mBuffer(),
 m_PassLock(),
 m_PassCond()
-{
-   #ifndef WINDOWS
-      pthread_mutex_init(&m_PassLock, NULL);
-      pthread_cond_init(&m_PassCond, NULL);
-      pthread_mutex_init(&m_LSLock, NULL);
-      pthread_mutex_init(&m_IDLock, NULL);
-   #else
-      InitializeSRWLock(&m_PassLock);
-      InitializeConditionVariable(&m_PassCond);
-      InitializeSRWLock(&m_LSLock);
-      InitializeSRWLock(&m_IDLock);
-   #endif
-}
+{}
 
 CRcvQueue::~CRcvQueue()
 {
@@ -893,10 +837,6 @@ CRcvQueue::~CRcvQueue()
    #ifndef WINDOWS
       if (0 != m_WorkerThread)
          pthread_join(m_WorkerThread, NULL);
-      pthread_mutex_destroy(&m_PassLock);
-      pthread_cond_destroy(&m_PassCond);
-      pthread_mutex_destroy(&m_LSLock);
-      pthread_mutex_destroy(&m_IDLock);
    #else
       if (NULL != m_WorkerThread)
          WaitForSingleObject(m_WorkerThread, INFINITE);
@@ -1085,23 +1025,13 @@ TIMER_CHECK:
 
 int CRcvQueue::recvfrom(int32_t id, CPacket& packet)
 {
-   CGuard bufferlock(m_PassLock);
+   std::unique_lock<std::mutex> bufferlock(m_PassLock);
 
    map<int32_t, std::queue<CPacket*> >::iterator i = m_mBuffer.find(id);
 
    if (i == m_mBuffer.end())
    {
-      #ifndef WINDOWS
-         uint64_t now = CTimer::getTime();
-         timespec timeout;
-
-         timeout.tv_sec = now / 1000000 + 1;
-         timeout.tv_nsec = (now % 1000000) * 1000;
-
-         pthread_cond_timedwait(&m_PassCond, &m_PassLock, &timeout);
-      #else
-         SleepConditionVariableSRW(&m_PassCond, &m_PassLock, 1000, 0);
-      #endif
+      m_PassCond.wait_for(bufferlock, std::chrono::seconds(1));
 
       i = m_mBuffer.find(id);
       if (i == m_mBuffer.end())
@@ -1139,7 +1069,7 @@ int CRcvQueue::recvfrom(int32_t id, CPacket& packet)
 
 int CRcvQueue::setListener(CUDT* u)
 {
-   CGuard lslock(m_LSLock);
+   std::lock_guard<std::mutex> lslock(m_LSLock);
 
    if (NULL != m_pListener)
       return -1;
@@ -1150,7 +1080,7 @@ int CRcvQueue::setListener(CUDT* u)
 
 void CRcvQueue::removeListener(const CUDT* u)
 {
-   CGuard lslock(m_LSLock);
+   std::lock_guard<std::mutex> lslock(m_LSLock);
 
    if (u == m_pListener)
       m_pListener = NULL;
@@ -1165,7 +1095,7 @@ void CRcvQueue::removeConnector(const UDTSOCKET& id)
 {
    m_pRendezvousQueue->remove(id);
 
-   CGuard bufferlock(m_PassLock);
+   std::lock_guard<std::mutex> bufferlock(m_PassLock);
 
    map<int32_t, std::queue<CPacket*> >::iterator i = m_mBuffer.find(id);
    if (i != m_mBuffer.end())
@@ -1182,7 +1112,7 @@ void CRcvQueue::removeConnector(const UDTSOCKET& id)
 
 void CRcvQueue::setNewEntry(CUDT* u)
 {
-   CGuard listguard(m_IDLock);
+   std::lock_guard<std::mutex> listguard(m_IDLock);
    m_vNewEntry.push_back(u);
 }
 
@@ -1193,7 +1123,7 @@ bool CRcvQueue::ifNewEntry()
 
 CUDT* CRcvQueue::getNewEntry()
 {
-   CGuard listguard(m_IDLock);
+   std::lock_guard<std::mutex> listguard(m_IDLock);
 
    if (m_vNewEntry.empty())
       return NULL;
@@ -1206,7 +1136,7 @@ CUDT* CRcvQueue::getNewEntry()
 
 void CRcvQueue::storePkt(int32_t id, CPacket* pkt)
 {
-   CGuard bufferlock(m_PassLock);
+   std::lock_guard<std::mutex> bufferlock(m_PassLock);
 
    map<int32_t, std::queue<CPacket*> >::iterator i = m_mBuffer.find(id);
 
@@ -1214,11 +1144,7 @@ void CRcvQueue::storePkt(int32_t id, CPacket* pkt)
    {
       m_mBuffer[id].push(pkt);
 
-      #ifndef WINDOWS
-         pthread_cond_signal(&m_PassCond);
-      #else
-         WakeConditionVariable(&m_PassCond);
-      #endif
+      m_PassCond.notify_one();
    }
    else
    {

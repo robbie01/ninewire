@@ -54,6 +54,8 @@ written by
    #include <ws2tcpip.h>
    #include <windows.h>
 #endif
+#include <mutex>
+#include <condition_variable>
 #include <cstdlib>
 #include "udt.h"
 
@@ -61,14 +63,10 @@ written by
 #ifdef WINDOWS
     // Windows compatibility
     typedef HANDLE udt_pthread_t;
-    typedef SRWLOCK udt_pthread_mutex_t;
-    typedef CONDITION_VARIABLE udt_pthread_cond_t;
     typedef DWORD udt_pthread_key_t;
     typedef HANDLE udt_event_t;
 #else
     typedef pthread_t udt_pthread_t;
-    typedef pthread_mutex_t udt_pthread_mutex_t;
-    typedef pthread_cond_t udt_pthread_cond_t;
     typedef pthread_key_t udt_pthread_key_t;
 #ifdef MACOSX
     typedef dispatch_semaphore_t udt_event_t;
@@ -175,31 +173,6 @@ private:
    static uint64_t readCPUFrequency();
    static bool m_bUseMicroSecond;       // No higher resolution timer available, use gettimeofday().
 };
-
-////////////////////////////////////////////////////////////////////////////////
-
-class CGuard
-{
-public:
-   CGuard(udt_pthread_mutex_t& lock);
-   ~CGuard();
-
-   CGuard(const CGuard&) = delete;
-   CGuard& operator=(const CGuard&) = delete;
-
-public:
-   static void createMutex(udt_pthread_mutex_t& lock);
-   static void releaseMutex(udt_pthread_mutex_t& lock);
-
-   static void createCond(udt_pthread_cond_t& cond);
-   static void releaseCond(udt_pthread_cond_t& cond);
-
-private:
-   udt_pthread_mutex_t& m_Mutex;        // Alias name of the mutex to be protected
-   unsigned int m_iLocked;              // Locking status
-};
-
-
 
 ////////////////////////////////////////////////////////////////////////////////
 

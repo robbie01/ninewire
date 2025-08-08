@@ -53,6 +53,7 @@
         "span": "cpp",
         "sstream": "cpp",
         "stack": "cpp",
-        "*.rs": "rust"
+        "*.rs": "rust",
+        "condition_variable": "cpp"
     }
 }

@@ -303,64 +303,8 @@ void CTimer::sleep()
    #endif
 }
 
-
 //
-// Automatically lock in constructor
-CGuard::CGuard(udt_pthread_mutex_t& lock):
-m_Mutex(lock),
-m_iLocked()
-{
-   #ifndef WINDOWS
-      m_iLocked = pthread_mutex_lock(&m_Mutex);
-   #else
-      AcquireSRWLockExclusive(&m_Mutex);
-   #endif
-}
 
-// Automatically unlock in destructor
-CGuard::~CGuard()
-{
-   #ifndef WINDOWS
-      if (0 == m_iLocked)
-         pthread_mutex_unlock(&m_Mutex);
-   #else
-      ReleaseSRWLockExclusive(&m_Mutex);
-   #endif
-}
-
-void CGuard::createMutex(udt_pthread_mutex_t& lock)
-{
-   #ifndef WINDOWS
-      pthread_mutex_init(&lock, NULL);
-   #else
-      InitializeSRWLock(&lock);
-   #endif
-}
-
-void CGuard::releaseMutex(udt_pthread_mutex_t& lock)
-{
-   #ifndef WINDOWS
-      pthread_mutex_destroy(&lock);
-   #endif
-}
-
-void CGuard::createCond(udt_pthread_cond_t& cond)
-{
-   #ifndef WINDOWS
-      pthread_cond_init(&cond, NULL);
-   #else
-      InitializeConditionVariable(&cond);
-   #endif
-}
-
-void CGuard::releaseCond(udt_pthread_cond_t& cond)
-{
-   #ifndef WINDOWS
-      pthread_cond_destroy(&cond);
-   #endif
-}
-
-//
 CUDTException::CUDTException(int major, int minor, int err):
 m_iMajor(major),
 m_iMinor(minor)

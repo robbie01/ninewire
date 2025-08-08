@@ -67,15 +67,7 @@ m_pAcceptSockets(NULL),
 m_AcceptLock(),
 m_uiBackLog(0),
 m_iMuxID(-1)
-{
-   #ifndef WINDOWS
-      pthread_mutex_init(&m_AcceptLock, NULL);
-      pthread_mutex_init(&m_ControlLock, NULL);
-   #else
-      InitializeSRWLock(&m_AcceptLock);
-      InitializeSRWLock(&m_ControlLock);
-   #endif
-}
+{}
 
 CUDTSocket::~CUDTSocket()
 {
@@ -95,11 +87,6 @@ CUDTSocket::~CUDTSocket()
 
    delete m_pQueuedSockets;
    delete m_pAcceptSockets;
-
-   #ifndef WINDOWS
-      pthread_mutex_destroy(&m_AcceptLock);
-      pthread_mutex_destroy(&m_ControlLock);
-   #endif
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -127,20 +114,9 @@ m_ClosedSockets()
    m_SocketID = 1 + (int)((1 << 30) * (double(rand()) / RAND_MAX));
 
    #ifndef WINDOWS
-      pthread_mutex_init(&m_ControlLock, NULL);
-      pthread_mutex_init(&m_IDLock, NULL);
-      pthread_mutex_init(&m_InitLock, NULL);
-   #else
-      InitializeSRWLock(&m_ControlLock);
-      InitializeSRWLock(&m_IDLock);
-      InitializeSRWLock(&m_InitLock);
-   #endif
-
-   #ifndef WINDOWS
       pthread_key_create(&m_TLSError, TLSDestroy);
    #else
       m_TLSError = TlsAlloc();
-      InitializeSRWLock(&m_TLSLock);
    #endif
 
    m_pCache = std::make_unique<CCache<CInfoBlock>>();
@@ -148,12 +124,6 @@ m_ClosedSockets()
 
 CUDTUnited::~CUDTUnited()
 {
-   #ifndef WINDOWS
-      pthread_mutex_destroy(&m_ControlLock);
-      pthread_mutex_destroy(&m_IDLock);
-      pthread_mutex_destroy(&m_InitLock);
-   #endif
-
    #ifndef WINDOWS
       pthread_key_delete(m_TLSError);
    #else
@@ -163,7 +133,7 @@ CUDTUnited::~CUDTUnited()
 
 int CUDTUnited::startup()
 {
-   CGuard gcinit(m_InitLock);
+   std::lock_guard<std::mutex> gcinit(m_InitLock);
 
    if (m_iInstanceCount++ > 0)
       return 0;
@@ -183,12 +153,8 @@ int CUDTUnited::startup()
 
    m_bClosing = false;
    #ifndef WINDOWS
-      pthread_mutex_init(&m_GCStopLock, NULL);
-      pthread_cond_init(&m_GCStopCond, NULL);
       pthread_create(&m_GCThread, NULL, garbageCollect, this);
    #else
-      InitializeSRWLock(&m_GCStopLock);
-      InitializeConditionVariable(&m_GCStopCond);
       DWORD ThreadID;
       m_GCThread = CreateThread(NULL, 0, garbageCollect, this, 0, &ThreadID);
    #endif
@@ -200,7 +166,7 @@ int CUDTUnited::startup()
 
 int CUDTUnited::cleanup()
 {
-   CGuard gcinit(m_InitLock);
+   std::lock_guard<std::mutex> gcinit(m_InitLock);
 
    if (--m_iInstanceCount > 0)
       return 0;
@@ -209,13 +175,10 @@ int CUDTUnited::cleanup()
       return 0;
 
    m_bClosing = true;
+   m_GCStopCond.notify_one();
    #ifndef WINDOWS
-      pthread_cond_signal(&m_GCStopCond);
       pthread_join(m_GCThread, NULL);
-      pthread_mutex_destroy(&m_GCStopLock);
-      pthread_cond_destroy(&m_GCStopCond);
    #else
-      WakeConditionVariable(&m_GCStopCond);
       WaitForSingleObject(m_GCThread, INFINITE);
       CloseHandle(m_GCThread);
    #endif
@@ -259,7 +222,7 @@ UDTSOCKET CUDTUnited::newSocket(int af, int type)
    }
 
    {
-      CGuard guard(m_IDLock);
+      std::lock_guard<std::mutex> guard(m_IDLock);
       ns->m_SocketID = -- m_SocketID;
    }
 
@@ -273,7 +236,7 @@ UDTSOCKET CUDTUnited::newSocket(int af, int type)
    try
    {
       // protect the m_Sockets structure.
-      CGuard guard(m_ControlLock);
+      std::lock_guard<std::mutex> guard(m_ControlLock);
       m_Sockets[ns->m_SocketID] = ns;
    }
    catch (...)
@@ -306,7 +269,7 @@ int CUDTUnited::newConnection(const UDTSOCKET listener, const sockaddr* peer, CH
          ns->m_Status = CLOSED;
          ns->m_TimeStamp = CTimer::getTime();
 
-         CGuard guard(ls->m_AcceptLock);
+         std::lock_guard<std::mutex> guard(ls->m_AcceptLock);
          ls->m_pQueuedSockets->erase(ns->m_SocketID);
          ls->m_pAcceptSockets->erase(ns->m_SocketID);
       }
@@ -357,7 +320,7 @@ int CUDTUnited::newConnection(const UDTSOCKET listener, const sockaddr* peer, CH
    }
 
    {
-      CGuard guard(m_IDLock);
+      std::lock_guard<std::mutex> guard(m_IDLock);
       ns->m_SocketID = -- m_SocketID;
    }
 
@@ -390,7 +353,7 @@ int CUDTUnited::newConnection(const UDTSOCKET listener, const sockaddr* peer, CH
 
    {
       // protect the m_Sockets structure.
-      CGuard guard(m_ControlLock);
+      std::lock_guard<std::mutex> guard(m_ControlLock);
       try
       {
          m_Sockets[ns->m_SocketID] = ns;
@@ -405,7 +368,7 @@ int CUDTUnited::newConnection(const UDTSOCKET listener, const sockaddr* peer, CH
    {
       try
       {
-         CGuard guard(ls->m_AcceptLock);
+         std::lock_guard<std::mutex> guard(ls->m_AcceptLock);
          ls->m_pQueuedSockets->insert(ns->m_SocketID);
       }
       catch (...)
@@ -433,7 +396,7 @@ int CUDTUnited::newConnection(const UDTSOCKET listener, const sockaddr* peer, CH
 CUDT* CUDTUnited::lookup(const UDTSOCKET u)
 {
    // protects the m_Sockets structure
-   CGuard cg(m_ControlLock);
+   std::lock_guard<std::mutex> cg(m_ControlLock);
 
    map<UDTSOCKET, CUDTSocket*>::iterator i = m_Sockets.find(u);
 
@@ -446,7 +409,7 @@ CUDT* CUDTUnited::lookup(const UDTSOCKET u)
 UDTSTATUS CUDTUnited::getStatus(const UDTSOCKET u)
 {
    // protects the m_Sockets structure
-   CGuard cg(m_ControlLock);
+   std::lock_guard<std::mutex> cg(m_ControlLock);
 
    map<UDTSOCKET, CUDTSocket*>::iterator i = m_Sockets.find(u);
 
@@ -470,7 +433,7 @@ int CUDTUnited::bind(const UDTSOCKET u, const sockaddr* name, int namelen)
    if (NULL == s)
       throw CUDTException(5, 4, 0);
 
-   CGuard cg(s->m_ControlLock);
+   std::lock_guard<std::mutex> cg(s->m_ControlLock);
 
    // cannot bind a socket more than once
    if (INIT != s->m_Status)
@@ -504,7 +467,7 @@ int CUDTUnited::listen(const UDTSOCKET u, int backlog)
    if (NULL == s)
       throw CUDTException(5, 4, 0);
 
-   CGuard cg(s->m_ControlLock);
+   std::lock_guard<std::mutex> cg(s->m_ControlLock);
 
    // do nothing if the socket is already listening
    if (LISTENING == s->m_Status)
@@ -565,7 +528,7 @@ UDTSOCKET CUDTUnited::accept(const UDTSOCKET listener, sockaddr* addr, int* addr
    // !!only one conection can be set up each time!!
 
    {
-      CGuard guard(ls->m_AcceptLock);
+      std::lock_guard<std::mutex> guard(ls->m_AcceptLock);
       if (ls->m_pQueuedSockets->size() > 0)
       {
          u = *(ls->m_pQueuedSockets->begin());
@@ -600,7 +563,7 @@ int CUDTUnited::connect(const UDTSOCKET u, const sockaddr* name, int namelen)
    if (NULL == s)
       throw CUDTException(5, 4, 0);
 
-   CGuard cg(s->m_ControlLock);
+   std::lock_guard<std::mutex> cg(s->m_ControlLock);
 
    // check the size of SOCKADDR structure
    if (AF_INET == s->m_iIPversion)
@@ -680,7 +643,7 @@ int CUDTUnited::close(const UDTSOCKET u)
    if (NULL == s)
       throw CUDTException(5, 4, 0);
 
-   CGuard socket_cg(s->m_ControlLock);
+   std::lock_guard<std::mutex> socket_cg(s->m_ControlLock);
 
    if (s->m_Status == LISTENING)
    {
@@ -696,7 +659,7 @@ int CUDTUnited::close(const UDTSOCKET u)
    s->m_pUDT->close();
 
    // synchronize with garbage collection.
-   CGuard manager_cg(m_ControlLock);
+   std::lock_guard<std::mutex> manager_cg(m_ControlLock);
 
    // since "s" is located before m_ControlLock, locate it again in case it became invalid
    map<UDTSOCKET, CUDTSocket*>::iterator i = m_Sockets.find(u);
@@ -767,7 +730,7 @@ int CUDTUnited::getsockname(const UDTSOCKET u, sockaddr* name, int* namelen)
 
 CUDTSocket* CUDTUnited::locate(const UDTSOCKET u)
 {
-   CGuard cg(m_ControlLock);
+   std::lock_guard<std::mutex> cg(m_ControlLock);
 
    map<UDTSOCKET, CUDTSocket*>::iterator i = m_Sockets.find(u);
 
@@ -779,7 +742,7 @@ CUDTSocket* CUDTUnited::locate(const UDTSOCKET u)
 
 CUDTSocket* CUDTUnited::locate(const sockaddr* peer, const UDTSOCKET id, int32_t isn)
 {
-   CGuard cg(m_ControlLock);
+   std::lock_guard<std::mutex> cg(m_ControlLock);
 
    map<int64_t, set<UDTSOCKET> >::iterator i = m_PeerRec.find((id << 30) + isn);
    if (i == m_PeerRec.end())
@@ -801,7 +764,7 @@ CUDTSocket* CUDTUnited::locate(const sockaddr* peer, const UDTSOCKET id, int32_t
 
 void CUDTUnited::checkBrokenSockets()
 {
-   CGuard cg(m_ControlLock);
+   std::lock_guard<std::mutex> cg(m_ControlLock);
 
    // set of sockets To Be Closed and To Be Removed
    vector<UDTSOCKET> tbc;
@@ -840,7 +803,7 @@ void CUDTUnited::checkBrokenSockets()
          }
 
          {
-            CGuard guard(ls->second->m_AcceptLock);
+            std::lock_guard<std::mutex> guard(ls->second->m_AcceptLock);
             ls->second->m_pQueuedSockets->erase(i->second->m_SocketID);
             ls->second->m_pAcceptSockets->erase(i->second->m_SocketID);
          }
@@ -882,7 +845,7 @@ void CUDTUnited::removeSocket(const UDTSOCKET u)
 
    if (NULL != i->second->m_pQueuedSockets)
    {
-      CGuard guard(i->second->m_AcceptLock);
+      std::lock_guard<std::mutex> guard(i->second->m_AcceptLock);
       // if it is a listener, close all un-accepted sockets in its queue and remove them later
       for (set<UDTSOCKET>::iterator q = i->second->m_pQueuedSockets->begin(); q != i->second->m_pQueuedSockets->end(); ++ q)
       {
@@ -935,7 +898,7 @@ void CUDTUnited::setError(CUDTException* e)
       delete (CUDTException*)pthread_getspecific(m_TLSError);
       pthread_setspecific(m_TLSError, e);
    #else
-      CGuard tg(m_TLSLock);
+      std::lock_guard<std::mutex> tg(m_TLSLock);
       delete (CUDTException*)TlsGetValue(m_TLSError);
       TlsSetValue(m_TLSError, e);
       m_mTLSRecord[GetCurrentThreadId()] = e;
@@ -952,7 +915,7 @@ void CUDTUnited::setError(int major, int minor)
          pthread_setspecific(m_TLSError, e);
       }
    #else
-      CGuard tg(m_TLSLock);
+      std::lock_guard<std::mutex> tg(m_TLSLock);
       CUDTException* ex = (CUDTException*)TlsGetValue(m_TLSError);
       if (!ex || ex->getErrorCode() != major*1000 + minor) {
          delete ex;
@@ -972,7 +935,7 @@ CUDTException* CUDTUnited::getError()
          pthread_setspecific(m_TLSError, new CUDTException);
       return (CUDTException*)pthread_getspecific(m_TLSError);
    #else
-      CGuard tg(m_TLSLock);
+      std::lock_guard<std::mutex> tg(m_TLSLock);
       if(NULL == TlsGetValue(m_TLSError))
       {
          CUDTException* e = new CUDTException;
@@ -986,7 +949,7 @@ CUDTException* CUDTUnited::getError()
 #ifdef WINDOWS
 void CUDTUnited::checkTLSValue()
 {
-   CGuard tg(m_TLSLock);
+   std::lock_guard<std::mutex> tg(m_TLSLock);
 
    vector<DWORD> tbr;
    for (map<DWORD, CUDTException*>::iterator i = m_mTLSRecord.begin(); i != m_mTLSRecord.end(); ++ i)
@@ -1011,7 +974,7 @@ void CUDTUnited::checkTLSValue()
 
 void CUDTUnited::updateMux(CUDTSocket* s, const sockaddr* addr, const UDPSOCKET* udpsock)
 {
-   CGuard cg(m_ControlLock);
+   std::lock_guard<std::mutex> cg(m_ControlLock);
 
    if ((s->m_pUDT->m_bReuseAddr) && (NULL != addr))
    {
@@ -1082,7 +1045,7 @@ void CUDTUnited::updateMux(CUDTSocket* s, const sockaddr* addr, const UDPSOCKET*
 
 void CUDTUnited::updateMux(CUDTSocket* s, const CUDTSocket* ls)
 {
-   CGuard cg(m_ControlLock);
+   std::lock_guard<std::mutex> cg(m_ControlLock);
 
    int port = (AF_INET == ls->m_iIPversion) ? ntohs(((sockaddr_in*)ls->m_pSelfAddr)->sin_port) : ntohs(((sockaddr_in6*)ls->m_pSelfAddr)->sin6_port);
 
@@ -1109,7 +1072,7 @@ void CUDTUnited::updateMux(CUDTSocket* s, const CUDTSocket* ls)
 {
    CUDTUnited* self = (CUDTUnited*)p;
 
-   CGuard gcguard(self->m_GCStopLock);
+   std::unique_lock<std::mutex> gCGuard(self->m_GCStopLock);
 
    while (!self->m_bClosing)
    {
@@ -1119,22 +1082,12 @@ void CUDTUnited::updateMux(CUDTSocket* s, const CUDTSocket* ls)
          self->checkTLSValue();
       #endif
 
-      #ifndef WINDOWS
-         timeval now;
-         timespec timeout;
-         gettimeofday(&now, 0);
-         timeout.tv_sec = now.tv_sec + 1;
-         timeout.tv_nsec = now.tv_usec * 1000;
-
-         pthread_cond_timedwait(&self->m_GCStopCond, &self->m_GCStopLock, &timeout);
-      #else
-         SleepConditionVariableSRW(&self->m_GCStopCond, &self->m_GCStopLock, 1000, 0);
-      #endif
+      self->m_GCStopCond.wait_for(gCGuard, std::chrono::seconds(1));
    }
 
    // remove all sockets and multiplexers
    {
-      CGuard guard(self->m_ControlLock);
+      std::lock_guard<std::mutex> guard(self->m_ControlLock);
       for (map<UDTSOCKET, CUDTSocket*>::iterator i = self->m_Sockets.begin(); i != self->m_Sockets.end(); ++ i)
       {
          i->second->m_pUDT->m_bBroken = true;
@@ -1152,7 +1105,7 @@ void CUDTUnited::updateMux(CUDTSocket* s, const CUDTSocket* ls)
                continue;
          }
 
-         CGuard guard(ls->second->m_AcceptLock);
+         std::lock_guard<std::mutex> guard(ls->second->m_AcceptLock);
          ls->second->m_pQueuedSockets->erase(i->second->m_SocketID);
          ls->second->m_pAcceptSockets->erase(i->second->m_SocketID);
       }
@@ -1170,7 +1123,7 @@ void CUDTUnited::updateMux(CUDTSocket* s, const CUDTSocket* ls)
 
       bool empty;
       {
-         CGuard guard(self->m_ControlLock);
+         std::lock_guard<std::mutex> guard(self->m_ControlLock);
          empty = self->m_ClosedSockets.empty();
       }
 

@@ -83,12 +83,6 @@ m_iCount(0)
    }
 
    m_pFirstBlock = m_pCurrBlock = m_pLastBlock = m_pBlock;
-
-   #ifndef WINDOWS
-      pthread_mutex_init(&m_BufLock, NULL);
-   #else
-      InitializeSRWLock(&m_BufLock);
-   #endif
 }
 
 CSndBuffer::~CSndBuffer()
@@ -109,10 +103,6 @@ CSndBuffer::~CSndBuffer()
       delete [] temp->m_pcData;
       delete temp;
    }
-
-   #ifndef WINDOWS
-      pthread_mutex_destroy(&m_BufLock);
-   #endif
 }
 
 void CSndBuffer::addBuffer(const char* data, int len, int ttl, bool order)
@@ -153,7 +143,7 @@ void CSndBuffer::addBuffer(const char* data, int len, int ttl, bool order)
    m_pLastBlock = s;
 
    {
-      CGuard guard(m_BufLock);
+      std::lock_guard<std::mutex> guard(m_BufLock);
       m_iCount += size;
    }
 
@@ -179,7 +169,7 @@ int CSndBuffer::readData(char** data, int32_t& msgno)
 
 int CSndBuffer::readData(char** data, const int offset, int32_t& msgno, int& msglen)
 {
-   CGuard bufferguard(m_BufLock);
+   std::lock_guard<std::mutex> bufferguard(m_BufLock);
 
    Block* p = m_pFirstBlock;
 
@@ -215,7 +205,7 @@ int CSndBuffer::readData(char** data, const int offset, int32_t& msgno, int& msg
 
 void CSndBuffer::ackData(int offset)
 {
-   CGuard bufferguard(m_BufLock);
+   std::lock_guard<std::mutex> bufferguard(m_BufLock);
 
    for (int i = 0; i < offset; ++ i)
       m_pFirstBlock = m_pFirstBlock->m_pNext;

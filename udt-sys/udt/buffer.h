@@ -108,7 +108,7 @@ private:
    void increase();
 
 private:
-   udt_pthread_mutex_t m_BufLock;           // used to synchronize buffer operation
+   std::mutex m_BufLock;           // used to synchronize buffer operation
 
    struct Block
    {

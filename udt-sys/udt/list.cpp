@@ -60,13 +60,6 @@ m_ListLock()
       m_piData1[i] = -1;
       m_piData2[i] = -1;
    }
-
-   // sender list needs mutex protection
-   #ifndef WINDOWS
-      pthread_mutex_init(&m_ListLock, 0);
-   #else
-      InitializeSRWLock(&m_ListLock);
-   #endif
 }
 
 CSndLossList::~CSndLossList()
@@ -74,15 +67,11 @@ CSndLossList::~CSndLossList()
    delete [] m_piData1;
    delete [] m_piData2;
    delete [] m_piNext;
-
-   #ifndef WINDOWS
-      pthread_mutex_destroy(&m_ListLock);
-   #endif
 }
 
 int CSndLossList::insert(int32_t seqno1, int32_t seqno2)
 {
-   CGuard listguard(m_ListLock);
+   std::lock_guard<std::mutex> listguard(m_ListLock);
 
    if (0 == m_iLength)
    {
@@ -254,7 +243,7 @@ int CSndLossList::insert(int32_t seqno1, int32_t seqno2)
 
 void CSndLossList::remove(int32_t seqno)
 {
-   CGuard listguard(m_ListLock);
+   std::lock_guard<std::mutex> listguard(m_ListLock);
 
    if (0 == m_iLength)
       return;
@@ -366,7 +355,7 @@ void CSndLossList::remove(int32_t seqno)
 
 int CSndLossList::getLossLength()
 {
-   CGuard listguard(m_ListLock);
+   std::lock_guard<std::mutex> listguard(m_ListLock);
 
    return m_iLength;
 }
@@ -376,7 +365,7 @@ int32_t CSndLossList::getLostSeq()
    if (0 == m_iLength)
      return -1;
 
-   CGuard listguard(m_ListLock);
+   std::lock_guard<std::mutex> listguard(m_ListLock);
 
    if (0 == m_iLength)
      return -1;
