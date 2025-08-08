@@ -72,8 +72,8 @@ m_iMuxID(-1)
       pthread_mutex_init(&m_AcceptLock, NULL);
       pthread_mutex_init(&m_ControlLock, NULL);
    #else
-      m_AcceptLock = CreateMutex(NULL, false, NULL);
-      m_ControlLock = CreateMutex(NULL, false, NULL);
+      InitializeSRWLock(&m_AcceptLock);
+      InitializeSRWLock(&m_ControlLock);
    #endif
 }
 
@@ -99,9 +99,6 @@ CUDTSocket::~CUDTSocket()
    #ifndef WINDOWS
       pthread_mutex_destroy(&m_AcceptLock);
       pthread_mutex_destroy(&m_ControlLock);
-   #else
-      CloseHandle(m_AcceptLock);
-      CloseHandle(m_ControlLock);
    #endif
 }
 
@@ -134,16 +131,16 @@ m_ClosedSockets()
       pthread_mutex_init(&m_IDLock, NULL);
       pthread_mutex_init(&m_InitLock, NULL);
    #else
-      m_ControlLock = CreateMutex(NULL, false, NULL);
-      m_IDLock = CreateMutex(NULL, false, NULL);
-      m_InitLock = CreateMutex(NULL, false, NULL);
+      InitializeSRWLock(&m_ControlLock);
+      InitializeSRWLock(&m_IDLock);
+      InitializeSRWLock(&m_InitLock);
    #endif
 
    #ifndef WINDOWS
       pthread_key_create(&m_TLSError, TLSDestroy);
    #else
       m_TLSError = TlsAlloc();
-      m_TLSLock = CreateMutex(NULL, false, NULL);
+      InitializeSRWLock(&m_TLSLock);
    #endif
 
    m_pCache = std::make_unique<CCache<CInfoBlock>>();
@@ -155,17 +152,12 @@ CUDTUnited::~CUDTUnited()
       pthread_mutex_destroy(&m_ControlLock);
       pthread_mutex_destroy(&m_IDLock);
       pthread_mutex_destroy(&m_InitLock);
-   #else
-      CloseHandle(m_ControlLock);
-      CloseHandle(m_IDLock);
-      CloseHandle(m_InitLock);
    #endif
 
    #ifndef WINDOWS
       pthread_key_delete(m_TLSError);
    #else
       TlsFree(m_TLSError);
-      CloseHandle(m_TLSLock);
    #endif
 }
 
@@ -195,8 +187,8 @@ int CUDTUnited::startup()
       pthread_cond_init(&m_GCStopCond, NULL);
       pthread_create(&m_GCThread, NULL, garbageCollect, this);
    #else
-      m_GCStopLock = CreateMutex(NULL, false, NULL);
-      m_GCStopCond = CreateEvent(NULL, false, false, NULL);
+      InitializeSRWLock(&m_GCStopLock);
+      InitializeConditionVariable(&m_GCStopCond);
       DWORD ThreadID;
       m_GCThread = CreateThread(NULL, 0, garbageCollect, this, 0, &ThreadID);
    #endif
@@ -223,11 +215,9 @@ int CUDTUnited::cleanup()
       pthread_mutex_destroy(&m_GCStopLock);
       pthread_cond_destroy(&m_GCStopCond);
    #else
-      SetEvent(m_GCStopCond);
+      WakeConditionVariable(&m_GCStopCond);
       WaitForSingleObject(m_GCThread, INFINITE);
       CloseHandle(m_GCThread);
-      CloseHandle(m_GCStopLock);
-      CloseHandle(m_GCStopCond);
    #endif
 
    m_bGCStatus = false;
@@ -1138,7 +1128,7 @@ void CUDTUnited::updateMux(CUDTSocket* s, const CUDTSocket* ls)
 
          pthread_cond_timedwait(&self->m_GCStopCond, &self->m_GCStopLock, &timeout);
       #else
-         WaitForSingleObject(self->m_GCStopCond, 1000);
+         SleepConditionVariableSRW(&self->m_GCStopCond, &self->m_GCStopLock, 1000, 0);
       #endif
    }
 

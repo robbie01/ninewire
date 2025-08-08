@@ -87,7 +87,7 @@ m_iCount(0)
    #ifndef WINDOWS
       pthread_mutex_init(&m_BufLock, NULL);
    #else
-      m_BufLock = CreateMutex(NULL, false, NULL);
+      InitializeSRWLock(&m_BufLock);
    #endif
 }
 
@@ -112,8 +112,6 @@ CSndBuffer::~CSndBuffer()
 
    #ifndef WINDOWS
       pthread_mutex_destroy(&m_BufLock);
-   #else
-      CloseHandle(m_BufLock);
    #endif
 }
 

@@ -58,8 +58,8 @@ written by
 #ifdef WINDOWS
     // Windows compatibility
     typedef HANDLE udt_pthread_t;
-    typedef HANDLE udt_pthread_mutex_t;
-    typedef HANDLE udt_pthread_cond_t;
+    typedef SRWLOCK udt_pthread_mutex_t;
+    typedef CONDITION_VARIABLE udt_pthread_cond_t;
     typedef DWORD udt_pthread_key_t;
 #else
     typedef pthread_t udt_pthread_t;

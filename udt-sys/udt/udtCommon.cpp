@@ -68,8 +68,8 @@ m_TickLock()
       pthread_mutex_init(&m_TickLock, NULL);
       pthread_cond_init(&m_TickCond, NULL);
    #else
-      m_TickLock = CreateMutex(NULL, false, NULL);
-      m_TickCond = CreateEvent(NULL, false, false, NULL);
+      InitializeSRWLock(&m_TickLock);
+      InitializeConditionVariable(&m_TickCond);
    #endif
 }
 
@@ -78,9 +78,6 @@ CTimer::~CTimer()
    #ifndef WINDOWS
       pthread_mutex_destroy(&m_TickLock);
       pthread_cond_destroy(&m_TickCond);
-   #else
-      CloseHandle(m_TickLock);
-      CloseHandle(m_TickCond);
    #endif
 }
 
@@ -238,7 +235,9 @@ void CTimer::sleepto(uint64_t nexttime)
             pthread_cond_timedwait(&m_TickCond, &m_TickLock, &timeout);
             pthread_mutex_unlock(&m_TickLock);
          #else
-            WaitForSingleObject(m_TickCond, 1);
+            AcquireSRWLockExclusive(&m_TickLock);
+            SleepConditionVariableSRW(&m_TickCond, &m_TickLock, 1, 0);
+            ReleaseSRWLockExclusive(&m_TickLock);
          #endif
       #endif
 
@@ -258,7 +257,7 @@ void CTimer::tick()
    #ifndef WINDOWS
       pthread_cond_signal(&m_TickCond);
    #else
-      SetEvent(m_TickCond);
+      WakeConditionVariable(&m_TickCond);
    #endif
 }
 
@@ -312,7 +311,7 @@ m_iLocked()
    #ifndef WINDOWS
       m_iLocked = pthread_mutex_lock(&m_Mutex);
    #else
-      m_iLocked = WaitForSingleObject(m_Mutex, INFINITE);
+      AcquireSRWLockExclusive(&m_Mutex);
    #endif
 }
 
@@ -323,8 +322,7 @@ CGuard::~CGuard()
       if (0 == m_iLocked)
          pthread_mutex_unlock(&m_Mutex);
    #else
-      if (WAIT_FAILED != m_iLocked)
-         ReleaseMutex(m_Mutex);
+      ReleaseSRWLockExclusive(&m_Mutex);
    #endif
 }
 
@@ -333,7 +331,7 @@ void CGuard::createMutex(udt_pthread_mutex_t& lock)
    #ifndef WINDOWS
       pthread_mutex_init(&lock, NULL);
    #else
-      lock = CreateMutex(NULL, false, NULL);
+      InitializeSRWLock(&lock);
    #endif
 }
 
@@ -341,8 +339,6 @@ void CGuard::releaseMutex(udt_pthread_mutex_t& lock)
 {
    #ifndef WINDOWS
       pthread_mutex_destroy(&lock);
-   #else
-      CloseHandle(lock);
    #endif
 }
 
@@ -351,7 +347,7 @@ void CGuard::createCond(udt_pthread_cond_t& cond)
    #ifndef WINDOWS
       pthread_cond_init(&cond, NULL);
    #else
-      cond = CreateEvent(NULL, false, false, NULL);
+      InitializeConditionVariable(&cond);
    #endif
 }
 
@@ -359,10 +355,7 @@ void CGuard::releaseCond(udt_pthread_cond_t& cond)
 {
    #ifndef WINDOWS
       pthread_cond_destroy(&cond);
-   #else
-      CloseHandle(cond);
    #endif
-
 }
 
 //

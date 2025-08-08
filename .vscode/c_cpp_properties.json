@@ -6,11 +6,21 @@
                 "${workspaceFolder}/**",
                 "${workspaceFolder}/udt-sys/udt"
             ],
-            "defines": [],
+            "defines": ["MACOSX"],
             "compilerPath": "/usr/bin/clang",
             "cStandard": "c17",
             "cppStandard": "c++14",
             "intelliSenseMode": "macos-clang-arm64"
+        },
+        {
+            "name": "Windows",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "${workspaceFolder}/udt-sys/udt"
+            ],
+            "defines": ["WINDOWS", "WINVER=0x0A00", "_WIN32_WINNT=0x0A00"],
+            "cStandard": "c17",
+            "cppStandard": "c++14"
         }
     ],
     "version": 4

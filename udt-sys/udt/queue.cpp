@@ -235,7 +235,7 @@ m_pTimer(NULL)
    #ifndef WINDOWS
       pthread_mutex_init(&m_ListLock, NULL);
    #else
-      m_ListLock = CreateMutex(NULL, false, NULL);
+      InitializeSRWLock(&m_ListLock);
    #endif
 }
 
@@ -245,8 +245,6 @@ CSndUList::~CSndUList()
 
    #ifndef WINDOWS
       pthread_mutex_destroy(&m_ListLock);
-   #else
-      CloseHandle(m_ListLock);
    #endif
 }
 
@@ -393,7 +391,7 @@ void CSndUList::insert_(int64_t ts, const CUDT* u)
          pthread_cond_signal(m_pWindowCond);
          pthread_mutex_unlock(m_pWindowLock);
       #else
-         SetEvent(*m_pWindowCond);
+         WakeConditionVariable(m_pWindowCond);
       #endif
    }
 }
@@ -454,9 +452,9 @@ m_ExitCond()
       pthread_cond_init(&m_WindowCond, NULL);
       pthread_mutex_init(&m_WindowLock, NULL);
    #else
-      m_WindowLock = CreateMutex(NULL, false, NULL);
-      m_WindowCond = CreateEvent(NULL, false, false, NULL);
-      m_ExitCond = CreateEvent(NULL, false, false, NULL);
+      InitializeSRWLock(&m_WindowLock);
+      InitializeConditionVariable(&m_WindowCond);
+      m_ExitCond = CreateEvent(nullptr, false, false, nullptr);
    #endif
 }
 
@@ -473,12 +471,10 @@ CSndQueue::~CSndQueue()
       pthread_cond_destroy(&m_WindowCond);
       pthread_mutex_destroy(&m_WindowLock);
    #else
-      SetEvent(m_WindowCond);
+      WakeConditionVariable(&m_WindowCond);
       if (NULL != m_WorkerThread)
          WaitForSingleObject(m_ExitCond, INFINITE);
       CloseHandle(m_WorkerThread);
-      CloseHandle(m_WindowLock);
-      CloseHandle(m_WindowCond);
       CloseHandle(m_ExitCond);
    #endif
 
@@ -539,13 +535,15 @@ void CSndQueue::init(CChannel* c, CTimer* t)
       else
       {
          // wait here if there is no sockets with data to be sent
+
+         CGuard guard(self->m_WindowLock);
+
          #ifndef WINDOWS
-            pthread_mutex_lock(&self->m_WindowLock);
             if (!self->m_bClosing && (self->m_pSndUList->m_iLastEntry < 0))
                pthread_cond_wait(&self->m_WindowCond, &self->m_WindowLock);
-            pthread_mutex_unlock(&self->m_WindowLock);
          #else
-            WaitForSingleObject(self->m_WindowCond, INFINITE);
+            if (!self->m_bClosing && (self->m_pSndUList->m_iLastEntry < 0))
+               SleepConditionVariableSRW(&self->m_WindowCond, &self->m_WindowLock, INFINITE, 0);
          #endif
       }
    }
@@ -752,7 +750,7 @@ m_RIDVectorLock()
    #ifndef WINDOWS
       pthread_mutex_init(&m_RIDVectorLock, NULL);
    #else
-      m_RIDVectorLock = CreateMutex(NULL, false, NULL);
+      InitializeSRWLock(&m_RIDVectorLock);
    #endif
 }
 
@@ -760,8 +758,6 @@ CRendezvousQueue::~CRendezvousQueue()
 {
    #ifndef WINDOWS
       pthread_mutex_destroy(&m_RIDVectorLock);
-   #else
-      CloseHandle(m_RIDVectorLock);
    #endif
 
    for (list<CRL>::iterator i = m_lRendezvousID.begin(); i != m_lRendezvousID.end(); ++ i)
@@ -888,11 +884,11 @@ m_PassCond()
       pthread_mutex_init(&m_LSLock, NULL);
       pthread_mutex_init(&m_IDLock, NULL);
    #else
-      m_PassLock = CreateMutex(NULL, false, NULL);
-      m_PassCond = CreateEvent(NULL, false, false, NULL);
-      m_LSLock = CreateMutex(NULL, false, NULL);
-      m_IDLock = CreateMutex(NULL, false, NULL);
-      m_ExitCond = CreateEvent(NULL, false, false, NULL);
+      InitializeSRWLock(&m_PassLock);
+      InitializeConditionVariable(&m_PassCond);
+      InitializeSRWLock(&m_LSLock);
+      InitializeSRWLock(&m_IDLock);
+      m_ExitCond = CreateEvent(nullptr, false, false, nullptr);
    #endif
 }
 
@@ -911,10 +907,6 @@ CRcvQueue::~CRcvQueue()
       if (NULL != m_WorkerThread)
          WaitForSingleObject(m_ExitCond, INFINITE);
       CloseHandle(m_WorkerThread);
-      CloseHandle(m_PassLock);
-      CloseHandle(m_PassCond);
-      CloseHandle(m_LSLock);
-      CloseHandle(m_IDLock);
       CloseHandle(m_ExitCond);
    #endif
 
@@ -1118,9 +1110,7 @@ int CRcvQueue::recvfrom(int32_t id, CPacket& packet)
 
          pthread_cond_timedwait(&m_PassCond, &m_PassLock, &timeout);
       #else
-         ReleaseMutex(m_PassLock);
-         WaitForSingleObject(m_PassCond, 1000);
-         WaitForSingleObject(m_PassLock, INFINITE);
+         SleepConditionVariableSRW(&m_PassCond, &m_PassLock, 1000, 0);
       #endif
 
       i = m_mBuffer.find(id);
@@ -1237,7 +1227,7 @@ void CRcvQueue::storePkt(int32_t id, CPacket* pkt)
       #ifndef WINDOWS
          pthread_cond_signal(&m_PassCond);
       #else
-         SetEvent(m_PassCond);
+         WakeConditionVariable(&m_PassCond);
       #endif
    }
    else

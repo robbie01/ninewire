@@ -1141,7 +1141,7 @@ void CUDT::sample(CPerfMon& perf, bool clear)
    #ifndef WINDOWS
       if (0 == pthread_mutex_trylock(&m_ConnectionLock))
    #else
-      if (WAIT_OBJECT_0 == WaitForSingleObject(m_ConnectionLock, 0))
+      if (TryAcquireSRWLockExclusive(&m_ConnectionLock))
    #endif
    {
       perf.byteAvailSndBuf = (NULL == m_pSndBuffer) ? 0 : (m_iSndBufSize - m_pSndBuffer->getCurrBufSize()) * m_iMSS;
@@ -1150,7 +1150,7 @@ void CUDT::sample(CPerfMon& perf, bool clear)
       #ifndef WINDOWS
          pthread_mutex_unlock(&m_ConnectionLock);
       #else
-         ReleaseMutex(m_ConnectionLock);
+         ReleaseSRWLockExclusive(&m_ConnectionLock);
       #endif
    }
    else
@@ -1187,10 +1187,10 @@ void CUDT::initSynch()
       pthread_mutex_init(&m_AckLock, NULL);
       pthread_mutex_init(&m_ConnectionLock, NULL);
    #else
-      m_SendLock = CreateMutex(NULL, false, NULL);
-      m_RecvLock = CreateMutex(NULL, false, NULL);
-      m_AckLock = CreateMutex(NULL, false, NULL);
-      m_ConnectionLock = CreateMutex(NULL, false, NULL);
+      InitializeSRWLock(&m_SendLock);
+      InitializeSRWLock(&m_RecvLock);
+      InitializeSRWLock(&m_AckLock);
+      InitializeSRWLock(&m_ConnectionLock);
    #endif
 }
 
@@ -1201,11 +1201,6 @@ void CUDT::destroySynch()
       pthread_mutex_destroy(&m_RecvLock);
       pthread_mutex_destroy(&m_AckLock);
       pthread_mutex_destroy(&m_ConnectionLock);
-   #else
-      CloseHandle(m_SendLock);
-      CloseHandle(m_RecvLock);
-      CloseHandle(m_AckLock);
-      CloseHandle(m_ConnectionLock);
    #endif
 }
 
@@ -1220,10 +1215,10 @@ void CUDT::releaseSynch()
       pthread_mutex_lock(&m_RecvLock);
       pthread_mutex_unlock(&m_RecvLock);
    #else
-      WaitForSingleObject(m_SendLock, INFINITE);
-      ReleaseMutex(m_SendLock);
-      WaitForSingleObject(m_RecvLock, INFINITE);
-      ReleaseMutex(m_RecvLock);
+      AcquireSRWLockExclusive(&m_SendLock);
+      ReleaseSRWLockExclusive(&m_SendLock);
+      AcquireSRWLockExclusive(&m_RecvLock);
+      ReleaseSRWLockExclusive(&m_RecvLock);
    #endif
 }
 

@@ -44,8 +44,8 @@ fn main() {
         build.define("BSD", None);
     } else if os == "windows" {
         build.define("WINDOWS", None);
-        build.define("WINVER", "0x0600");
-        build.define("_WIN32_WINNT", "0x0600");
+        build.define("WINVER", "0x0A00");
+        build.define("_WIN32_WINNT", "0x0A00");
         println!("cargo::rustc-link-lib=kernel32");
         println!("cargo::rustc-link-lib=user32");
         println!("cargo::rustc-link-lib=ws2_32");

@@ -65,7 +65,7 @@ m_ListLock()
    #ifndef WINDOWS
       pthread_mutex_init(&m_ListLock, 0);
    #else
-      m_ListLock = CreateMutex(NULL, false, NULL);
+      InitializeSRWLock(&m_ListLock);
    #endif
 }
 
@@ -77,8 +77,6 @@ CSndLossList::~CSndLossList()
 
    #ifndef WINDOWS
       pthread_mutex_destroy(&m_ListLock);
-   #else
-      CloseHandle(m_ListLock);
    #endif
 }
 
