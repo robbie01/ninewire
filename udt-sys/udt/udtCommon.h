@@ -46,9 +46,6 @@ written by
    #include <sys/time.h>
    #include <sys/uio.h>
    #include <pthread.h>
-#ifdef MACOSX
-   #include <dispatch/dispatch.h>
-#endif
 #else
    #include <stdint.h>
    #include <ws2tcpip.h>
@@ -58,21 +55,16 @@ written by
 #include <condition_variable>
 #include <cstdlib>
 #include "udt.h"
+#include "rsynch.h"
 
 
 #ifdef WINDOWS
     // Windows compatibility
     typedef HANDLE udt_pthread_t;
     typedef DWORD udt_pthread_key_t;
-    typedef HANDLE udt_event_t;
 #else
     typedef pthread_t udt_pthread_t;
     typedef pthread_key_t udt_pthread_key_t;
-#ifdef MACOSX
-    typedef dispatch_semaphore_t udt_event_t;
-#else
-    typedef sem_t udt_event_t;
-#endif
 #endif
 
 
@@ -166,7 +158,7 @@ private:
 private:
    uint64_t m_ullSchedTime;             // next schedulled time
 
-   udt_event_t m_TickEvent;
+   rsynch::AutoResetEvent m_TickEvent;
 
 private:
    static uint64_t s_ullCPUFrequency;	// CPU frequency : clock cycles per microsecond

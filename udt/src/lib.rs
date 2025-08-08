@@ -61,6 +61,19 @@ impl Socket {
         let rpoll = unsafe { udt_sys::getrpoll() };
         rpoll.writable(self.inner).unwrap().map(|_| Ok(()))
     }
+
+    fn send_data(&self) -> u32 {
+        let mut inflight = 0;
+        let mut _optlen = 0;
+        unsafe { udt_sys::getsockopt(
+            self.inner,
+            0,
+            udt_sys::SocketOption::SendData,
+            (&mut inflight as *mut i32).cast(),
+            &mut _optlen
+        ) };
+        inflight.try_into().unwrap()
+    }
 }
 
 impl Drop for Socket {
@@ -308,7 +321,12 @@ impl Connection {
     }
 
     pub async fn flush(&self) -> io::Result<()> {
-        // TODO
+        loop {
+            if self.u.send_data() == 0 { break; }
+            let writable = self.u.writable();
+            if self.u.send_data() == 0 { break; }
+            writable.await?;
+        }
         Ok(())
     }
 }

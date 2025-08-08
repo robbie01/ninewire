@@ -54,6 +54,8 @@
         "sstream": "cpp",
         "stack": "cpp",
         "*.rs": "rust",
-        "condition_variable": "cpp"
+        "condition_variable": "cpp",
+        "charconv": "cpp",
+        "forward_list": "cpp"
     }
 }

@@ -62,30 +62,10 @@ uint64_t CTimer::s_ullCPUFrequency = CTimer::readCPUFrequency();
 CTimer::CTimer():
 m_ullSchedTime(),
 m_TickEvent()
-{
-#ifndef WINDOWS
-#ifdef MACOSX
-   m_TickEvent = dispatch_semaphore_create(0);
-#else
-   sem_init(&m_TickEvent, 0, 0);
-#endif
-#else
-   m_TickEvent = CreateEvent(nullptr, false, false, nullptr);
-#endif
-}
+{}
 
 CTimer::~CTimer()
-{
-#ifndef WINDOWS
-#ifdef MACOSX
-   dispatch_release(m_TickEvent);
-#else
-   sem_destroy(&m_TickEvent);
-#endif
-#else
-   CloseHandle(m_TickEvent);
-#endif
-}
+{}
 
 void CTimer::rdtsc(uint64_t &x)
 {
@@ -216,29 +196,7 @@ void CTimer::sleepto(uint64_t nexttime)
 
    while (t < m_ullSchedTime)
    {
-      #ifndef WINDOWS
-         #ifdef MACOSX
-            dispatch_semaphore_wait(m_TickEvent, dispatch_time(DISPATCH_TIME_NOW, 1000000));
-         #else
-            timeval now;
-            timespec timeout;
-            gettimeofday(&now, 0);
-            if (now.tv_usec < 990000)
-            {
-               timeout.tv_sec = now.tv_sec;
-               timeout.tv_nsec = (now.tv_usec + 10000) * 1000;
-            }
-            else
-            {
-               timeout.tv_sec = now.tv_sec + 1;
-               timeout.tv_nsec = (now.tv_usec + 10000 - 1000000) * 1000;
-            }
-            sem_timedwait(&m_TickEvent, &timeout);
-         #endif
-      #else
-         WaitForSingleObject(m_TickEvent, 1);
-      #endif
-
+      m_TickEvent.wait_for(std::chrono::milliseconds(1));
       rdtsc(t);
    }
 }
@@ -252,15 +210,7 @@ void CTimer::interrupt()
 
 void CTimer::tick()
 {
-   #ifndef WINDOWS
-      #ifdef MACOSX
-         dispatch_semaphore_signal(m_TickEvent);
-      #else
-         sem_post(&m_TickEvent);
-      #endif
-   #else
-      SetEvent(m_TickEvent);
-   #endif
+   m_TickEvent.set();
 }
 
 uint64_t CTimer::getTime()

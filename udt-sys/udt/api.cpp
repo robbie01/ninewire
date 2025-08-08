@@ -543,6 +543,8 @@ UDTSOCKET CUDTUnited::accept(const UDTSOCKET listener, sockaddr* addr, int* addr
       throw CUDTException(6, 2, 0);
    }
 
+   m_RPoll->update_events(u, 0, false);
+
    if ((addr != NULL) && (addrlen != NULL))
    {
       if (AF_INET == locate(u)->m_iIPversion)

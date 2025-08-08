@@ -515,6 +515,7 @@ void CUDT::listen()
       throw CUDTException(5, 11, 0);
 
    m_bListening = true;
+   s_UDTUnited.m_RPoll->update_events(m_SocketID, 0, false);
 }
 
 void CUDT::connect(const sockaddr* serv_addr)
@@ -1049,7 +1050,7 @@ void CUDT::sample(CPerfMon& perf, bool clear)
    perf.msRTT = m_iRTT/1000.0;
    perf.mbpsBandwidth = m_iBandwidth * m_iPayloadSize * 8.0 / 1000000.0;
 
-   if (auto guard = std::unique_lock<std::mutex>(m_ConnectionLock, std::try_to_lock_t()))
+   if (auto guard = std::unique_lock<std::mutex>(m_ConnectionLock, std::try_to_lock))
    {
       perf.byteAvailSndBuf = (NULL == m_pSndBuffer) ? 0 : (m_iSndBufSize - m_pSndBuffer->getCurrBufSize()) * m_iMSS;
       perf.byteAvailRcvBuf = (NULL == m_pRcvBuffer) ? 0 : m_pRcvBuffer->getAvailBufSize() * m_iMSS;
