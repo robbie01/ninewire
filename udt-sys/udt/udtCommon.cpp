@@ -61,12 +61,7 @@ uint64_t CTimer::s_ullCPUFrequency = CTimer::readCPUFrequency();
 
 CTimer::CTimer():
 m_ullSchedTime(),
-#ifdef WINDOWS
-m_TickLock(),
-m_TickCond()
-#else
 m_TickEvent()
-#endif
 {
 #ifndef WINDOWS
 #ifdef MACOSX
@@ -75,8 +70,7 @@ m_TickEvent()
    sem_init(&m_TickEvent, 0, 0);
 #endif
 #else
-   InitializeSRWLock(&m_TickLock);
-   InitializeConditionVariable(&m_TickCond);
+   m_TickEvent = CreateEvent(nullptr, false, false, nullptr);
 #endif
 }
 
@@ -88,6 +82,8 @@ CTimer::~CTimer()
 #else
    sem_destroy(&m_TickEvent);
 #endif
+#else
+   CloseHandle(m_TickEvent);
 #endif
 }
 
@@ -247,9 +243,7 @@ void CTimer::sleepto(uint64_t nexttime)
                sem_timedwait(&m_TickEvent, &timeout);
             #endif
          #else
-            AcquireSRWLockExclusive(&m_TickLock);
-            SleepConditionVariableSRW(&m_TickCond, &m_TickLock, 1, 0);
-            ReleaseSRWLockExclusive(&m_TickLock);
+            WaitForSingleObject(m_TickEvent, 1);
          #endif
       #endif
 
@@ -273,7 +267,7 @@ void CTimer::tick()
          sem_post(&m_TickEvent);
       #endif
    #else
-      WakeConditionVariable(&m_TickCond);
+      SetEvent(m_TickEvent);
    #endif
 }
 

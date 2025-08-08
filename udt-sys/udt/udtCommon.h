@@ -64,6 +64,7 @@ written by
     typedef SRWLOCK udt_pthread_mutex_t;
     typedef CONDITION_VARIABLE udt_pthread_cond_t;
     typedef DWORD udt_pthread_key_t;
+    typedef HANDLE udt_event_t;
 #else
     typedef pthread_t udt_pthread_t;
     typedef pthread_mutex_t udt_pthread_mutex_t;
@@ -167,12 +168,7 @@ private:
 private:
    uint64_t m_ullSchedTime;             // next schedulled time
 
-#ifdef WINDOWS
-   udt_pthread_mutex_t m_TickLock;
-   udt_pthread_cond_t m_TickCond;
-#else
    udt_event_t m_TickEvent;
-#endif
 
 private:
    static uint64_t s_ullCPUFrequency;	// CPU frequency : clock cycles per microsecond
