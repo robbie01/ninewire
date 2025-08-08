@@ -334,43 +334,6 @@ int CRcvBuffer::addData(CUnit* unit, int offset)
    return 0;
 }
 
-int CRcvBuffer::readBuffer(char* data, int len)
-{
-   int p = m_iStartPos;
-   int lastack = m_iLastAckPos;
-   int rs = len;
-
-   while ((p != lastack) && (rs > 0))
-   {
-      int unitsize = m_pUnit[p]->m_Packet.getLength() - m_iNotch;
-      if (unitsize > rs)
-         unitsize = rs;
-
-      memcpy(data, m_pUnit[p]->m_Packet.m_pcData + m_iNotch, unitsize);
-      data += unitsize;
-
-      if ((rs > unitsize) || (rs == m_pUnit[p]->m_Packet.getLength() - m_iNotch))
-      {
-         CUnit* tmp = m_pUnit[p];
-         m_pUnit[p] = NULL;
-         tmp->m_iFlag = 0;
-         -- m_pUnitQueue->m_iCount;
-
-         if (++ p == m_iSize)
-            p = 0;
-
-         m_iNotch = 0;
-      }
-      else
-         m_iNotch += rs;
-
-      rs -= unitsize;
-   }
-
-   m_iStartPos = p;
-   return len - rs;
-}
-
 void CRcvBuffer::ackData(int len)
 {
    m_iLastAckPos = (m_iLastAckPos + len) % m_iSize;

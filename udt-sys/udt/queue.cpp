@@ -835,7 +835,7 @@ void CRendezvousQueue::updateConnStatus()
          {
             // connection timer expired, acknowledge app via epoll
             i->m_pUDT->m_bConnecting = false;
-            CUDT::s_UDTUnited.m_RPoll->update_events(i->m_iID, UDT_EPOLL_IN | UDT_EPOLL_OUT | UDT_EPOLL_ERR, true);
+            CUDT::s_UDTUnited.m_RPoll->update_events(i->m_iID, UDT_EPOLL_IN | UDT_EPOLL_OUT, true);
             continue;
          }
 
@@ -963,9 +963,7 @@ void CRcvQueue::init(int qsize, int payload, int version, int hsize, CChannel* c
 
    while (!self->m_bClosing)
    {
-      #ifdef NO_BUSY_WAITING
-         self->m_pTimer->tick();
-      #endif
+      self->m_pTimer->tick();
 
       // check waiting list, if new socket, insert it to the list
       while (self->ifNewEntry())

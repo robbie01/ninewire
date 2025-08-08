@@ -216,35 +216,27 @@ void CTimer::sleepto(uint64_t nexttime)
 
    while (t < m_ullSchedTime)
    {
-      #ifndef NO_BUSY_WAITING
-         #if defined(LINUX) && defined(I386)
-            __asm__ volatile ("pause; rep; nop; nop; nop; nop; nop;");
-         #elif defined(LINUX) && defined(AMD64)
-            __asm__ volatile ("nop; nop; nop; nop; nop;");
+      #ifndef WINDOWS
+         #ifdef MACOSX
+            dispatch_semaphore_wait(m_TickEvent, dispatch_time(DISPATCH_TIME_NOW, 1000000));
+         #else
+            timeval now;
+            timespec timeout;
+            gettimeofday(&now, 0);
+            if (now.tv_usec < 990000)
+            {
+               timeout.tv_sec = now.tv_sec;
+               timeout.tv_nsec = (now.tv_usec + 10000) * 1000;
+            }
+            else
+            {
+               timeout.tv_sec = now.tv_sec + 1;
+               timeout.tv_nsec = (now.tv_usec + 10000 - 1000000) * 1000;
+            }
+            sem_timedwait(&m_TickEvent, &timeout);
          #endif
       #else
-         #ifndef WINDOWS
-            #ifdef MACOSX
-               dispatch_semaphore_wait(m_TickEvent, dispatch_time(DISPATCH_TIME_NOW, 1000000));
-            #else
-               timeval now;
-               timespec timeout;
-               gettimeofday(&now, 0);
-               if (now.tv_usec < 990000)
-               {
-                  timeout.tv_sec = now.tv_sec;
-                  timeout.tv_nsec = (now.tv_usec + 10000) * 1000;
-               }
-               else
-               {
-                  timeout.tv_sec = now.tv_sec + 1;
-                  timeout.tv_nsec = (now.tv_usec + 10000 - 1000000) * 1000;
-               }
-               sem_timedwait(&m_TickEvent, &timeout);
-            #endif
-         #else
-            WaitForSingleObject(m_TickEvent, 1);
-         #endif
+         WaitForSingleObject(m_TickEvent, 1);
       #endif
 
       rdtsc(t);

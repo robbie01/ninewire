@@ -203,8 +203,6 @@ mod ffi {
         unsafe fn getsockname(u: Socket, name: *mut sockaddr, namelen: *mut i32) -> i32;
         unsafe fn getsockopt(u: Socket, _unused: i32, optname: SocketOption, optval: *mut c_void, optlen: *mut i32) -> i32;
         unsafe fn setsockopt(u: Socket, _unused: i32, optname: SocketOption, optval: *const c_void, optlen: i32) -> i32;
-        unsafe fn send(u: Socket, buf: *const c_char, len: i32, _unused: i32) -> i32;
-        unsafe fn recv(u: Socket, buf: *mut c_char, len: i32, _unused: i32) -> i32;
         unsafe fn sendmsg(u: Socket, buf: *const c_char, len: i32, ttl_ms: i32, inorder: bool) -> i32;
         unsafe fn recvmsg(u: Socket, buf: *mut c_char, len: i32) -> i32;
         unsafe fn getlasterror_code() -> i32;

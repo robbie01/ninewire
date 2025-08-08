@@ -232,7 +232,7 @@ int CUDTUnited::cleanup()
 
 UDTSOCKET CUDTUnited::newSocket(int af, int type)
 {
-   if ((type != SOCK_STREAM) && (type != SOCK_DGRAM))
+   if (type != SOCK_DGRAM)
       throw CUDTException(5, 3, 0);
 
    CUDTSocket* ns = NULL;
@@ -266,7 +266,7 @@ UDTSOCKET CUDTUnited::newSocket(int af, int type)
    ns->m_Status = INIT;
    ns->m_ListenSocket = 0;
    ns->m_pUDT->m_SocketID = ns->m_SocketID;
-   ns->m_pUDT->m_iSockType = (SOCK_STREAM == type) ? UDT_STREAM : UDT_DGRAM;
+   ns->m_pUDT->m_iSockType = UDT_DGRAM;
    ns->m_pUDT->m_iIPversion = ns->m_iIPversion = af;
    ns->m_pUDT->m_pCache = m_pCache.get();
 
@@ -1406,49 +1406,6 @@ int CUDT::setsockopt(UDTSOCKET u, int, UDTOpt optname, const void* optval, int o
    }
 }
 
-int CUDT::send(UDTSOCKET u, const char* buf, int len, int)
-{
-   try
-   {
-      CUDT* udt = s_UDTUnited.lookup(u);
-      return udt->send(buf, len);
-   }
-   catch (CUDTException e)
-   {
-      s_UDTUnited.setError(new CUDTException(e));
-      return ERROR;
-   }
-   catch (bad_alloc&)
-   {
-      s_UDTUnited.setError(3, 2);
-      return ERROR;
-   }
-   catch (...)
-   {
-      s_UDTUnited.setError(-1, 0);
-      return ERROR;
-   }
-}
-
-int CUDT::recv(UDTSOCKET u, char* buf, int len, int)
-{
-   try
-   {
-      CUDT* udt = s_UDTUnited.lookup(u);
-      return udt->recv(buf, len);
-   }
-   catch (CUDTException e)
-   {
-      s_UDTUnited.setError(new CUDTException(e));
-      return ERROR;
-   }
-   catch (...)
-   {
-      s_UDTUnited.setError(-1, 0);
-      return ERROR;
-   }
-}
-
 int CUDT::sendmsg(UDTSOCKET u, const char* buf, int len, int ttl, bool inorder)
 {
    try
@@ -1630,16 +1587,6 @@ int getsockopt(UDTSOCKET u, int level, SOCKOPT optname, void* optval, int* optle
 int setsockopt(UDTSOCKET u, int level, SOCKOPT optname, const void* optval, int optlen)
 {
    return CUDT::setsockopt(u, level, optname, optval, optlen);
-}
-
-int send(UDTSOCKET u, const char* buf, int len, int flags)
-{
-   return CUDT::send(u, buf, len, flags);
-}
-
-int recv(UDTSOCKET u, char* buf, int len, int flags)
-{
-   return CUDT::recv(u, buf, len, flags);
 }
 
 int sendmsg(UDTSOCKET u, const char* buf, int len, int ttl, bool inorder)

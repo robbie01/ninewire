@@ -54,7 +54,7 @@ written by
 #include "cache.h"
 #include "queue.h"
 
-enum UDTSockType {UDT_STREAM = 1, UDT_DGRAM};
+enum UDTSockType {UDT_DGRAM = 2};
 
 class CUDT
 {
@@ -78,7 +78,7 @@ private: // constructor and desctructor
 public: //API
    static int startup();
    static int cleanup();
-   static UDTSOCKET socket(int af, int type = SOCK_STREAM, int protocol = 0);
+   static UDTSOCKET socket(int af, int type = SOCK_DGRAM, int protocol = 0);
    static int bind(UDTSOCKET u, const sockaddr* name, int namelen);
    static int listen(UDTSOCKET u, int backlog);
    static UDTSOCKET accept(UDTSOCKET u, sockaddr* addr, int* addrlen);
@@ -88,8 +88,6 @@ public: //API
    static int getsockname(UDTSOCKET u, sockaddr* name, int* namelen);
    static int getsockopt(UDTSOCKET u, int level, UDTOpt optname, void* optval, int* optlen);
    static int setsockopt(UDTSOCKET u, int level, UDTOpt optname, const void* optval, int optlen);
-   static int send(UDTSOCKET u, const char* buf, int len, int flags);
-   static int recv(UDTSOCKET u, char* buf, int len, int flags);
    static int sendmsg(UDTSOCKET u, const char* buf, int len, int ttl = -1, bool inorder = false);
    static int recvmsg(UDTSOCKET u, char* buf, int len);
    static const rpoll::RPoll &getrpoll();
@@ -155,26 +153,6 @@ private:
       //    None.
 
    void close();
-
-      // Functionality:
-      //    Request UDT to send out a data block "data" with size of "len".
-      // Parameters:
-      //    0) [in] data: The address of the application data to be sent.
-      //    1) [in] len: The size of the data block.
-      // Returned value:
-      //    Actual size of data sent.
-
-   int send(const char* data, int len);
-
-      // Functionality:
-      //    Request UDT to receive data to a memory block "data" with size of "len".
-      // Parameters:
-      //    0) [out] data: data received.
-      //    1) [in] len: The desired size of data to be received.
-      // Returned value:
-      //    Actual size of data received.
-
-   int recv(char* data, int len);
 
       // Functionality:
       //    send a message of a memory block "data" with size of "len".

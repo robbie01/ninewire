@@ -69,8 +69,6 @@ namespace rpoll { struct RPoll; }
    #define UDT_API __attribute__ ((visibility("default")))
 #endif
 
-#define NO_BUSY_WAITING
-
 typedef SYSSOCKET UDPSOCKET;
 typedef int UDTSOCKET;
 
@@ -87,8 +85,7 @@ enum EPOLLOpt
    // this values are defined same as linux epoll.h
    // so that if system values are used by mistake, they should have the same effect
    UDT_EPOLL_IN = 0x1,
-   UDT_EPOLL_OUT = 0x4,
-   UDT_EPOLL_ERR = 0x8
+   UDT_EPOLL_OUT = 0x4
 };
 
 enum UDTSTATUS {INIT = 1, OPENED, LISTENING, CONNECTING, CONNECTED, BROKEN, CLOSING, CLOSED, NONEXIST};
@@ -234,8 +231,6 @@ UDT_API int getpeername(UDTSOCKET u, struct sockaddr* name, int* namelen);
 UDT_API int getsockname(UDTSOCKET u, struct sockaddr* name, int* namelen);
 UDT_API int getsockopt(UDTSOCKET u, int level, SOCKOPT optname, void* optval, int* optlen);
 UDT_API int setsockopt(UDTSOCKET u, int level, SOCKOPT optname, const void* optval, int optlen);
-UDT_API int send(UDTSOCKET u, const char* buf, int len, int flags);
-UDT_API int recv(UDTSOCKET u, char* buf, int len, int flags);
 UDT_API int sendmsg(UDTSOCKET u, const char* buf, int len, int ttl = -1, bool inorder = false);
 UDT_API int recvmsg(UDTSOCKET u, char* buf, int len);
 

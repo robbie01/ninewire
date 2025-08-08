@@ -165,16 +165,6 @@ public:
    int addData(CUnit* unit, int offset);
 
       // Functionality:
-      //    Read data into a user buffer.
-      // Parameters:
-      //    0) [in] data: pointer to user buffer.
-      //    1) [in] len: length of user buffer.
-      // Returned value:
-      //    size of data read.
-
-   int readBuffer(char* data, int len);
-
-      // Functionality:
       //    Update the ACK point of the buffer.
       // Parameters:
       //    0) [in] len: size of data to be acknowledged.

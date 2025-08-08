@@ -104,7 +104,7 @@ CUDT::CUDT()
    m_iRcvBufSize = 8192; //Rcv buffer MUST NOT be bigger than Flight Flag size
    m_iUDPSndBufSize = 65536;
    m_iUDPRcvBufSize = m_iRcvBufSize * m_iMSS;
-   m_iSockType = UDT_STREAM;
+   m_iSockType = UDT_DGRAM;
    m_iIPversion = AF_INET;
    m_bRendezvous = false;
    m_bReuseAddr = true;
@@ -401,15 +401,10 @@ void CUDT::getOpt(UDTOpt optName, void* optval, int& optlen)
    case UDT_EVENT:
    {
       int32_t event = 0;
-      if (m_bBroken)
-         event |= UDT_EPOLL_ERR;
-      else
-      {
-         if (m_pRcvBuffer && (m_pRcvBuffer->getRcvDataSize() > 0))
-            event |= UDT_EPOLL_IN;
-         if (m_pSndBuffer && (m_iSndBufSize > m_pSndBuffer->getCurrBufSize()))
-            event |= UDT_EPOLL_OUT;
-      }
+      if (m_pRcvBuffer && (m_pRcvBuffer->getRcvDataSize() > 0))
+         event |= UDT_EPOLL_IN;
+      if (m_pSndBuffer && (m_iSndBufSize > m_pSndBuffer->getCurrBufSize()))
+         event |= UDT_EPOLL_OUT;
       *(int32_t*)optval = event;
       optlen = sizeof(int32_t);
       break;
@@ -877,7 +872,7 @@ void CUDT::close()
       m_pSndQueue->m_pSndUList->remove(this);
 
    // BARCHART: Trigger pending events as errors; CEPoll::wait does error cleanup.
-   s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_IN | UDT_EPOLL_OUT | UDT_EPOLL_ERR, true);
+   s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_IN | UDT_EPOLL_OUT, true);
 
    // remove itself from all epoll monitoring
    try
@@ -935,89 +930,8 @@ void CUDT::close()
    m_bOpened = false;
 }
 
-int CUDT::send(const char* data, int len)
-{
-   if (UDT_DGRAM == m_iSockType)
-      throw CUDTException(5, 10, 0);
-
-   // throw an exception if not connected
-   if (m_bBroken || m_bClosing)
-      throw CUDTException(2, 1, 0);
-   else if (!m_bConnected)
-      throw CUDTException(2, 2, 0);
-
-   if (len <= 0)
-      return 0;
-
-   CGuard sendguard(m_SendLock);
-
-   if (m_pSndBuffer->getCurrBufSize() == 0)
-   {
-      // delay the EXP timer to avoid mis-fired timeout
-      uint64_t currtime;
-      CTimer::rdtsc(currtime);
-      m_ullLastRspTime = currtime;
-   }
-
-   if (m_iSndBufSize <= m_pSndBuffer->getCurrBufSize())
-   {
-      throw CUDTException(6, 1, 0);
-   }
-
-   int size = (m_iSndBufSize - m_pSndBuffer->getCurrBufSize()) * m_iPayloadSize;
-   if (size > len)
-      size = len;
-
-   // record total time used for sending
-   if (0 == m_pSndBuffer->getCurrBufSize())
-      m_llSndDurationCounter = CTimer::getTime();
-
-   // insert the user buffer into the sening list
-   m_pSndBuffer->addBuffer(data, size);
-
-   // insert this socket to snd list if it is not on the list yet
-   m_pSndQueue->m_pSndUList->update(this, false);
-
-   return size;
-}
-
-int CUDT::recv(char* data, int len)
-{
-   if (UDT_DGRAM == m_iSockType)
-      throw CUDTException(5, 10, 0);
-
-   // throw an exception if not connected
-   if (!m_bConnected)
-      throw CUDTException(2, 2, 0);
-   else if ((m_bBroken || m_bClosing) && (0 == m_pRcvBuffer->getRcvDataSize()))
-      throw CUDTException(2, 1, 0);
-
-   if (len <= 0)
-      return 0;
-
-   CGuard recvguard(m_RecvLock);
-
-   if (0 == m_pRcvBuffer->getRcvDataSize())
-   {
-      throw CUDTException(6, 2, 0);
-   }
-
-   // throw an exception if not connected
-   if (!m_bConnected)
-      throw CUDTException(2, 2, 0);
-   else if ((m_bBroken || m_bClosing) && (0 == m_pRcvBuffer->getRcvDataSize()))
-      throw CUDTException(2, 1, 0);
-
-   int res = m_pRcvBuffer->readBuffer(data, len);
-
-   return res;
-}
-
 int CUDT::sendmsg(const char* data, int len, int msttl, bool inorder)
 {
-   if (UDT_STREAM == m_iSockType)
-      throw CUDTException(5, 9, 0);
-
    // throw an exception if not connected
    if (m_bBroken || m_bClosing)
       throw CUDTException(2, 1, 0);
@@ -1062,9 +976,6 @@ int CUDT::sendmsg(const char* data, int len, int msttl, bool inorder)
 
 int CUDT::recvmsg(char* data, int len)
 {
-   if (UDT_STREAM == m_iSockType)
-      throw CUDTException(5, 9, 0);
-
    // throw an exception if not connected
    if (!m_bConnected)
       throw CUDTException(2, 2, 0);
@@ -1828,20 +1739,16 @@ int CUDT::packData(CPacket& packet, uint64_t& ts)
    }
    else
    {
-      #ifndef NO_BUSY_WAITING
-         ts = entertime + m_ullInterval;
-      #else
-         if (m_ullTimeDiff >= m_ullInterval)
-         {
-            ts = entertime;
-            m_ullTimeDiff -= m_ullInterval;
-         }
-         else
-         {
-            ts = entertime + m_ullInterval - m_ullTimeDiff;
-            m_ullTimeDiff = 0;
-         }
-      #endif
+      if (m_ullTimeDiff >= m_ullInterval)
+      {
+         ts = entertime;
+         m_ullTimeDiff -= m_ullInterval;
+      }
+      else
+      {
+         ts = entertime + m_ullInterval - m_ullTimeDiff;
+         m_ullTimeDiff = 0;
+      }
    }
 
    m_ullTargetTime = ts;
@@ -2071,7 +1978,7 @@ void CUDT::checkTimers()
          releaseSynch();
 
          // app can call any UDT API to learn the connection_broken error
-         s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_IN | UDT_EPOLL_OUT | UDT_EPOLL_ERR, true);
+         s_UDTUnited.m_RPoll->update_events(m_SocketID, UDT_EPOLL_IN | UDT_EPOLL_OUT, true);
 
          return;
       }
