@@ -445,8 +445,10 @@ m_pChannel(NULL),
 m_pTimer(NULL),
 m_WindowLock(),
 m_WindowCond(),
-m_bClosing(false),
-m_ExitCond()
+m_bClosing(false)
+#ifdef WINDOWS
+, m_ExitCond()
+#endif
 {
    #ifndef WINDOWS
       pthread_cond_init(&m_WindowCond, NULL);
@@ -868,7 +870,9 @@ m_pChannel(NULL),
 m_pTimer(NULL),
 m_iPayloadSize(),
 m_bClosing(false),
+#ifdef WINDOWS
 m_ExitCond(),
+#endif
 m_LSLock(),
 m_pListener(NULL),
 m_pRendezvousQueue(NULL),

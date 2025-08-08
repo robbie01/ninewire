@@ -46,6 +46,9 @@ written by
    #include <sys/time.h>
    #include <sys/uio.h>
    #include <pthread.h>
+#ifdef MACOSX
+   #include <dispatch/dispatch.h>
+#endif
 #else
    #include <stdint.h>
    #include <ws2tcpip.h>
@@ -66,6 +69,11 @@ written by
     typedef pthread_mutex_t udt_pthread_mutex_t;
     typedef pthread_cond_t udt_pthread_cond_t;
     typedef pthread_key_t udt_pthread_key_t;
+#ifdef MACOSX
+    typedef dispatch_semaphore_t udt_event_t;
+#else
+    typedef sem_t udt_event_t;
+#endif
 #endif
 
 
@@ -159,8 +167,12 @@ private:
 private:
    uint64_t m_ullSchedTime;             // next schedulled time
 
-   udt_pthread_cond_t m_TickCond;
+#ifdef WINDOWS
    udt_pthread_mutex_t m_TickLock;
+   udt_pthread_cond_t m_TickCond;
+#else
+   udt_event_t m_TickEvent;
+#endif
 
 private:
    static uint64_t s_ullCPUFrequency;	// CPU frequency : clock cycles per microsecond

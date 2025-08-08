@@ -61,24 +61,34 @@ uint64_t CTimer::s_ullCPUFrequency = CTimer::readCPUFrequency();
 
 CTimer::CTimer():
 m_ullSchedTime(),
-m_TickCond(),
-m_TickLock()
+#ifdef WINDOWS
+m_TickLock(),
+m_TickCond()
+#else
+m_TickEvent()
+#endif
 {
-   #ifndef WINDOWS
-      pthread_mutex_init(&m_TickLock, NULL);
-      pthread_cond_init(&m_TickCond, NULL);
-   #else
-      InitializeSRWLock(&m_TickLock);
-      InitializeConditionVariable(&m_TickCond);
-   #endif
+#ifndef WINDOWS
+#ifdef MACOSX
+   m_TickEvent = dispatch_semaphore_create(0);
+#else
+   sem_init(&m_TickEvent, 0, 0);
+#endif
+#else
+   InitializeSRWLock(&m_TickLock);
+   InitializeConditionVariable(&m_TickCond);
+#endif
 }
 
 CTimer::~CTimer()
 {
-   #ifndef WINDOWS
-      pthread_mutex_destroy(&m_TickLock);
-      pthread_cond_destroy(&m_TickCond);
-   #endif
+#ifndef WINDOWS
+#ifdef MACOSX
+   dispatch_release(m_TickEvent);
+#else
+   sem_destroy(&m_TickEvent);
+#endif
+#endif
 }
 
 void CTimer::rdtsc(uint64_t &x)
@@ -218,22 +228,24 @@ void CTimer::sleepto(uint64_t nexttime)
          #endif
       #else
          #ifndef WINDOWS
-            timeval now;
-            timespec timeout;
-            gettimeofday(&now, 0);
-            if (now.tv_usec < 990000)
-            {
-               timeout.tv_sec = now.tv_sec;
-               timeout.tv_nsec = (now.tv_usec + 10000) * 1000;
-            }
-            else
-            {
-               timeout.tv_sec = now.tv_sec + 1;
-               timeout.tv_nsec = (now.tv_usec + 10000 - 1000000) * 1000;
-            }
-            pthread_mutex_lock(&m_TickLock);
-            pthread_cond_timedwait(&m_TickCond, &m_TickLock, &timeout);
-            pthread_mutex_unlock(&m_TickLock);
+            #ifdef MACOSX
+               dispatch_semaphore_wait(m_TickEvent, dispatch_time(DISPATCH_TIME_NOW, 1000000));
+            #else
+               timeval now;
+               timespec timeout;
+               gettimeofday(&now, 0);
+               if (now.tv_usec < 990000)
+               {
+                  timeout.tv_sec = now.tv_sec;
+                  timeout.tv_nsec = (now.tv_usec + 10000) * 1000;
+               }
+               else
+               {
+                  timeout.tv_sec = now.tv_sec + 1;
+                  timeout.tv_nsec = (now.tv_usec + 10000 - 1000000) * 1000;
+               }
+               sem_timedwait(&m_TickEvent, &timeout);
+            #endif
          #else
             AcquireSRWLockExclusive(&m_TickLock);
             SleepConditionVariableSRW(&m_TickCond, &m_TickLock, 1, 0);
@@ -255,7 +267,11 @@ void CTimer::interrupt()
 void CTimer::tick()
 {
    #ifndef WINDOWS
-      pthread_cond_signal(&m_TickCond);
+      #ifdef MACOSX
+         dispatch_semaphore_signal(m_TickEvent);
+      #else
+         sem_post(&m_TickEvent);
+      #endif
    #else
       WakeConditionVariable(&m_TickCond);
    #endif
