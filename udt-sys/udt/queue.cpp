@@ -446,9 +446,6 @@ m_pTimer(NULL),
 m_WindowLock(),
 m_WindowCond(),
 m_bClosing(false)
-#ifdef WINDOWS
-, m_ExitCond()
-#endif
 {
    #ifndef WINDOWS
       pthread_cond_init(&m_WindowCond, NULL);
@@ -456,7 +453,6 @@ m_bClosing(false)
    #else
       InitializeSRWLock(&m_WindowLock);
       InitializeConditionVariable(&m_WindowCond);
-      m_ExitCond = CreateEvent(nullptr, false, false, nullptr);
    #endif
 }
 
@@ -475,9 +471,8 @@ CSndQueue::~CSndQueue()
    #else
       WakeConditionVariable(&m_WindowCond);
       if (NULL != m_WorkerThread)
-         WaitForSingleObject(m_ExitCond, INFINITE);
+         WaitForSingleObject(m_WorkerThread, INFINITE);
       CloseHandle(m_WorkerThread);
-      CloseHandle(m_ExitCond);
    #endif
 
    delete m_pSndUList;
@@ -553,7 +548,6 @@ void CSndQueue::init(CChannel* c, CTimer* t)
    #ifndef WINDOWS
       return NULL;
    #else
-      SetEvent(self->m_ExitCond);
       return 0;
    #endif
 }
@@ -870,9 +864,6 @@ m_pChannel(NULL),
 m_pTimer(NULL),
 m_iPayloadSize(),
 m_bClosing(false),
-#ifdef WINDOWS
-m_ExitCond(),
-#endif
 m_LSLock(),
 m_pListener(NULL),
 m_pRendezvousQueue(NULL),
@@ -892,7 +883,6 @@ m_PassCond()
       InitializeConditionVariable(&m_PassCond);
       InitializeSRWLock(&m_LSLock);
       InitializeSRWLock(&m_IDLock);
-      m_ExitCond = CreateEvent(nullptr, false, false, nullptr);
    #endif
 }
 
@@ -909,9 +899,8 @@ CRcvQueue::~CRcvQueue()
       pthread_mutex_destroy(&m_IDLock);
    #else
       if (NULL != m_WorkerThread)
-         WaitForSingleObject(m_ExitCond, INFINITE);
+         WaitForSingleObject(m_WorkerThread, INFINITE);
       CloseHandle(m_WorkerThread);
-      CloseHandle(m_ExitCond);
    #endif
 
    delete m_pRcvUList;
@@ -1092,7 +1081,6 @@ TIMER_CHECK:
    #ifndef WINDOWS
       return NULL;
    #else
-      SetEvent(self->m_ExitCond);
       return 0;
    #endif
 }

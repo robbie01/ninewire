@@ -414,9 +414,6 @@ private:
    udt_pthread_cond_t m_WindowCond;
 
    volatile bool m_bClosing;		// closing the worker
-#ifdef WINDOWS
-   HANDLE m_ExitCond;
-#endif
 
 private:
    CSndQueue(const CSndQueue&);
@@ -478,9 +475,6 @@ private:
    int m_iPayloadSize;                  // packet payload size
 
    volatile bool m_bClosing;            // closing the workder
-#ifdef WINDOWS
-   HANDLE m_ExitCond;
-#endif
 
 private:
    int setListener(CUDT* u);
