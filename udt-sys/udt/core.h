@@ -239,8 +239,8 @@ private: // Options
    int64_t m_llMaxBW;				// maximum data transfer rate (threshold)
 
 private: // congestion control
-   CCCVirtualFactory* m_pCCFactory;             // Factory class to create a specific CC instance
-   CCC* m_pCC;                                  // congestion control class
+   std::unique_ptr<CCCVirtualFactory> m_pCCFactory;             // Factory class to create a specific CC instance
+   std::unique_ptr<CCC> m_pCC;                                  // congestion control class
    CCache<CInfoBlock>* m_pCache;		// network information cache
 
 private: // Status
@@ -265,9 +265,9 @@ private: // Status
    int64_t m_llLastReqTime;			// last time when a connection request is sent
 
 private: // Sending related data
-   CSndBuffer* m_pSndBuffer;                    // Sender buffer
-   CSndLossList* m_pSndLossList;                // Sender loss list
-   CPktTimeWindow* m_pSndTimeWindow;            // Packet sending time window
+   std::unique_ptr<CSndBuffer> m_pSndBuffer;                    // Sender buffer
+   std::unique_ptr<CSndLossList> m_pSndLossList;                // Sender loss list
+   std::unique_ptr<CPktTimeWindow> m_pSndTimeWindow;            // Packet sending time window
 
    volatile uint64_t m_ullInterval;             // Inter-packet time, in CPU clock cycles
    uint64_t m_ullTimeDiff;                      // aggregate difference in inter-packet time
@@ -287,10 +287,10 @@ private: // Sending related data
    void CCUpdate();
 
 private: // Receiving related data
-   CRcvBuffer* m_pRcvBuffer;                    // Receiver buffer
-   CRcvLossList* m_pRcvLossList;                // Receiver loss list
-   CACKWindow* m_pACKWindow;                    // ACK history window
-   CPktTimeWindow* m_pRcvTimeWindow;            // Packet arrival time window
+   std::unique_ptr<CRcvBuffer> m_pRcvBuffer;                    // Receiver buffer
+   std::unique_ptr<CRcvLossList> m_pRcvLossList;                // Receiver loss list
+   std::unique_ptr<CACKWindow> m_pACKWindow;                    // ACK history window
+   std::unique_ptr<CPktTimeWindow> m_pRcvTimeWindow;            // Packet arrival time window
 
    int32_t m_iRcvLastAck;                       // Last sent ACK
    uint64_t m_ullLastAckTime;                   // Timestamp of last ACK

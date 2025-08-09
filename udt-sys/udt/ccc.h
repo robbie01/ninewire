@@ -42,7 +42,7 @@ written by
 #ifndef __UDT_CCC_H__
 #define __UDT_CCC_H__
 
-
+#include <memory>
 #include "udt.h"
 #include "packet.h"
 
@@ -236,8 +236,8 @@ class CCCVirtualFactory
 public:
    virtual ~CCCVirtualFactory() {}
 
-   virtual CCC* create() = 0;
-   virtual CCCVirtualFactory* clone() = 0;
+   virtual std::unique_ptr<CCC> create() = 0;
+   virtual std::unique_ptr<CCCVirtualFactory> clone() = 0;
 };
 
 template <class T>
@@ -246,8 +246,8 @@ class CCCFactory: public CCCVirtualFactory
 public:
    virtual ~CCCFactory() {}
 
-   virtual CCC* create() {return new T;}
-   virtual CCCVirtualFactory* clone() {return new CCCFactory<T>;}
+   virtual std::unique_ptr<CCC> create() {return std::make_unique<T>();}
+   virtual std::unique_ptr<CCCVirtualFactory> clone() {return std::make_unique<CCCFactory<T>>();}
 };
 
 class CUDTCC: public CCC

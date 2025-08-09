@@ -240,11 +240,11 @@ int CUDTUnited::newConnection(const UDTSOCKET listener, const sockaddr* peer, CH
    std::shared_ptr<CUDTSocket> ns;
    auto ls = locate(listener);
 
-   if (NULL == ls)
+   if (!ls)
       return -1;
 
    // if this connection has already been processed
-   if (NULL != (ns = locate(peer, hs->m_iID, hs->m_iISN)))
+   if ((ns = locate(peer, hs->m_iID, hs->m_iISN)))
    {
       if (ns->m_pUDT->m_bBroken)
       {

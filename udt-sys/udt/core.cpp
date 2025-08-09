@@ -110,9 +110,9 @@ CUDT::CUDT()
    m_bReuseAddr = true;
    m_llMaxBW = -1;
 
-   m_pCCFactory = new CCCFactory<CUDTCC>;
-   m_pCC = NULL;
-   m_pCache = NULL;
+   m_pCCFactory = std::make_unique<CCCFactory<CUDTCC>>();
+   m_pCC = nullptr;
+   m_pCache = nullptr;
 
    // Initial status
    m_bOpened = false;
@@ -159,7 +159,7 @@ CUDT::CUDT(const CUDT& ancestor)
    m_llMaxBW = ancestor.m_llMaxBW;
 
    m_pCCFactory = ancestor.m_pCCFactory->clone();
-   m_pCC = NULL;
+   m_pCC = nullptr;
    m_pCache = ancestor.m_pCache;
 
    // Initial status
@@ -177,17 +177,6 @@ CUDT::~CUDT()
 {
    // release mutex/condtion variables
    destroySynch();
-
-   // destroy the data structures
-   delete m_pSndBuffer;
-   delete m_pRcvBuffer;
-   delete m_pSndLossList;
-   delete m_pRcvLossList;
-   delete m_pACKWindow;
-   delete m_pSndTimeWindow;
-   delete m_pRcvTimeWindow;
-   delete m_pCCFactory;
-   delete m_pCC;
 
    // make sure to properly cast before deletion
    if (AF_INET == m_iIPversion) {
@@ -235,8 +224,6 @@ void CUDT::setOpt(UDTOpt optName, const void* optval, int)
    case UDT_CC:
       if (m_bConnecting || m_bConnected)
          throw CUDTException(5, 1, 0);
-      if (NULL != m_pCCFactory)
-         delete m_pCCFactory;
       m_pCCFactory = ((CCCVirtualFactory *)optval)->clone();
 
       break;
@@ -348,7 +335,7 @@ void CUDT::getOpt(UDTOpt optName, void* optval, int& optlen)
    case UDT_CC:
       if (!m_bOpened)
          throw CUDTException(5, 5, 0);
-      *(CCC**)optval = m_pCC;
+      *(CCC**)optval = m_pCC.get();
       optlen = sizeof(CCC*);
 
       break;
@@ -708,14 +695,14 @@ POST_CONNECT:
    // Prepare all data structures
    try
    {
-      m_pSndBuffer = new CSndBuffer(32, m_iPayloadSize);
-      m_pRcvBuffer = new CRcvBuffer(&(m_pRcvQueue->m_UnitQueue), m_iRcvBufSize);
+      m_pSndBuffer = std::make_unique<CSndBuffer>(32, m_iPayloadSize);
+      m_pRcvBuffer = std::make_unique<CRcvBuffer>(&(m_pRcvQueue->m_UnitQueue), m_iRcvBufSize);
       // after introducing lite ACK, the sndlosslist may not be cleared in time, so it requires twice space.
-      m_pSndLossList = new CSndLossList(m_iFlowWindowSize * 2);
-      m_pRcvLossList = new CRcvLossList(m_iFlightFlagSize);
-      m_pACKWindow = new CACKWindow(1024);
-      m_pRcvTimeWindow = new CPktTimeWindow(16, 64);
-      m_pSndTimeWindow = new CPktTimeWindow();
+      m_pSndLossList = std::make_unique<CSndLossList>(m_iFlowWindowSize * 2);
+      m_pRcvLossList = std::make_unique<CRcvLossList>(m_iFlightFlagSize);
+      m_pACKWindow = std::make_unique<CACKWindow>(1024);
+      m_pRcvTimeWindow = std::make_unique<CPktTimeWindow>(16, 64);
+      m_pSndTimeWindow = std::make_unique<CPktTimeWindow>();
    }
    catch (...)
    {
@@ -807,13 +794,13 @@ void CUDT::connect(const sockaddr* peer, CHandShake* hs)
    // Prepare all structures
    try
    {
-      m_pSndBuffer = new CSndBuffer(32, m_iPayloadSize);
-      m_pRcvBuffer = new CRcvBuffer(&(m_pRcvQueue->m_UnitQueue), m_iRcvBufSize);
-      m_pSndLossList = new CSndLossList(m_iFlowWindowSize * 2);
-      m_pRcvLossList = new CRcvLossList(m_iFlightFlagSize);
-      m_pACKWindow = new CACKWindow(1024);
-      m_pRcvTimeWindow = new CPktTimeWindow(16, 64);
-      m_pSndTimeWindow = new CPktTimeWindow();
+      m_pSndBuffer = std::make_unique<CSndBuffer>(32, m_iPayloadSize);
+      m_pRcvBuffer = std::make_unique<CRcvBuffer>(&(m_pRcvQueue->m_UnitQueue), m_iRcvBufSize);
+      m_pSndLossList = std::make_unique<CSndLossList>(m_iFlowWindowSize * 2);
+      m_pRcvLossList = std::make_unique<CRcvLossList>(m_iFlightFlagSize);
+      m_pACKWindow = std::make_unique<CACKWindow>(1024);
+      m_pRcvTimeWindow = std::make_unique<CPktTimeWindow>(16, 64);
+      m_pSndTimeWindow = std::make_unique<CPktTimeWindow>();
    }
    catch (...)
    {

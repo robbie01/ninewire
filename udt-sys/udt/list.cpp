@@ -41,18 +41,18 @@ written by
 #include "list.h"
 
 CSndLossList::CSndLossList(int size):
-m_piData1(NULL),
-m_piData2(NULL),
-m_piNext(NULL),
+m_piData1(),
+m_piData2(),
+m_piNext(),
 m_iHead(-1),
 m_iLength(0),
 m_iSize(size),
 m_iLastInsertPos(-1),
 m_ListLock()
 {
-   m_piData1 = new int32_t [m_iSize];
-   m_piData2 = new int32_t [m_iSize];
-   m_piNext = new int [m_iSize];
+   m_piData1 = std::make_unique<int32_t[]>(m_iSize);
+   m_piData2 = std::make_unique<int32_t[]>(m_iSize);;
+   m_piNext = std::make_unique<int[]>(m_iSize);;
 
    // -1 means there is no data in the node
    for (int i = 0; i < size; ++ i)
@@ -63,11 +63,7 @@ m_ListLock()
 }
 
 CSndLossList::~CSndLossList()
-{
-   delete [] m_piData1;
-   delete [] m_piData2;
-   delete [] m_piNext;
-}
+{}
 
 int CSndLossList::insert(int32_t seqno1, int32_t seqno2)
 {
@@ -407,19 +403,19 @@ int32_t CSndLossList::getLostSeq()
 ////////////////////////////////////////////////////////////////////////////////
 
 CRcvLossList::CRcvLossList(int size):
-m_piData1(NULL),
-m_piData2(NULL),
-m_piNext(NULL),
-m_piPrior(NULL),
+m_piData1(),
+m_piData2(),
+m_piNext(),
+m_piPrior(),
 m_iHead(-1),
 m_iTail(-1),
 m_iLength(0),
 m_iSize(size)
 {
-   m_piData1 = new int32_t [m_iSize];
-   m_piData2 = new int32_t [m_iSize];
-   m_piNext = new int [m_iSize];
-   m_piPrior = new int [m_iSize];
+   m_piData1 = std::make_unique<int32_t[]>(m_iSize);
+   m_piData2 = std::make_unique<int32_t[]>(m_iSize);
+   m_piNext = std::make_unique<int[]>(m_iSize);
+   m_piPrior = std::make_unique<int[]>(m_iSize);
 
    // -1 means there is no data in the node
    for (int i = 0; i < size; ++ i)
@@ -430,12 +426,7 @@ m_iSize(size)
 }
 
 CRcvLossList::~CRcvLossList()
-{
-   delete [] m_piData1;
-   delete [] m_piData2;
-   delete [] m_piNext;
-   delete [] m_piPrior;
-}
+{}
 
 void CRcvLossList::insert(int32_t seqno1, int32_t seqno2)
 {

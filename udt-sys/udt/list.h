@@ -90,9 +90,9 @@ public:
    int32_t getLostSeq();
 
 private:
-   int32_t* m_piData1;                  // sequence number starts
-   int32_t* m_piData2;                  // seqnence number ends
-   int* m_piNext;                       // next node in the list
+   std::unique_ptr<int32_t[]> m_piData1;                  // sequence number starts
+   std::unique_ptr<int32_t[]> m_piData2;                  // seqnence number ends
+   std::unique_ptr<int[]> m_piNext;                       // next node in the list
 
    int m_iHead;                         // first node
    int m_iLength;                       // loss length
@@ -183,10 +183,10 @@ public:
    void getLossArray(int32_t* array, int& len, int limit);
 
 private:
-   int32_t* m_piData1;                  // sequence number starts
-   int32_t* m_piData2;                  // sequence number ends
-   int* m_piNext;                       // next node in the list
-   int* m_piPrior;                      // prior node in the list;
+   std::unique_ptr<int32_t[]> m_piData1;                  // sequence number starts
+   std::unique_ptr<int32_t[]> m_piData2;                  // sequence number ends
+   std::unique_ptr<int[]> m_piNext;                       // next node in the list
+   std::unique_ptr<int[]> m_piPrior;                      // prior node in the list;
 
    int m_iHead;                         // first node in the list
    int m_iTail;                         // last node in the list;
