@@ -812,7 +812,7 @@ CRcvQueue::~CRcvQueue()
    delete m_pRendezvousQueue;
 
    // remove all queued messages
-   for (map<int32_t, std::queue<CPacket*> >::iterator i = m_mBuffer.begin(); i != m_mBuffer.end(); ++ i)
+   for (auto i = m_mBuffer.begin(); i != m_mBuffer.end(); ++ i)
    {
       while (!i->second.empty())
       {
@@ -968,7 +968,7 @@ int CRcvQueue::recvfrom(int32_t id, CPacket& packet)
 {
    std::unique_lock<std::mutex> bufferlock(m_PassLock);
 
-   map<int32_t, std::queue<CPacket*> >::iterator i = m_mBuffer.find(id);
+   auto i = m_mBuffer.find(id);
 
    if (i == m_mBuffer.end())
    {
@@ -1038,7 +1038,7 @@ void CRcvQueue::removeConnector(const UDTSOCKET& id)
 
    std::lock_guard<std::mutex> bufferlock(m_PassLock);
 
-   map<int32_t, std::queue<CPacket*> >::iterator i = m_mBuffer.find(id);
+   auto i = m_mBuffer.find(id);
    if (i != m_mBuffer.end())
    {
       while (!i->second.empty())
@@ -1079,7 +1079,7 @@ void CRcvQueue::storePkt(int32_t id, CPacket* pkt)
 {
    std::lock_guard<std::mutex> bufferlock(m_PassLock);
 
-   map<int32_t, std::queue<CPacket*> >::iterator i = m_mBuffer.find(id);
+   auto i = m_mBuffer.find(id);
 
    if (i == m_mBuffer.end())
    {

@@ -30,10 +30,10 @@ async fn main() -> anyhow::Result<()> {
         // let r = l.accept().await?;
         println!("A: connected to {:?}", r.peer_addr()?);
         let mut msg = [0; 30000];
-        let mut int = interval(Duration::from_secs(5));
+        let mut int = interval(Duration::from_secs(1));
         let mut ctr = 0;
 
-        let mut rem = 12;
+        let mut rem = 1;
 
         int.reset();
         loop {

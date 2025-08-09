@@ -384,7 +384,7 @@ CUDT* CUDTUnited::lookup(const UDTSOCKET u)
    // protects the m_Sockets structure
    std::lock_guard<std::mutex> cg(m_ControlLock);
 
-   map<UDTSOCKET, CUDTSocket*>::iterator i = m_Sockets.find(u);
+   auto i = m_Sockets.find(u);
 
    if ((i == m_Sockets.end()) || (i->second->m_Status == CLOSED))
       throw CUDTException(5, 4, 0);
@@ -397,7 +397,7 @@ UDTSTATUS CUDTUnited::getStatus(const UDTSOCKET u)
    // protects the m_Sockets structure
    std::lock_guard<std::mutex> cg(m_ControlLock);
 
-   map<UDTSOCKET, CUDTSocket*>::iterator i = m_Sockets.find(u);
+   auto i = m_Sockets.find(u);
 
    if (i == m_Sockets.end())
    {
@@ -650,7 +650,7 @@ int CUDTUnited::close(const UDTSOCKET u)
    std::lock_guard<std::mutex> manager_cg(m_ControlLock);
 
    // since "s" is located before m_ControlLock, locate it again in case it became invalid
-   map<UDTSOCKET, CUDTSocket*>::iterator i = m_Sockets.find(u);
+   auto i = m_Sockets.find(u);
    if ((i == m_Sockets.end()) || (i->second->m_Status == CLOSED))
       return 0;
    s = i->second;
@@ -720,7 +720,7 @@ CUDTSocket* CUDTUnited::locate(const UDTSOCKET u)
 {
    std::lock_guard<std::mutex> cg(m_ControlLock);
 
-   map<UDTSOCKET, CUDTSocket*>::iterator i = m_Sockets.find(u);
+   auto i = m_Sockets.find(u);
 
    if ((i == m_Sockets.end()) || (i->second->m_Status == CLOSED))
       return NULL;
@@ -732,13 +732,13 @@ CUDTSocket* CUDTUnited::locate(const sockaddr* peer, const UDTSOCKET id, int32_t
 {
    std::lock_guard<std::mutex> cg(m_ControlLock);
 
-   map<int64_t, set<UDTSOCKET> >::iterator i = m_PeerRec.find((id << 30) + isn);
+   auto i = m_PeerRec.find((id << 30) + isn);
    if (i == m_PeerRec.end())
       return NULL;
 
-   for (set<UDTSOCKET>::iterator j = i->second.begin(); j != i->second.end(); ++ j)
+   for (const auto& j : i->second)
    {
-      map<UDTSOCKET, CUDTSocket*>::iterator k = m_Sockets.find(*j);
+      auto k = m_Sockets.find(j);
       // this socket might have been closed and moved m_ClosedSockets
       if (k == m_Sockets.end())
          continue;
@@ -758,72 +758,72 @@ void CUDTUnited::checkBrokenSockets()
    vector<UDTSOCKET> tbc;
    vector<UDTSOCKET> tbr;
 
-   for (map<UDTSOCKET, CUDTSocket*>::iterator i = m_Sockets.begin(); i != m_Sockets.end(); ++ i)
+   for (const auto& i : m_Sockets)
    {
       // check broken connection
-      if (i->second->m_pUDT->m_bBroken)
+      if (i.second->m_pUDT->m_bBroken)
       {
-         if (i->second->m_Status == LISTENING)
+         if (i.second->m_Status == LISTENING)
          {
             // for a listening socket, it should wait an extra 3 seconds in case a client is connecting
-            if (CTimer::getTime() - i->second->m_TimeStamp < 3000000)
+            if (CTimer::getTime() - i.second->m_TimeStamp < 3000000)
                continue;
          }
-         else if ((i->second->m_pUDT->m_pRcvBuffer != NULL) && (i->second->m_pUDT->m_pRcvBuffer->getRcvDataSize() > 0) && (i->second->m_pUDT->m_iBrokenCounter -- > 0))
+         else if ((i.second->m_pUDT->m_pRcvBuffer != NULL) && (i.second->m_pUDT->m_pRcvBuffer->getRcvDataSize() > 0) && (i.second->m_pUDT->m_iBrokenCounter -- > 0))
          {
             // if there is still data in the receiver buffer, wait longer
             continue;
          }
 
          //close broken connections and start removal timer
-         i->second->m_Status = CLOSED;
-         i->second->m_TimeStamp = CTimer::getTime();
-         tbc.push_back(i->first);
-         m_ClosedSockets[i->first] = i->second;
+         i.second->m_Status = CLOSED;
+         i.second->m_TimeStamp = CTimer::getTime();
+         tbc.push_back(i.first);
+         m_ClosedSockets[i.first] = i.second;
 
          // remove from listener's queue
-         map<UDTSOCKET, CUDTSocket*>::iterator ls = m_Sockets.find(i->second->m_ListenSocket);
+         auto ls = m_Sockets.find(i.second->m_ListenSocket);
          if (ls == m_Sockets.end())
          {
-            ls = m_ClosedSockets.find(i->second->m_ListenSocket);
+            ls = m_ClosedSockets.find(i.second->m_ListenSocket);
             if (ls == m_ClosedSockets.end())
                continue;
          }
 
          {
             std::lock_guard<std::mutex> guard(ls->second->m_AcceptLock);
-            ls->second->m_pQueuedSockets->erase(i->second->m_SocketID);
-            ls->second->m_pAcceptSockets->erase(i->second->m_SocketID);
+            ls->second->m_pQueuedSockets->erase(i.second->m_SocketID);
+            ls->second->m_pAcceptSockets->erase(i.second->m_SocketID);
          }
       }
    }
 
-   for (map<UDTSOCKET, CUDTSocket*>::iterator j = m_ClosedSockets.begin(); j != m_ClosedSockets.end(); ++ j)
+   for (const auto& j : m_ClosedSockets)
    {
-      if (!j->second->m_bIsExpiring) {
-         j->second->m_bIsExpiring = true;
-         j->second->m_TimeStamp = CTimer::getTime();
+      if (!j.second->m_bIsExpiring) {
+         j.second->m_bIsExpiring = true;
+         j.second->m_TimeStamp = CTimer::getTime();
       }
 
       // timeout 1 second to destroy a socket AND it has been removed from RcvUList
-      if ((CTimer::getTime() - j->second->m_TimeStamp > 1000000) && ((NULL == j->second->m_pUDT->m_pRNode) || !j->second->m_pUDT->m_pRNode->m_bOnList))
+      if ((CTimer::getTime() - j.second->m_TimeStamp > 1000000) && ((NULL == j.second->m_pUDT->m_pRNode) || !j.second->m_pUDT->m_pRNode->m_bOnList))
       {
-         tbr.push_back(j->first);
+         tbr.push_back(j.first);
       }
    }
 
    // move closed sockets to the ClosedSockets structure
-   for (vector<UDTSOCKET>::iterator k = tbc.begin(); k != tbc.end(); ++ k)
-      m_Sockets.erase(*k);
+   for (const auto& k : tbc)
+      m_Sockets.erase(k);
 
    // remove those timeout sockets
-   for (vector<UDTSOCKET>::iterator l = tbr.begin(); l != tbr.end(); ++ l)
-      removeSocket(*l);
+   for (const auto& l : tbr)
+      removeSocket(l);
 }
 
 void CUDTUnited::removeSocket(const UDTSOCKET u)
 {
-   map<UDTSOCKET, CUDTSocket*>::iterator i = m_ClosedSockets.find(u);
+   auto i = m_ClosedSockets.find(u);
 
    // invalid socket ID
    if (i == m_ClosedSockets.end())
@@ -836,19 +836,19 @@ void CUDTUnited::removeSocket(const UDTSOCKET u)
    {
       std::lock_guard<std::mutex> guard(i->second->m_AcceptLock);
       // if it is a listener, close all un-accepted sockets in its queue and remove them later
-      for (set<UDTSOCKET>::iterator q = i->second->m_pQueuedSockets->begin(); q != i->second->m_pQueuedSockets->end(); ++ q)
+      for (const auto& q : *i->second->m_pQueuedSockets)
       {
-         m_Sockets[*q]->m_pUDT->m_bBroken = true;
-         m_Sockets[*q]->m_pUDT->close();
-         m_Sockets[*q]->m_TimeStamp = CTimer::getTime();
-         m_Sockets[*q]->m_Status = CLOSED;
-         m_ClosedSockets[*q] = m_Sockets[*q];
-         m_Sockets.erase(*q);
+         m_Sockets[q]->m_pUDT->m_bBroken = true;
+         m_Sockets[q]->m_pUDT->close();
+         m_Sockets[q]->m_TimeStamp = CTimer::getTime();
+         m_Sockets[q]->m_Status = CLOSED;
+         m_ClosedSockets[q] = m_Sockets[q];
+         m_Sockets.erase(q);
       }
    }
 
    // remove from peer rec
-   map<int64_t, set<UDTSOCKET> >::iterator j = m_PeerRec.find((i->second->m_PeerID << 30) + i->second->m_iISN);
+   auto j = m_PeerRec.find((i->second->m_PeerID << 30) + i->second->m_iISN);
    if (j != m_PeerRec.end())
    {
       j->second.erase(u);
@@ -861,8 +861,7 @@ void CUDTUnited::removeSocket(const UDTSOCKET u)
    delete i->second;
    m_ClosedSockets.erase(i);
 
-   map<int, CMultiplexer>::iterator m;
-   m = m_mMultiplexer.find(mid);
+   auto m = m_mMultiplexer.find(mid);
    if (m == m_mMultiplexer.end())
    {
       //something is wrong!!!
@@ -941,23 +940,23 @@ void CUDTUnited::checkTLSValue()
    std::lock_guard<std::mutex> tg(m_TLSLock);
 
    vector<DWORD> tbr;
-   for (map<DWORD, CUDTException*>::iterator i = m_mTLSRecord.begin(); i != m_mTLSRecord.end(); ++ i)
+   for (const auto& i : m_mTLSRecord)
    {
-      HANDLE h = OpenThread(THREAD_QUERY_INFORMATION, FALSE, i->first);
+      HANDLE h = OpenThread(THREAD_QUERY_INFORMATION, FALSE, i.first);
       if (NULL == h)
       {
-         tbr.push_back(i->first);
+         tbr.push_back(i.first);
          break;
       }
       if (WAIT_OBJECT_0 == WaitForSingleObject(h, 0))
       {
-         delete i->second;
-         tbr.push_back(i->first);
+         delete i.second;
+         tbr.push_back(i.first);
       }
       CloseHandle(h);
    }
-   for (vector<DWORD>::iterator j = tbr.begin(); j != tbr.end(); ++ j)
-      m_mTLSRecord.erase(*j);
+   for (const auto& j : tbr)
+      m_mTLSRecord.erase(j);
 }
 #endif
 
@@ -970,17 +969,17 @@ void CUDTUnited::updateMux(CUDTSocket* s, const sockaddr* addr, const UDPSOCKET*
       int port = (AF_INET == s->m_pUDT->m_iIPversion) ? ntohs(((sockaddr_in*)addr)->sin_port) : ntohs(((sockaddr_in6*)addr)->sin6_port);
 
       // find a reusable address
-      for (map<int, CMultiplexer>::iterator i = m_mMultiplexer.begin(); i != m_mMultiplexer.end(); ++ i)
+      for (auto& i : m_mMultiplexer)
       {
-         if ((i->second.m_iIPversion == s->m_pUDT->m_iIPversion) && (i->second.m_iMSS == s->m_pUDT->m_iMSS) && i->second.m_bReusable)
+         if ((i.second.m_iIPversion == s->m_pUDT->m_iIPversion) && (i.second.m_iMSS == s->m_pUDT->m_iMSS) && i.second.m_bReusable)
          {
-            if (i->second.m_iPort == port)
+            if (i.second.m_iPort == port)
             {
                // reuse the existing multiplexer
-               ++ i->second.m_iRefCount;
-               s->m_pUDT->m_pSndQueue = i->second.m_pSndQueue;
-               s->m_pUDT->m_pRcvQueue = i->second.m_pRcvQueue;
-               s->m_iMuxID = i->second.m_iID;
+               ++ i.second.m_iRefCount;
+               s->m_pUDT->m_pSndQueue = i.second.m_pSndQueue;
+               s->m_pUDT->m_pRcvQueue = i.second.m_pRcvQueue;
+               s->m_iMuxID = i.second.m_iID;
                return;
             }
          }
@@ -1039,15 +1038,15 @@ void CUDTUnited::updateMux(CUDTSocket* s, const CUDTSocket* ls)
    int port = (AF_INET == ls->m_iIPversion) ? ntohs(((sockaddr_in*)ls->m_pSelfAddr)->sin_port) : ntohs(((sockaddr_in6*)ls->m_pSelfAddr)->sin6_port);
 
    // find the listener's address
-   for (map<int, CMultiplexer>::iterator i = m_mMultiplexer.begin(); i != m_mMultiplexer.end(); ++ i)
+   for (auto& i : m_mMultiplexer)
    {
-      if (i->second.m_iPort == port)
+      if (i.second.m_iPort == port)
       {
          // reuse the existing multiplexer
-         ++ i->second.m_iRefCount;
-         s->m_pUDT->m_pSndQueue = i->second.m_pSndQueue;
-         s->m_pUDT->m_pRcvQueue = i->second.m_pRcvQueue;
-         s->m_iMuxID = i->second.m_iID;
+         ++ i.second.m_iRefCount;
+         s->m_pUDT->m_pSndQueue = i.second.m_pSndQueue;
+         s->m_pUDT->m_pRcvQueue = i.second.m_pRcvQueue;
+         s->m_iMuxID = i.second.m_iID;
          return;
       }
    }
@@ -1069,32 +1068,32 @@ void CUDTUnited::garbageCollect(CUDTUnited* self)
    // remove all sockets and multiplexers
    {
       std::lock_guard<std::mutex> guard(self->m_ControlLock);
-      for (map<UDTSOCKET, CUDTSocket*>::iterator i = self->m_Sockets.begin(); i != self->m_Sockets.end(); ++ i)
+      for (const auto& i : self->m_Sockets)
       {
-         i->second->m_pUDT->m_bBroken = true;
-         i->second->m_pUDT->close();
-         i->second->m_Status = CLOSED;
-         i->second->m_TimeStamp = CTimer::getTime();
-         self->m_ClosedSockets[i->first] = i->second;
+         i.second->m_pUDT->m_bBroken = true;
+         i.second->m_pUDT->close();
+         i.second->m_Status = CLOSED;
+         i.second->m_TimeStamp = CTimer::getTime();
+         self->m_ClosedSockets[i.first] = i.second;
 
          // remove from listener's queue
-         map<UDTSOCKET, CUDTSocket*>::iterator ls = self->m_Sockets.find(i->second->m_ListenSocket);
+         auto ls = self->m_Sockets.find(i.second->m_ListenSocket);
          if (ls == self->m_Sockets.end())
          {
-            ls = self->m_ClosedSockets.find(i->second->m_ListenSocket);
+            ls = self->m_ClosedSockets.find(i.second->m_ListenSocket);
             if (ls == self->m_ClosedSockets.end())
                continue;
          }
 
          std::lock_guard<std::mutex> guard(ls->second->m_AcceptLock);
-         ls->second->m_pQueuedSockets->erase(i->second->m_SocketID);
-         ls->second->m_pAcceptSockets->erase(i->second->m_SocketID);
+         ls->second->m_pQueuedSockets->erase(i.second->m_SocketID);
+         ls->second->m_pAcceptSockets->erase(i.second->m_SocketID);
       }
       self->m_Sockets.clear();
 
-      for (map<UDTSOCKET, CUDTSocket*>::iterator j = self->m_ClosedSockets.begin(); j != self->m_ClosedSockets.end(); ++ j)
+      for (const auto& j : self->m_ClosedSockets)
       {
-         j->second->m_TimeStamp = 0;
+         j.second->m_TimeStamp = 0;
       }
    }
 
