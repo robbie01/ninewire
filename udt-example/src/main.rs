@@ -10,7 +10,7 @@ const PUBLIC_KEY: [u8; 32] = [241, 1, 228, 0, 247, 163, 248, 66, 94, 57, 122, 30
 async fn main() -> anyhow::Result<()> {
     let mut js = JoinSet::<anyhow::Result<_>>::new();
 
-    js.spawn(async move {
+    let sender = js.spawn(async move {
         sleep(Duration::from_millis(10)).await;
         let l = Arc::new(udt::Endpoint::bind("[::]:25584".parse()?)?);
         println!("B: bound to {:?}", l.local_addr()?);
@@ -30,10 +30,10 @@ async fn main() -> anyhow::Result<()> {
         // let r = l.accept().await?;
         println!("A: connected to {:?}", r.peer_addr()?);
         let mut msg = [0; 30000];
-        let mut int = interval(Duration::from_secs(1));
+        let mut int = interval(Duration::from_secs(5));
         let mut ctr = 0;
 
-        let mut rem = 1;
+        let mut rem = 12;
 
         int.reset();
         loop {
@@ -45,6 +45,7 @@ async fn main() -> anyhow::Result<()> {
                     println!("A: {mbps} mbps");
                     rem -= 1;
                     if rem == 0 {
+                        sender.abort();
                         return Ok("receiver");
                     }
                 }
