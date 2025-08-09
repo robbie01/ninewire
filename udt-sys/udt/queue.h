@@ -460,8 +460,8 @@ private:
 private:
    CUnitQueue m_UnitQueue;		// The received packet queue
 
-   CRcvUList* m_pRcvUList;		// List of UDT instances that will read packets from the queue
-   CHash* m_pHash;			// Hash table for UDT socket looking up
+   std::unique_ptr<CRcvUList> m_pRcvUList;		// List of UDT instances that will read packets from the queue
+   std::unique_ptr<CHash> m_pHash;			// Hash table for UDT socket looking up
    CChannel* m_pChannel;		// UDP channel for receving packets
    CTimer* m_pTimer;			// shared timer with the snd queue
 
@@ -480,17 +480,17 @@ private:
    bool ifNewEntry();
    CUDT* getNewEntry();
 
-   void storePkt(int32_t id, CPacket* pkt);
+   void storePkt(int32_t id, std::unique_ptr<CPacket> pkt);
 
 private:
    std::mutex m_LSLock;
    CUDT* m_pListener;                                   // pointer to the (unique, if any) listening UDT entity
-   CRendezvousQueue* m_pRendezvousQueue;                // The list of sockets in rendezvous mode
+   std::unique_ptr<CRendezvousQueue> m_pRendezvousQueue;                // The list of sockets in rendezvous mode
 
    std::vector<CUDT*> m_vNewEntry;                      // newly added entries, to be inserted
    std::mutex m_IDLock;
 
-   std::map<int32_t, std::queue<CPacket*> > m_mBuffer;	// temporary buffer for rendezvous connection request
+   std::map<int32_t, std::queue<std::unique_ptr<CPacket>> > m_mBuffer;	// temporary buffer for rendezvous connection request
    std::mutex m_PassLock;
    std::condition_variable m_PassCond;
 

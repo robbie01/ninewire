@@ -53,19 +53,15 @@ m_iSize(size),
 m_iHead(0),
 m_iTail(0)
 {
-   m_piACKSeqNo = new int32_t[m_iSize];
-   m_piACK = new int32_t[m_iSize];
-   m_pTimeStamp = new uint64_t[m_iSize];
+   m_piACKSeqNo = std::make_unique<int32_t[]>(m_iSize);
+   m_piACK = std::make_unique<int32_t[]>(m_iSize);
+   m_pTimeStamp = std::make_unique<uint64_t[]>(m_iSize);
 
    m_piACKSeqNo[0] = -1;
 }
 
 CACKWindow::~CACKWindow()
-{
-   delete [] m_piACKSeqNo;
-   delete [] m_piACK;
-   delete [] m_pTimeStamp;
-}
+{}
 
 void CACKWindow::store(int32_t seq, int32_t ack)
 {
@@ -157,10 +153,10 @@ m_LastArrTime(),
 m_CurrArrTime(),
 m_ProbeTime()
 {
-   m_piPktWindow = new int[m_iAWSize];
-   m_piPktReplica = new int[m_iAWSize];
-   m_piProbeWindow = new int[m_iPWSize];
-   m_piProbeReplica = new int[m_iPWSize];
+   m_piPktWindow = std::make_unique<int[]>(m_iAWSize);
+   m_piPktReplica = std::make_unique<int[]>(m_iAWSize);
+   m_piProbeWindow = std::make_unique<int[]>(m_iPWSize);
+   m_piProbeReplica = std::make_unique<int[]>(m_iPWSize);
 
    m_LastArrTime = CTimer::getTime();
 
@@ -172,12 +168,7 @@ m_ProbeTime()
 }
 
 CPktTimeWindow::~CPktTimeWindow()
-{
-   delete [] m_piPktWindow;
-   delete [] m_piPktReplica;
-   delete [] m_piProbeWindow;
-   delete [] m_piProbeReplica;
-}
+{}
 
 int CPktTimeWindow::getMinPktSndInt() const
 {
@@ -187,8 +178,8 @@ int CPktTimeWindow::getMinPktSndInt() const
 int CPktTimeWindow::getPktRcvSpeed() const
 {
    // get median value, but cannot change the original value order in the window
-   std::copy(m_piPktWindow, m_piPktWindow + m_iAWSize - 1, m_piPktReplica);
-   std::nth_element(m_piPktReplica, m_piPktReplica + (m_iAWSize / 2), m_piPktReplica + m_iAWSize - 1);
+   std::copy(m_piPktWindow.get(), m_piPktWindow.get() + m_iAWSize - 1, m_piPktReplica.get());
+   std::nth_element(m_piPktReplica.get(), m_piPktReplica.get() + (m_iAWSize / 2), m_piPktReplica.get() + m_iAWSize - 1);
    int median = m_piPktReplica[m_iAWSize / 2];
 
    int count = 0;
@@ -197,7 +188,7 @@ int CPktTimeWindow::getPktRcvSpeed() const
    int lower = median >> 3;
 
    // median filtering
-   int* p = m_piPktWindow;
+   int* p = m_piPktWindow.get();
    for (int i = 0, n = m_iAWSize; i < n; ++ i)
    {
       if ((*p < upper) && (*p > lower))
@@ -218,8 +209,8 @@ int CPktTimeWindow::getPktRcvSpeed() const
 int CPktTimeWindow::getBandwidth() const
 {
    // get median value, but cannot change the original value order in the window
-   std::copy(m_piProbeWindow, m_piProbeWindow + m_iPWSize - 1, m_piProbeReplica);
-   std::nth_element(m_piProbeReplica, m_piProbeReplica + (m_iPWSize / 2), m_piProbeReplica + m_iPWSize - 1);
+   std::copy(m_piProbeWindow.get(), m_piProbeWindow.get() + m_iPWSize - 1, m_piProbeReplica.get());
+   std::nth_element(m_piProbeReplica.get(), m_piProbeReplica.get() + (m_iPWSize / 2), m_piProbeReplica.get() + m_iPWSize - 1);
    int median = m_piProbeReplica[m_iPWSize / 2];
 
    int count = 1;
@@ -228,7 +219,7 @@ int CPktTimeWindow::getBandwidth() const
    int lower = median >> 3;
 
    // median filtering
-   int* p = m_piProbeWindow;
+   int* p = m_piProbeWindow.get();
    for (int i = 0, n = m_iPWSize; i < n; ++ i)
    {
       if ((*p < upper) && (*p > lower))
@@ -257,7 +248,7 @@ void CPktTimeWindow::onPktArrival()
    m_CurrArrTime = CTimer::getTime();
 
    // record the packet interval between the current and the last one
-   *(m_piPktWindow + m_iPktWindowPtr) = int(m_CurrArrTime - m_LastArrTime);
+   m_piPktWindow[m_iPktWindowPtr] = int(m_CurrArrTime - m_LastArrTime);
 
    // the window is logically circular
    ++ m_iPktWindowPtr;
@@ -278,7 +269,7 @@ void CPktTimeWindow::probe2Arrival()
    m_CurrArrTime = CTimer::getTime();
 
    // record the probing packets interval
-   *(m_piProbeWindow + m_iProbeWindowPtr) = int(m_CurrArrTime - m_ProbeTime);
+   m_piProbeWindow[m_iProbeWindowPtr] = int(m_CurrArrTime - m_ProbeTime);
    // the window is logically circular
    ++ m_iProbeWindowPtr;
    if (m_iProbeWindowPtr == m_iPWSize)

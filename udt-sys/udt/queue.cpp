@@ -767,16 +767,15 @@ void CRendezvousQueue::updateConnStatus()
          }
 
          CPacket request;
-         char* reqdata = new char [i->m_pUDT->m_iPayloadSize];
-         request.pack(0, NULL, reqdata, i->m_pUDT->m_iPayloadSize);
+         auto reqdata = std::make_unique<char[]>(i->m_pUDT->m_iPayloadSize);
+         request.pack(0, NULL, reqdata.get(), i->m_pUDT->m_iPayloadSize);
          // ID = 0, connection request
          request.m_iID = !i->m_pUDT->m_bRendezvous ? 0 : i->m_pUDT->m_ConnRes.m_iID;
          int hs_size = i->m_pUDT->m_iPayloadSize;
-         i->m_pUDT->m_ConnReq.serialize(reqdata, hs_size);
+         i->m_pUDT->m_ConnReq.serialize(reqdata.get(), hs_size);
          request.setLength(hs_size);
          i->m_pUDT->m_pSndQueue->sendto(i->m_pPeerAddr, request);
          i->m_pUDT->m_llLastReqTime = CTimer::getTime();
-         delete [] reqdata;
       }
    }
 }
@@ -785,15 +784,15 @@ void CRendezvousQueue::updateConnStatus()
 CRcvQueue::CRcvQueue():
 m_WorkerThread(),
 m_UnitQueue(),
-m_pRcvUList(NULL),
-m_pHash(NULL),
+m_pRcvUList(),
+m_pHash(),
 m_pChannel(NULL),
 m_pTimer(NULL),
 m_iPayloadSize(),
 m_bClosing(false),
 m_LSLock(),
 m_pListener(NULL),
-m_pRendezvousQueue(NULL),
+m_pRendezvousQueue(),
 m_vNewEntry(),
 m_IDLock(),
 m_mBuffer(),
@@ -807,18 +806,13 @@ CRcvQueue::~CRcvQueue()
 
    m_WorkerThread.join();
 
-   delete m_pRcvUList;
-   delete m_pHash;
-   delete m_pRendezvousQueue;
-
    // remove all queued messages
    for (auto i = m_mBuffer.begin(); i != m_mBuffer.end(); ++ i)
    {
       while (!i->second.empty())
       {
-         CPacket* pkt = i->second.front();
+         auto pkt = std::move(i->second.front());
          delete [] pkt->m_pcData;
-         delete pkt;
          i->second.pop();
       }
    }
@@ -830,14 +824,14 @@ void CRcvQueue::init(int qsize, int payload, int version, int hsize, CChannel* c
 
    m_UnitQueue.init(qsize, payload, version);
 
-   m_pHash = new CHash;
+   m_pHash = std::make_unique<CHash>();
    m_pHash->init(hsize);
 
    m_pChannel = cc;
    m_pTimer = t;
 
-   m_pRcvUList = new CRcvUList;
-   m_pRendezvousQueue = new CRendezvousQueue;
+   m_pRcvUList = std::make_unique<CRcvUList>();
+   m_pRendezvousQueue = std::make_unique<CRendezvousQueue>();
 
    m_WorkerThread = std::thread(worker, this);
 }
@@ -983,7 +977,7 @@ int CRcvQueue::recvfrom(int32_t id, CPacket& packet)
    }
 
    // retrieve the earliest packet
-   CPacket* newpkt = i->second.front();
+   auto newpkt = std::move(i->second.front());
 
    if (packet.getLength() < newpkt->getLength())
    {
@@ -997,7 +991,6 @@ int CRcvQueue::recvfrom(int32_t id, CPacket& packet)
    packet.setLength(newpkt->getLength());
 
    delete [] newpkt->m_pcData;
-   delete newpkt;
 
    // remove this message from queue,
    // if no more messages left for this socket, release its data structure
@@ -1044,7 +1037,6 @@ void CRcvQueue::removeConnector(const UDTSOCKET& id)
       while (!i->second.empty())
       {
          delete [] i->second.front()->m_pcData;
-         delete i->second.front();
          i->second.pop();
       }
       m_mBuffer.erase(i);
@@ -1075,7 +1067,7 @@ CUDT* CRcvQueue::getNewEntry()
    return u;
 }
 
-void CRcvQueue::storePkt(int32_t id, CPacket* pkt)
+void CRcvQueue::storePkt(int32_t id, std::unique_ptr<CPacket> pkt)
 {
    std::lock_guard<std::mutex> bufferlock(m_PassLock);
 
@@ -1083,7 +1075,7 @@ void CRcvQueue::storePkt(int32_t id, CPacket* pkt)
 
    if (i == m_mBuffer.end())
    {
-      m_mBuffer[id].push(pkt);
+      m_mBuffer[id].push(std::move(pkt));
 
       m_PassCond.notify_one();
    }
@@ -1093,6 +1085,6 @@ void CRcvQueue::storePkt(int32_t id, CPacket* pkt)
       if (i->second.size() > 16)
          return;
 
-      i->second.push(pkt);
+      i->second.push(std::move(pkt));
    }
 }

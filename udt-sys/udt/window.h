@@ -76,9 +76,9 @@ public:
    int acknowledge(int32_t seq, int32_t& ack);
 
 private:
-   int32_t* m_piACKSeqNo;       // Seq. No. for the ACK packet
-   int32_t* m_piACK;            // Data Seq. No. carried by the ACK packet
-   uint64_t* m_pTimeStamp;      // The timestamp when the ACK was sent
+   std::unique_ptr<int32_t[]> m_piACKSeqNo;       // Seq. No. for the ACK packet
+   std::unique_ptr<int32_t[]> m_piACK;            // Data Seq. No. carried by the ACK packet
+   std::unique_ptr<uint64_t[]> m_pTimeStamp;      // The timestamp when the ACK was sent
 
    int m_iSize;                 // Size of the ACK history window
    int m_iHead;                 // Pointer to the lastest ACK record
@@ -162,13 +162,13 @@ public:
 
 private:
    int m_iAWSize;               // size of the packet arrival history window
-   int* m_piPktWindow;          // packet information window
-   int* m_piPktReplica;
+   std::unique_ptr<int[]> m_piPktWindow;          // packet information window
+   std::unique_ptr<int[]> m_piPktReplica;
    int m_iPktWindowPtr;         // position pointer of the packet info. window.
 
    int m_iPWSize;               // size of probe history window size
-   int* m_piProbeWindow;        // record inter-packet time for probing packet pairs
-   int* m_piProbeReplica;
+   std::unique_ptr<int[]> m_piProbeWindow;        // record inter-packet time for probing packet pairs
+   std::unique_ptr<int[]> m_piProbeReplica;
    int m_iProbeWindowPtr;       // position pointer to the probing window
 
    int m_iLastSentTime;         // last packet sending time

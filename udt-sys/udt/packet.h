@@ -182,7 +182,7 @@ public:
       // Returned value:
       //    Pointer to the new packet.
 
-   CPacket* clone() const;
+   std::unique_ptr<CPacket> clone() const;
 
 protected:
    uint32_t m_nHeader[4];               // The 128-bit header field
