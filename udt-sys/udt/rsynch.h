@@ -33,7 +33,7 @@ public:
 
     inline Semaphore() {
 #if defined(WINDOWS)
-        inner = CreateSemaphore(nullptr, 0, std::numeric_limits<LONG>::max(), nullptr);
+        inner = CreateSemaphore(nullptr, 0, LONG_MAX, nullptr);
 #elif defined(MACOSX)
         inner = dispatch_semaphore_create(0);
 #else
