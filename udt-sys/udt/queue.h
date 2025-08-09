@@ -48,6 +48,7 @@ written by
 #include <map>
 #include <queue>
 #include <vector>
+#include <thread>
 #include "udtCommon.h"
 
 class CUDT;
@@ -397,13 +398,9 @@ public:
    int sendto(const sockaddr* addr, CPacket& packet);
 
 private:
-#ifndef WINDOWS
-   static void* worker(void* param);
-#else
-   static DWORD WINAPI worker(LPVOID param);
-#endif
+   static void worker(CSndQueue* param);
 
-   udt_pthread_t m_WorkerThread;
+   std::thread m_WorkerThread;
 
 private:
    CSndUList* m_pSndUList;		// List of UDT instances for data sending
@@ -456,13 +453,9 @@ public:
    int recvfrom(int32_t id, CPacket& packet);
 
 private:
-#ifndef WINDOWS
-   static void* worker(void* param);
-#else
-   static DWORD WINAPI worker(LPVOID param);
-#endif
+   static void worker(CRcvQueue* param);
 
-   udt_pthread_t m_WorkerThread;
+   std::thread m_WorkerThread;
 
 private:
    CUnitQueue m_UnitQueue;		// The received packet queue

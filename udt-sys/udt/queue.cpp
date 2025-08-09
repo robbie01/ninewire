@@ -437,14 +437,7 @@ CSndQueue::~CSndQueue()
    m_bClosing = true;
 
    m_WindowCond.notify_one();
-   #ifndef WINDOWS
-      if (0 != m_WorkerThread)
-         pthread_join(m_WorkerThread, NULL);
-   #else
-      if (NULL != m_WorkerThread)
-         WaitForSingleObject(m_WorkerThread, INFINITE);
-      CloseHandle(m_WorkerThread);
-   #endif
+   m_WorkerThread.join();
 
    delete m_pSndUList;
 }
@@ -458,27 +451,11 @@ void CSndQueue::init(CChannel* c, CTimer* t)
    m_pSndUList->m_pWindowCond = &m_WindowCond;
    m_pSndUList->m_pTimer = m_pTimer;
 
-   #ifndef WINDOWS
-      if (0 != pthread_create(&m_WorkerThread, NULL, CSndQueue::worker, this))
-      {
-         m_WorkerThread = 0;
-         throw CUDTException(3, 1);
-      }
-   #else
-      DWORD threadID;
-      m_WorkerThread = CreateThread(NULL, 0, CSndQueue::worker, this, 0, &threadID);
-      if (NULL == m_WorkerThread)
-         throw CUDTException(3, 1);
-   #endif
+   m_WorkerThread = std::thread(worker, this);
 }
 
-#ifndef WINDOWS
-   void* CSndQueue::worker(void* param)
-#else
-   DWORD WINAPI CSndQueue::worker(LPVOID param)
-#endif
+void CSndQueue::worker(CSndQueue* self)
 {
-   CSndQueue* self = (CSndQueue*)param;
 
    while (!self->m_bClosing)
    {
@@ -510,12 +487,6 @@ void CSndQueue::init(CChannel* c, CTimer* t)
             self->m_WindowCond.wait(guard);
       }
    }
-
-   #ifndef WINDOWS
-      return NULL;
-   #else
-      return 0;
-   #endif
 }
 
 int CSndQueue::sendto(const sockaddr* addr, CPacket& packet)
@@ -834,14 +805,7 @@ CRcvQueue::~CRcvQueue()
 {
    m_bClosing = true;
 
-   #ifndef WINDOWS
-      if (0 != m_WorkerThread)
-         pthread_join(m_WorkerThread, NULL);
-   #else
-      if (NULL != m_WorkerThread)
-         WaitForSingleObject(m_WorkerThread, INFINITE);
-      CloseHandle(m_WorkerThread);
-   #endif
+   m_WorkerThread.join();
 
    delete m_pRcvUList;
    delete m_pHash;
@@ -875,28 +839,11 @@ void CRcvQueue::init(int qsize, int payload, int version, int hsize, CChannel* c
    m_pRcvUList = new CRcvUList;
    m_pRendezvousQueue = new CRendezvousQueue;
 
-   #ifndef WINDOWS
-      if (0 != pthread_create(&m_WorkerThread, NULL, CRcvQueue::worker, this))
-      {
-         m_WorkerThread = 0;
-         throw CUDTException(3, 1);
-      }
-   #else
-      DWORD threadID;
-      m_WorkerThread = CreateThread(NULL, 0, CRcvQueue::worker, this, 0, &threadID);
-      if (NULL == m_WorkerThread)
-         throw CUDTException(3, 1);
-   #endif
+   m_WorkerThread = std::thread(worker, this);
 }
 
-#ifndef WINDOWS
-   void* CRcvQueue::worker(void* param)
-#else
-   DWORD WINAPI CRcvQueue::worker(LPVOID param)
-#endif
+void CRcvQueue::worker(CRcvQueue* self)
 {
-   CRcvQueue* self = (CRcvQueue*)param;
-
    sockaddr* addr = (AF_INET == self->m_UnitQueue.m_iIPversion) ? (sockaddr*) new sockaddr_in : (sockaddr*) new sockaddr_in6;
    CUDT* u = NULL;
    int32_t id;
@@ -1015,12 +962,6 @@ TIMER_CHECK:
       delete (sockaddr_in*)addr;
    else
       delete (sockaddr_in6*)addr;
-
-   #ifndef WINDOWS
-      return NULL;
-   #else
-      return 0;
-   #endif
 }
 
 int CRcvQueue::recvfrom(int32_t id, CPacket& packet)

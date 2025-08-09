@@ -1,3 +1,5 @@
+#pragma once
+
 #if defined(WINDOWS)
 #include <windows.h>
 #include <limits>
@@ -29,7 +31,7 @@ public:
     Semaphore(const Semaphore&) = delete;
     Semaphore& operator=(const Semaphore&) = delete;
 
-    Semaphore() {
+    inline Semaphore() {
 #if defined(WINDOWS)
         inner = CreateSemaphore(nullptr, 0, std::numeric_limits<LONG>::max(), nullptr);
 #elif defined(MACOSX)
@@ -39,7 +41,7 @@ public:
 #endif
     }
 
-    ~Semaphore() {
+    inline ~Semaphore() {
 #if defined(WINDOWS)
         CloseHandle(inner);
 #elif defined(MACOSX)
@@ -49,7 +51,7 @@ public:
 #endif
     }
 
-    void post() {
+    inline void post() {
 #if defined(WINDOWS)
         ReleaseSemaphore(inner, 1, nullptr);
 #elif defined(MACOSX)
@@ -59,7 +61,7 @@ public:
 #endif
     }
 
-    void wait() {
+    inline void wait() {
 #if defined(WINDOWS)
         WaitForSingleObject(inner, INFINITE);
 #elif defined(MACOSX)
@@ -70,7 +72,7 @@ public:
     }
 
     template<class Rep, class Period>
-    bool wait_for(const std::chrono::duration<Rep, Period>& timeout) {
+    inline bool wait_for(const std::chrono::duration<Rep, Period>& timeout) {
 #if defined(WINDOWS)
         auto delta = std::chrono::duration_cast<std::chrono::duration<DWORD, std::milli>>(timeout);
         return WaitForSingleObject(inner, delta.count()) == WAIT_OBJECT_0;
@@ -92,7 +94,7 @@ public:
 #endif
     }
 
-    bool try_wait() {
+    inline bool try_wait() {
 #if defined(WINDOWS)
         return WaitForSingleObject(inner, 0) == WAIT_OBJECT_0;
 #elif defined(MACOSX)
@@ -110,7 +112,11 @@ private:
     std::condition_variable cv;
 
 public:
-    void set() {
+    AutoResetEvent() = default;
+    AutoResetEvent(const AutoResetEvent&) = delete;
+    AutoResetEvent& operator=(const AutoResetEvent&) = delete;
+
+    inline void set() {
         {
                 std::lock_guard<std::mutex> lock(mtx);
                 is_set = true;
@@ -118,14 +124,14 @@ public:
         cv.notify_one();
     }
 
-    void wait() {
+    inline void wait() {
         std::unique_lock<std::mutex> lock(mtx);
         while (!is_set) cv.wait(lock);
         is_set = false;
     }
 
     template<class Rep, class Period>
-    bool wait_for(const std::chrono::duration<Rep, Period>& timeout) {
+    inline bool wait_for(const std::chrono::duration<Rep, Period>& timeout) {
         auto deadline = std::chrono::steady_clock::now() + timeout;
         std::unique_lock<std::mutex> lock(mtx);
         if (!cv.wait_until(lock, deadline, [&] { return is_set; })) return false;
@@ -133,7 +139,7 @@ public:
         return true;
     }
 
-    bool try_wait() {
+    inline bool try_wait() {
         std::lock_guard<std::mutex> lock(mtx);
         if (is_set) {
                 is_set = false;

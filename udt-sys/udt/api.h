@@ -45,10 +45,12 @@ written by
 #include <map>
 #include <vector>
 #include <memory>
+#include <thread>
 #include "udt.h"
 #include "packet.h"
 #include "queue.h"
 #include "cache.h"
+#include "rsynch.h"
 #include "udt-sys/src/lib.rs.h"
 
 class CUDT;
@@ -85,6 +87,8 @@ public:
    int m_iMuxID;                             // multiplexer ID
 
    std::mutex m_ControlLock;            // lock this socket exclusively for control APIs: bind/listen/connect
+
+   bool m_bIsExpiring = false;
 
 private:
    CUDTSocket(const CUDTSocket&);
@@ -232,19 +236,14 @@ private:
 
 private:
    volatile bool m_bClosing;
-   std::mutex m_GCStopLock;
-   std::condition_variable m_GCStopCond;
+   rsynch::AutoResetEvent m_GCStopCond;
 
    std::mutex m_InitLock;
    int m_iInstanceCount;				// number of startup() called by application
    bool m_bGCStatus;					// if the GC thread is working (true)
 
-   udt_pthread_t m_GCThread;
-   #ifndef WINDOWS
-      static void* garbageCollect(void*);
-   #else
-      static DWORD WINAPI garbageCollect(LPVOID);
-   #endif
+   std::thread m_GCThread;
+   static void garbageCollect(CUDTUnited*);
 
    std::map<UDTSOCKET, CUDTSocket*> m_ClosedSockets;   // temporarily store closed sockets
 

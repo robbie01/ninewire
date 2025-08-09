@@ -8,9 +8,22 @@ const PUBLIC_KEY: [u8; 32] = [241, 1, 228, 0, 247, 163, 248, 66, 94, 57, 122, 30
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let mut js = JoinSet::new();
+    let mut js = JoinSet::<anyhow::Result<_>>::new();
 
-    js.spawn(async {
+    js.spawn(async move {
+        sleep(Duration::from_millis(10)).await;
+        let l = Arc::new(udt::Endpoint::bind("[::]:25584".parse()?)?);
+        println!("B: bound to {:?}", l.local_addr()?);
+        let c = SecureTransport::connect(&l, "[::1]:25583".parse()?, transport::Side::Initiator { remote_public_key: &PUBLIC_KEY }).await?;
+        // let c = l.connect_datagram("[::1]:25583".parse()?, false).await?;
+        println!("B: connected to {:?}", c.peer_addr()?);
+
+        loop {
+            c.send_with(&[b'o'; 1192], true).await?;
+        }
+    });
+
+    js.spawn(async move {
         let l = Arc::new(udt::Endpoint::bind("[::]:25583".parse()?)?);//.listen_datagram(16)?;
         println!("A: bound to {:?}", l.local_addr()?);
         let r = SecureTransport::connect(&l, "[::1]:25584".parse()?, transport::Side::Responder { local_private_key: &PRIVATE_KEY }).await?;
@@ -20,7 +33,7 @@ async fn main() -> anyhow::Result<()> {
         let mut int = interval(Duration::from_secs(5));
         let mut ctr = 0;
 
-        let mut rem = 12;
+        let mut rem = 1;
 
         int.reset();
         loop {
@@ -32,7 +45,7 @@ async fn main() -> anyhow::Result<()> {
                     println!("A: {mbps} mbps");
                     rem -= 1;
                     if rem == 0 {
-                        std::process::exit(0);
+                        return Ok("receiver");
                     }
                 }
                 len = r.recv(&mut msg) => {
@@ -40,21 +53,6 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
         }
-    });
-
-    js.spawn(async {
-        sleep(Duration::from_millis(10)).await;
-        let l = Arc::new(udt::Endpoint::bind("[::]:25584".parse()?)?);
-        println!("B: bound to {:?}", l.local_addr()?);
-        let c = SecureTransport::connect(&l, "[::1]:25583".parse()?, transport::Side::Initiator { remote_public_key: &PUBLIC_KEY }).await?;
-        // let c = l.connect_datagram("[::1]:25583".parse()?, false).await?;
-        println!("B: connected to {:?}", c.peer_addr()?);
-
-        loop {
-            c.send_with(&[b'o'; 1192], true).await?;
-        }
-        #[allow(unreachable_code)]
-        Ok::<(), anyhow::Error>(())
     });
         
     while let Some(res) = js.join_next().await {

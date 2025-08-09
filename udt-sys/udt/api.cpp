@@ -101,7 +101,6 @@ m_mMultiplexer(),
 m_MultiplexerLock(),
 m_pCache(nullptr),
 m_bClosing(false),
-m_GCStopLock(),
 m_GCStopCond(),
 m_InitLock(),
 m_iInstanceCount(0),
@@ -152,12 +151,7 @@ int CUDTUnited::startup()
       return true;
 
    m_bClosing = false;
-   #ifndef WINDOWS
-      pthread_create(&m_GCThread, NULL, garbageCollect, this);
-   #else
-      DWORD ThreadID;
-      m_GCThread = CreateThread(NULL, 0, garbageCollect, this, 0, &ThreadID);
-   #endif
+   m_GCThread = std::thread(garbageCollect, this);
 
    m_bGCStatus = true;
 
@@ -175,13 +169,8 @@ int CUDTUnited::cleanup()
       return 0;
 
    m_bClosing = true;
-   m_GCStopCond.notify_one();
-   #ifndef WINDOWS
-      pthread_join(m_GCThread, NULL);
-   #else
-      WaitForSingleObject(m_GCThread, INFINITE);
-      CloseHandle(m_GCThread);
-   #endif
+   m_GCStopCond.set();
+   m_GCThread.join();
 
    m_bGCStatus = false;
 
@@ -814,9 +803,10 @@ void CUDTUnited::checkBrokenSockets()
 
    for (map<UDTSOCKET, CUDTSocket*>::iterator j = m_ClosedSockets.begin(); j != m_ClosedSockets.end(); ++ j)
    {
-      // asynchronous close:
-      j->second->m_pUDT->m_bClosing = true;
-      j->second->m_TimeStamp = CTimer::getTime();
+      if (!j->second->m_bIsExpiring) {
+         j->second->m_bIsExpiring = true;
+         j->second->m_TimeStamp = CTimer::getTime();
+      }
 
       // timeout 1 second to destroy a socket AND it has been removed from RcvUList
       if ((CTimer::getTime() - j->second->m_TimeStamp > 1000000) && ((NULL == j->second->m_pUDT->m_pRNode) || !j->second->m_pUDT->m_pRNode->m_bOnList))
@@ -1066,16 +1056,8 @@ void CUDTUnited::updateMux(CUDTSocket* s, const CUDTSocket* ls)
    }
 }
 
-#ifndef WINDOWS
-   void* CUDTUnited::garbageCollect(void* p)
-#else
-   DWORD WINAPI CUDTUnited::garbageCollect(LPVOID p)
-#endif
+void CUDTUnited::garbageCollect(CUDTUnited* self)
 {
-   CUDTUnited* self = (CUDTUnited*)p;
-
-   std::unique_lock<std::mutex> gCGuard(self->m_GCStopLock);
-
    while (!self->m_bClosing)
    {
       self->checkBrokenSockets();
@@ -1084,7 +1066,7 @@ void CUDTUnited::updateMux(CUDTSocket* s, const CUDTSocket* ls)
          self->checkTLSValue();
       #endif
 
-      self->m_GCStopCond.wait_for(gCGuard, std::chrono::seconds(1));
+      self->m_GCStopCond.wait_for(std::chrono::seconds(1));
    }
 
    // remove all sockets and multiplexers
@@ -1134,12 +1116,6 @@ void CUDTUnited::updateMux(CUDTSocket* s, const CUDTSocket* ls)
 
       CTimer::sleep();
    }
-
-   #ifndef WINDOWS
-      return NULL;
-   #else
-      return 0;
-   #endif
 }
 
 ////////////////////////////////////////////////////////////////////////////////

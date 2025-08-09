@@ -60,10 +60,8 @@ written by
 
 #ifdef WINDOWS
     // Windows compatibility
-    typedef HANDLE udt_pthread_t;
     typedef DWORD udt_pthread_key_t;
 #else
-    typedef pthread_t udt_pthread_t;
     typedef pthread_key_t udt_pthread_key_t;
 #endif
 
