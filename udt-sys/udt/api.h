@@ -155,7 +155,7 @@ public:
       // Returned value:
       //    Pointer to the UDT entity.
 
-   CUDT* lookup(const UDTSOCKET u);
+   CUDT& lookup(const UDTSOCKET u);
 
       // Functionality:
       //    Check the status of the UDT socket.
@@ -202,7 +202,7 @@ private:
 //   void init();
 
 private:
-   std::map<UDTSOCKET, CUDTSocket*> m_Sockets;       // stores all the socket structures
+   std::map<UDTSOCKET, std::shared_ptr<CUDTSocket>> m_Sockets;       // stores all the socket structures
 
    std::mutex m_ControlLock;                // used to synchronize UDT API
 
@@ -223,8 +223,8 @@ private:
 
 private:
    void connect_complete(const UDTSOCKET u);
-   CUDTSocket* locate(const UDTSOCKET u);
-   CUDTSocket* locate(const sockaddr* peer, const UDTSOCKET id, int32_t isn);
+   std::shared_ptr<CUDTSocket> locate(const UDTSOCKET u);
+   std::shared_ptr<CUDTSocket> locate(const sockaddr* peer, const UDTSOCKET id, int32_t isn);
    void updateMux(CUDTSocket* s, const sockaddr* addr = NULL, const UDPSOCKET* = NULL);
    void updateMux(CUDTSocket* s, const CUDTSocket* ls);
 
@@ -246,7 +246,7 @@ private:
    std::thread m_GCThread;
    static void garbageCollect(CUDTUnited*);
 
-   std::map<UDTSOCKET, CUDTSocket*> m_ClosedSockets;   // temporarily store closed sockets
+   std::map<UDTSOCKET, std::shared_ptr<CUDTSocket>> m_ClosedSockets;   // temporarily store closed sockets
 
    void checkBrokenSockets();
    void removeSocket(const UDTSOCKET u);
