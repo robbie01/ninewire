@@ -61,7 +61,7 @@ m_SocketID(0),
 m_ListenSocket(0),
 m_PeerID(0),
 m_iISN(0),
-m_pUDT(NULL),
+m_pUDT(nullptr),
 m_pQueuedSockets(NULL),
 m_pAcceptSockets(NULL),
 m_AcceptLock(),
@@ -81,9 +81,6 @@ CUDTSocket::~CUDTSocket()
       delete (sockaddr_in6*)m_pSelfAddr;
       delete (sockaddr_in6*)m_pPeerAddr;
    }
-
-   delete m_pUDT;
-   m_pUDT = NULL;
 
    delete m_pQueuedSockets;
    delete m_pAcceptSockets;
@@ -192,7 +189,7 @@ UDTSOCKET CUDTUnited::newSocket(int af, int type)
    try
    {
       ns = new CUDTSocket;
-      ns->m_pUDT = new CUDT;
+      ns->m_pUDT = std::make_unique<CUDT>();
       if (AF_INET == af)
       {
          ns->m_pSelfAddr = (sockaddr*)(new sockaddr_in);
@@ -286,7 +283,7 @@ int CUDTUnited::newConnection(const UDTSOCKET listener, const sockaddr* peer, CH
    try
    {
       ns = new CUDTSocket;
-      ns->m_pUDT = new CUDT(*(ls->m_pUDT));
+      ns->m_pUDT = std::make_unique<CUDT>(*(ls->m_pUDT));
       if (AF_INET == ls->m_iIPversion)
       {
          ns->m_pSelfAddr = (sockaddr*)(new sockaddr_in);
@@ -392,7 +389,7 @@ CUDT* CUDTUnited::lookup(const UDTSOCKET u)
    if ((i == m_Sockets.end()) || (i->second->m_Status == CLOSED))
       throw CUDTException(5, 4, 0);
 
-   return i->second->m_pUDT;
+   return i->second->m_pUDT.get();
 }
 
 UDTSTATUS CUDTUnited::getStatus(const UDTSOCKET u)

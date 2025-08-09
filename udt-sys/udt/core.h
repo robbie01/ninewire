@@ -69,7 +69,7 @@ friend class CRcvQueue;
 friend class CSndUList;
 friend class CRcvUList;
 
-private: // constructor and desctructor
+public: // constructor and desctructor
    CUDT();
    CUDT(const CUDT& ancestor);
    const CUDT& operator=(const CUDT&) {return *this;}

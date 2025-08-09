@@ -45,6 +45,7 @@ written by
 #include <map>
 #include <vector>
 #include <memory>
+#include <variant>
 #include <thread>
 #include "udt.h"
 #include "packet.h"
@@ -75,7 +76,7 @@ public:
    UDTSOCKET m_PeerID;                       // peer socket ID
    int32_t m_iISN;                           // initial sequence number, used to tell different connection from same IP:port
 
-   CUDT* m_pUDT;                             // pointer to the UDT entity
+   std::unique_ptr<CUDT> m_pUDT;                             // pointer to the UDT entity
 
    std::set<UDTSOCKET>* m_pQueuedSockets;    // set of connections waiting for accept()
    std::set<UDTSOCKET>* m_pAcceptSockets;    // set of accept()ed connections
