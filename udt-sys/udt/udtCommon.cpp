@@ -227,19 +227,15 @@ uint64_t CTimer::getTime()
       return t.tv_sec * 1000000ULL + t.tv_usec;
    #else
       LARGE_INTEGER ccf;
-      HANDLE hCurThread = ::GetCurrentThread();
-      DWORD_PTR dwOldMask = ::SetThreadAffinityMask(hCurThread, 1);
       if (QueryPerformanceFrequency(&ccf))
       {
          LARGE_INTEGER cc;
          if (QueryPerformanceCounter(&cc))
          {
-            SetThreadAffinityMask(hCurThread, dwOldMask);
             return (cc.QuadPart * 1000000ULL / ccf.QuadPart);
          }
       }
 
-      SetThreadAffinityMask(hCurThread, dwOldMask);
       return GetTickCount() * 1000ULL;
    #endif
 }
