@@ -54,6 +54,7 @@ written by
 #include <sstream>
 #include "queue.h"
 #include "core.h"
+#include <iostream>
 
 using namespace std;
 
@@ -918,8 +919,6 @@ void CUDT::close()
    m_bOpened = false;
 }
 
-#include <iostream>
-
 int CUDT::sendmsg(const char* data, int len, int msttl, bool inorder)
 {
    // throw an exception if not connected
@@ -1364,6 +1363,7 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
          }
 
          // acknowledge the sending buffer
+         std::cout << "i am acking " << offset << " blocks!" << std::endl;
          m_pSndBuffer->ackData(offset);
 
          // record total time used for sending
