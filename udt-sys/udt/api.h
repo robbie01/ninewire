@@ -76,7 +76,7 @@ public:
    UDTSOCKET m_PeerID;                       // peer socket ID
    int32_t m_iISN;                           // initial sequence number, used to tell different connection from same IP:port
 
-   std::unique_ptr<CUDT> m_pUDT;                             // pointer to the UDT entity
+   std::shared_ptr<CUDT> m_pUDT;                             // pointer to the UDT entity
 
    std::set<UDTSOCKET>* m_pQueuedSockets;    // set of connections waiting for accept()
    std::set<UDTSOCKET>* m_pAcceptSockets;    // set of accept()ed connections

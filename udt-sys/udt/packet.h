@@ -43,6 +43,7 @@ written by
 
 
 #include "udt.h"
+#include <memory>
 
 #ifdef WINDOWS
    struct iovec
