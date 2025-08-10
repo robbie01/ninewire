@@ -61,11 +61,7 @@ async fn main() -> anyhow::Result<()> {
     });
         
     while let Some(res) = js.join_next_with_id().await {
-        let id = match res {
-            Ok((id, _)) => id,
-            Err(ref e) => e.id()
-        };
-        println!("{id}: {res:?}");
+        println!("{res:?}");
     }
 
     Ok(())
