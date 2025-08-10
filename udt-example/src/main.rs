@@ -1,6 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
-use tokio::{task::JoinSet, time::{interval, sleep}};
+use tokio::{task::{self, JoinSet}, time::{interval, sleep}};
 use transport::SecureTransport;
 
 const PRIVATE_KEY: [u8; 32] = [127, 93, 161, 223, 213, 211, 245, 80, 69, 165, 77, 133, 169, 40, 130, 112, 218, 255, 225, 74, 78, 69, 83, 20, 154, 244, 58, 224, 51, 34, 61, 102];
@@ -11,10 +11,12 @@ async fn main() -> anyhow::Result<()> {
     let mut js = JoinSet::<anyhow::Result<_>>::new();
 
     let sender = js.spawn(async move {
+        println!("B: my id is: {}", task::id());
         sleep(Duration::from_millis(10)).await;
         let l = Arc::new(udt::Endpoint::bind("[::]:25584".parse()?)?);
         println!("B: bound to {:?}", l.local_addr()?);
         let c = SecureTransport::connect(&l, "[::1]:25583".parse()?, transport::Side::Initiator { remote_public_key: &PUBLIC_KEY }).await?;
+        println!("B: my socket is {c:?}");
         // let c = l.connect_datagram("[::1]:25583".parse()?, false).await?;
         println!("B: connected to {:?}", c.peer_addr()?);
 
@@ -24,16 +26,18 @@ async fn main() -> anyhow::Result<()> {
     });
 
     js.spawn(async move {
+        println!("A: my id is: {}", task::id());
         let l = Arc::new(udt::Endpoint::bind("[::]:25583".parse()?)?);//.listen_datagram(16)?;
         println!("A: bound to {:?}", l.local_addr()?);
         let r = SecureTransport::connect(&l, "[::1]:25584".parse()?, transport::Side::Responder { local_private_key: &PRIVATE_KEY }).await?;
+        println!("A: my socket is {r:?}");
         // let r = l.accept().await?;
         println!("A: connected to {:?}", r.peer_addr()?);
         let mut msg = [0; 30000];
         let mut int = interval(Duration::from_secs(5));
         let mut ctr = 0;
 
-        let mut rem = 12;
+        let mut rem = 4;
 
         int.reset();
         loop {
@@ -56,8 +60,12 @@ async fn main() -> anyhow::Result<()> {
         }
     });
         
-    while let Some(res) = js.join_next().await {
-        println!("{res:?}");
+    while let Some(res) = js.join_next_with_id().await {
+        let id = match res {
+            Ok((id, _)) => id,
+            Err(ref e) => e.id()
+        };
+        println!("{id}: {res:?}");
     }
 
     Ok(())
