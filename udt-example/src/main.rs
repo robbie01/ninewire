@@ -49,7 +49,7 @@ async fn main() -> anyhow::Result<()> {
                     println!("A: {mbps} mbps");
                     rem -= 1;
                     if rem == 0 {
-                        sender.abort();
+                        // sender.abort();
                         return Ok("receiver");
                     }
                 }
