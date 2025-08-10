@@ -97,7 +97,6 @@ m_TLSError(),
 m_mMultiplexer(),
 m_MultiplexerLock(),
 m_pCache(nullptr),
-m_bClosing(false),
 m_GCStopCond(),
 m_InitLock(),
 m_iInstanceCount(0),
@@ -147,7 +146,6 @@ int CUDTUnited::startup()
    if (m_bGCStatus)
       return true;
 
-   m_bClosing = false;
    m_GCThread = std::thread(garbageCollect, this);
 
    m_bGCStatus = true;
@@ -165,7 +163,6 @@ int CUDTUnited::cleanup()
    if (!m_bGCStatus)
       return 0;
 
-   m_bClosing = true;
    m_GCStopCond.set();
    m_GCThread.join();
 
@@ -774,8 +771,8 @@ void CUDTUnited::checkBrokenSockets()
          //close broken connections and start removal timer
          i.second->m_Status = CLOSED;
          i.second->m_TimeStamp = CTimer::getTime();
-         // tbc.push_back(i.first);
-         // m_ClosedSockets[i.first] = i.second;
+         tbc.push_back(i.first);
+         m_ClosedSockets[i.first] = i.second;
 
          // remove from listener's queue
          auto ls = m_Sockets.find(i.second->m_ListenSocket);
@@ -1049,7 +1046,7 @@ void CUDTUnited::updateMux(CUDTSocket* s, const CUDTSocket* ls)
 
 void CUDTUnited::garbageCollect(CUDTUnited* self)
 {
-   while (!self->m_bClosing)
+   do
    {
       self->checkBrokenSockets();
 
@@ -1057,8 +1054,8 @@ void CUDTUnited::garbageCollect(CUDTUnited* self)
          self->checkTLSValue();
       #endif
 
-      self->m_GCStopCond.wait_for(std::chrono::seconds(1));
-   }
+      
+   } while (!self->m_GCStopCond.wait_for(std::chrono::seconds(1)));
 
    // remove all sockets and multiplexers
    {

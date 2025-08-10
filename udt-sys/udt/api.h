@@ -236,7 +236,6 @@ private:
    std::unique_ptr<CCache<CInfoBlock>> m_pCache;			// UDT network information cache
 
 private:
-   volatile bool m_bClosing;
    rsynch::AutoResetEvent m_GCStopCond;
 
    std::mutex m_InitLock;
