@@ -385,7 +385,7 @@ CUDT& CUDTUnited::lookup(const UDTSOCKET u)
    if ((i == m_Sockets.end()) || (i->second->m_Status == CLOSED))
       throw CUDTException(5, 4, 0);
 
-   return *i->second->m_pUDT.get();
+   return *i->second->m_pUDT;
 }
 
 UDTSTATUS CUDTUnited::getStatus(const UDTSOCKET u)
@@ -774,8 +774,8 @@ void CUDTUnited::checkBrokenSockets()
          //close broken connections and start removal timer
          i.second->m_Status = CLOSED;
          i.second->m_TimeStamp = CTimer::getTime();
-         tbc.push_back(i.first);
-         m_ClosedSockets[i.first] = i.second;
+         // tbc.push_back(i.first);
+         // m_ClosedSockets[i.first] = i.second;
 
          // remove from listener's queue
          auto ls = m_Sockets.find(i.second->m_ListenSocket);
