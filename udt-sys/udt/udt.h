@@ -127,8 +127,10 @@ class UDT_API CUDTException
 {
 public:
    CUDTException(int major = 0, int minor = 0, int err = -1);
-   CUDTException(const CUDTException& e);
-   virtual ~CUDTException();
+   ~CUDTException();
+
+   CUDTException(const CUDTException&) = default;
+   CUDTException& operator=(const CUDTException&) = default;
 
       // Functionality:
       //    Get the description of the exception.
@@ -137,7 +139,7 @@ public:
       // Returned value:
       //    Text message for the exception description.
 
-   virtual const std::string &getErrorMessage();
+   const std::string &getErrorMessage();
 
       // Functionality:
       //    Get the system errno for the exception.
@@ -146,7 +148,7 @@ public:
       // Returned value:
       //    errno.
 
-   virtual int getErrorCode() const;
+   int getErrorCode() const;
 
       // Functionality:
       //    Clear the error code.
@@ -155,7 +157,7 @@ public:
       // Returned value:
       //    None.
 
-   virtual void clear();
+   void clear();
 
 private:
    int m_iMajor;        // major exception categories
