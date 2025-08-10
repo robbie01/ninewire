@@ -1,6 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
-use tokio::{task::{self, JoinSet}, time::{interval, sleep}};
+use tokio::{task::{self, JoinSet}, time::{interval, sleep, timeout}};
 use transport::SecureTransport;
 
 const PRIVATE_KEY: [u8; 32] = [127, 93, 161, 223, 213, 211, 245, 80, 69, 165, 77, 133, 169, 40, 130, 112, 218, 255, 225, 74, 78, 69, 83, 20, 154, 244, 58, 224, 51, 34, 61, 102];
@@ -10,7 +10,7 @@ const PUBLIC_KEY: [u8; 32] = [241, 1, 228, 0, 247, 163, 248, 66, 94, 57, 122, 30
 async fn main() -> anyhow::Result<()> {
     let mut js = JoinSet::<anyhow::Result<_>>::new();
 
-    let sender = js.spawn(async move {
+    let _sender = js.spawn(async move {
         println!("B: my id is: {}", task::id());
         sleep(Duration::from_millis(10)).await;
         let l = Arc::new(udt::Endpoint::bind("[::]:25584".parse()?)?);
@@ -21,7 +21,11 @@ async fn main() -> anyhow::Result<()> {
         println!("B: connected to {:?}", c.peer_addr()?);
 
         loop {
-            c.send_with(&[b'o'; 1192], true).await?;
+            if let Ok(r) = timeout(Duration::from_secs(1), c.send_with(&[b'o'; 1192], true)).await {
+                r?;
+            } else {
+                println!("B: send timed out");
+            }
         }
     });
 
