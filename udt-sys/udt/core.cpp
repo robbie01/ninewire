@@ -918,6 +918,8 @@ void CUDT::close()
    m_bOpened = false;
 }
 
+#include <iostream>
+
 int CUDT::sendmsg(const char* data, int len, int msttl, bool inorder)
 {
    // throw an exception if not connected
@@ -944,6 +946,7 @@ int CUDT::sendmsg(const char* data, int len, int msttl, bool inorder)
 
    if ((m_iSndBufSize - m_pSndBuffer->getCurrBufSize()) * m_iPayloadSize < len)
    {
+      std::cout << "the send buffer is full! need " << len << " bytes, but only " << (m_iSndBufSize - m_pSndBuffer->getCurrBufSize()) * m_iPayloadSize << "remain.  buffer size is " << m_pSndBuffer->getCurrBufSize() * m_iPayloadSize << std::endl;
       // r: hot path optimization.
       return -6001;
       // throw CUDTException(6, 1, 0);
