@@ -31,8 +31,8 @@ impl SecureTransport {
     // Of course, fast-open is a pipe dream considering the very nature of rendezvous sockets.
     pub async fn connect(ep: &Arc<Endpoint>, addr: SocketAddr, side: Side<'_>) -> io::Result<Self> {
         let inner = ep.connect_datagram(addr, true).await?;
-        // TODO: negotiate AESGCM for accelerated hosts
-        let crypto = snow::Builder::new("Noise_NK_25519_ChaChaPoly_SHA256".parse().unwrap());
+        // TODO: negotiate AES for accelerated hosts, and ChaChaPoly otherwise
+        let crypto = snow::Builder::new("Noise_NK_25519_AESGCM_SHA256".parse().unwrap());
         let mut crypto = match side {
             Side::Initiator { remote_public_key } => crypto
                 .remote_public_key(remote_public_key).map_err(io::Error::other)?
