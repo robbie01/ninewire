@@ -6,7 +6,7 @@ use futures::{io, stream::FuturesUnordered, FutureExt as _, Stream, StreamExt as
 use pin_project::pin_project;
 use tokio::sync::RwLock;
 use npwire::*;
-use transport::SecureTransport;
+use transport::{RecvHalf, SendHalf};
 use util::polymur;
 
 use super::{traits::{OpenResource as _, PathResource as _, Resource as _}, Serve};
@@ -241,7 +241,7 @@ fn poll_no_context<S: Stream + Unpin>(stream: &mut S) -> Poll<Option<S::Item>> {
 }
 
 pub async fn handle_client<S: Serve>(
-    peer: SecureTransport,
+    (mut snd, mut rcv): (SendHalf, RecvHalf),
     handler: Arc<S>
 ) -> io::Result<()> {
     let resource_mgr = ResourceManager {
@@ -261,13 +261,13 @@ pub async fn handle_client<S: Serve>(
                 resource_mgr.resources.write().await.clear();
 
                 if msize < 256 {
-                    peer.send(rerror(
+                    snd.send(rerror(
                         "Tversion: message size too small"
                     ).serialize(!0).unwrap()).await?;
                 } else {
                     let msize = msize.min(MAX_MESSAGE_SIZE);
                     let version: &'static str = if version == "9P2000" { "9P2000" } else { "unknown" };
-                    peer.send(Rversion { msize, version: ByteString::from_static(version) }.serialize(!0).unwrap()).await?;
+                    snd.send(Rversion { msize, version: ByteString::from_static(version) }.serialize(!0).unwrap()).await?;
     
                     initialized = true;
                 }
@@ -280,7 +280,7 @@ pub async fn handle_client<S: Serve>(
         let mut buffer = BytesMut::zeroed(MAX_MESSAGE_SIZE as usize);
         tokio::select! {
             biased;
-            incoming_n = peer.recv(&mut buffer), if inflight.len() < MAX_IN_FLIGHT && next_session.is_none() => {
+            incoming_n = rcv.recv(&mut buffer), if inflight.len() < MAX_IN_FLIGHT && next_session.is_none() => {
                 let incoming_n = incoming_n?;
                 let mut incoming = mem::replace(&mut buffer, BytesMut::zeroed(MAX_MESSAGE_SIZE as usize));
                 incoming.truncate(incoming_n);
@@ -353,10 +353,10 @@ pub async fn handle_client<S: Serve>(
                         .serialize(tag)
                         .unwrap_or_else(|e| Rerror::from(e).serialize(tag).unwrap());
 
-                    peer.send(serialized).await?;
+                    snd.send(serialized).await?;
 
                     if let Some(flush) = flushes {
-                        peer.send(Rflush.serialize(flush).unwrap()).await?;
+                        snd.send(Rflush.serialize(flush).unwrap()).await?;
                     }
 
                     if let Poll::Ready(Some(tfr)) = poll_no_context(&mut inflight) {
@@ -372,7 +372,7 @@ pub async fn handle_client<S: Serve>(
         }
     }
 
-    peer.flush().await?;
+    snd.flush().await?;
 
     Ok(())
 }

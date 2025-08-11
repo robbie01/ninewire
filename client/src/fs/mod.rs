@@ -15,7 +15,7 @@ pub use readdir::*;
 pub use file::*;
 use tokio::sync::oneshot;
 use tracing::trace;
-use transport::SecureTransport;
+use transport::{RecvHalf, SendHalf};
 use util::fidpool::{FidHandle, FidPool};
 
 const MAX_MESSAGE_SIZE: u32 = 1280 - 64 - 8 - 16;
@@ -23,7 +23,7 @@ const MAX_MESSAGE_SIZE: u32 = 1280 - 64 - 8 - 16;
 // todo: AtomicBool flag in case recv task dies
 #[derive(Debug)]
 pub(crate) struct FilesystemInner {
-    transport: SecureTransport,
+    transport: tokio::sync::Mutex<SendHalf>,
     inflight: Mutex<BTreeMap<u16, oneshot::Sender<RMessage>>>,
     fids: FidPool,
     maxlen: usize
@@ -41,9 +41,9 @@ impl FilesystemInner {
 }
 
 impl Filesystem {
-    pub async fn new(transport: SecureTransport) -> io::Result<Self> {
+    pub async fn new((transport, mut rcv): (SendHalf, RecvHalf)) -> io::Result<Self> {
         let mut inner = FilesystemInner {
-            transport,
+            transport: transport.into(),
             inflight: Default::default(),
             fids: FidPool::new(),
             maxlen: 0
@@ -53,11 +53,11 @@ impl Filesystem {
             msize: MAX_MESSAGE_SIZE,
             version: ByteString::from_static("9P2000")
         });
-        inner.transport.send(ver.serialize(!0).unwrap()).await?;
+        inner.transport.try_lock().unwrap().send(ver.serialize(!0).unwrap()).await?;
         trace!("sent request {ver:?}");
 
         let mut ver = BytesMut::zeroed(MAX_MESSAGE_SIZE as usize);
-        let n = inner.transport.recv(&mut ver).await?;
+        let n = rcv.recv(&mut ver).await?;
         ver.truncate(n);
         
         let (_, ver) = deserialize_r(ver.freeze()).map_err(io::Error::other)?;
@@ -77,7 +77,7 @@ impl Filesystem {
         let _handle = tokio::spawn(async move {
             let mut resp = BytesMut::zeroed(MAX_MESSAGE_SIZE as usize);
             loop {
-                let n = inner2.transport.recv(&mut resp).await?;
+                let n = rcv.recv(&mut resp).await?;
                 let mut resp = mem::replace(&mut resp, BytesMut::zeroed(MAX_MESSAGE_SIZE as usize));
                 resp.truncate(n);
                 if let Ok((tag, resp)) = deserialize_r(resp.freeze()) {

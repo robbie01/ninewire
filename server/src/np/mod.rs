@@ -3,7 +3,7 @@ use std::{fmt::Debug, sync::Arc};
 use futures::{TryStream, TryStreamExt as _};
 use tokio::task::{id, JoinSet};
 use traits::Serve;
-use transport::SecureTransport;
+use transport::{RecvHalf, SendHalf};
 
 pub mod traits;
 mod client;
@@ -11,7 +11,7 @@ mod client;
 pub async fn serve_mux<
     A: Debug + Send + 'static,
     S: Serve,
-    L: TryStream<Ok = (SecureTransport, A)> + Unpin
+    L: TryStream<Ok = ((SendHalf, RecvHalf), A)> + Unpin
 >(handler: Arc<S>, mut listener: L) -> Result<(), L::Error> {
     let mut conns = JoinSet::new();
 
