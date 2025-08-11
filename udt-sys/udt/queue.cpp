@@ -438,7 +438,10 @@ CSndQueue::~CSndQueue()
 {
    m_bClosing = true;
 
-   m_WindowCond.notify_one();
+   {
+      std::lock_guard<std::mutex> guard(m_WindowLock);
+      m_WindowCond.notify_one();
+   }
    m_WorkerThread.join();
 
    delete m_pSndUList;
