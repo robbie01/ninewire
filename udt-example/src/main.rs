@@ -30,7 +30,7 @@ async fn main() -> anyhow::Result<()> {
             // rlimit.tick().await;
             tokio::select! {
                 _ = &mut cancelled => break,
-                res = c.send_with(&[b'o'; 1192], true) => { res?; }
+                res = c.send_with(&[b'o'; 1412], true) => { res?; }
             }
         }
 

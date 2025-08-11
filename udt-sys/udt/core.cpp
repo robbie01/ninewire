@@ -77,6 +77,10 @@ const int CUDT::m_iVersion = 4;
 const int CUDT::m_iSYNInterval = 10000;
 const int CUDT::m_iSelfClockInterval = 64;
 
+// IPv6 40-bytes + UDP 8-bytes
+// Formerly 28. Screw IPv4.
+constexpr int IP_AND_UDP_OVERHEAD = 48;
+
 
 CUDT::CUDT()
 {
@@ -98,7 +102,7 @@ CUDT::CUDT()
    initSynch();
 
    // Default UDT configurations
-   m_iMSS = 1500;
+   m_iMSS = 1500; // r: The IPv6 mandatory MTU is 1280. Perhaps we should query interface MTUs when a connection is established.
    m_bSynConnect = true;
    m_iFlightFlagSize = 25600;
    m_iSndBufSize = 8192;
@@ -203,7 +207,7 @@ void CUDT::setOpt(UDTOpt optName, const void* optval, int)
       if (m_bOpened)
          throw CUDTException(5, 1, 0);
 
-      if (*(int*)optval < int(28 + CHandShake::m_iContentSize))
+      if (*(int*)optval < int(IP_AND_UDP_OVERHEAD + CHandShake::m_iContentSize))
          throw CUDTException(5, 3, 0);
 
       m_iMSS = *(int*)optval;
@@ -249,7 +253,7 @@ void CUDT::setOpt(UDTOpt optName, const void* optval, int)
       if (*(int*)optval <= 0)
          throw CUDTException(5, 3, 0);
 
-      m_iSndBufSize = *(int*)optval / (m_iMSS - 28);
+      m_iSndBufSize = *(int*)optval / (m_iMSS - IP_AND_UDP_OVERHEAD);
 
       break;
 
@@ -261,8 +265,8 @@ void CUDT::setOpt(UDTOpt optName, const void* optval, int)
          throw CUDTException(5, 3, 0);
 
       // Mimimum recv buffer size is 32 packets
-      if (*(int*)optval > (m_iMSS - 28) * 32)
-         m_iRcvBufSize = *(int*)optval / (m_iMSS - 28);
+      if (*(int*)optval > (m_iMSS - IP_AND_UDP_OVERHEAD) * 32)
+         m_iRcvBufSize = *(int*)optval / (m_iMSS - IP_AND_UDP_OVERHEAD);
       else
          m_iRcvBufSize = 32;
 
@@ -345,12 +349,12 @@ void CUDT::getOpt(UDTOpt optName, void* optval, int& optlen)
       break;
 
    case UDT_SNDBUF:
-      *(int*)optval = m_iSndBufSize * (m_iMSS - 28);
+      *(int*)optval = m_iSndBufSize * (m_iMSS - IP_AND_UDP_OVERHEAD);
       optlen = sizeof(int);
       break;
 
    case UDT_RCVBUF:
-      *(int*)optval = m_iRcvBufSize * (m_iMSS - 28);
+      *(int*)optval = m_iRcvBufSize * (m_iMSS - IP_AND_UDP_OVERHEAD);
       optlen = sizeof(int);
       break;
 
@@ -422,7 +426,7 @@ void CUDT::open()
    std::lock_guard cg(m_ConnectionLock);
 
    // Initial sequence number, loss, acknowledgement, etc.
-   m_iPktSize = m_iMSS - 28;
+   m_iPktSize = m_iMSS - IP_AND_UDP_OVERHEAD;
    m_iPayloadSize = m_iPktSize - CPacket::m_iPktHdrSize;
 
    m_iEXPCount = 1;
@@ -682,7 +686,7 @@ POST_CONNECT:
    // Re-configure according to the negotiated values.
    m_iMSS = m_ConnRes.m_iMSS;
    m_iFlowWindowSize = m_ConnRes.m_iFlightFlagSize;
-   m_iPktSize = m_iMSS - 28;
+   m_iPktSize = m_iMSS - IP_AND_UDP_OVERHEAD;
    m_iPayloadSize = m_iPktSize - CPacket::m_iPktHdrSize;
    m_iPeerISN = m_ConnRes.m_iISN;
    m_iRcvLastAck = m_ConnRes.m_iISN;
@@ -787,7 +791,7 @@ void CUDT::connect(const sockaddr* peer, CHandShake* hs)
    memcpy(m_piSelfIP, hs->m_piPeerIP, 16);
    CIPAddress::ntop(peer, hs->m_piPeerIP, m_iIPversion);
 
-   m_iPktSize = m_iMSS - 28;
+   m_iPktSize = m_iMSS - IP_AND_UDP_OVERHEAD;
    m_iPayloadSize = m_iPktSize - CPacket::m_iPktHdrSize;
 
    // Prepare all structures
