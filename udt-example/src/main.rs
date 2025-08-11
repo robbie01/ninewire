@@ -1,6 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
-use tokio::{task::{self, JoinSet}, time::{interval, sleep, timeout}};
+use tokio::{task::{self, JoinSet}, time::{interval, sleep}};
 use transport::SecureTransport;
 
 const PRIVATE_KEY: [u8; 32] = [127, 93, 161, 223, 213, 211, 245, 80, 69, 165, 77, 133, 169, 40, 130, 112, 218, 255, 225, 74, 78, 69, 83, 20, 154, 244, 58, 224, 51, 34, 61, 102];
@@ -40,7 +40,7 @@ async fn main() -> anyhow::Result<()> {
         let mut int = interval(Duration::from_secs(5));
         let mut ctr = 0;
 
-        let mut rem = 4;
+        let mut rem = 12;
 
         int.reset();
         loop {

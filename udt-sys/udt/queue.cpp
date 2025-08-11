@@ -376,6 +376,8 @@ void CSndUList::insert_(int64_t ts, const CUDT* u)
    // first entry, activate the sending queue
    if (0 == m_iLastEntry)
    {
+      // r: why is this needed? removing it broke the send buffer
+      std::lock_guard<std::mutex> guard(*m_pWindowLock);
       m_pWindowCond->notify_one();
    }
 }
