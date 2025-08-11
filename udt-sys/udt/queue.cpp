@@ -240,7 +240,7 @@ CSndUList::~CSndUList()
 
 void CSndUList::insert(int64_t ts, const CUDT* u)
 {
-   std::lock_guard<std::mutex> listguard(m_ListLock);
+   std::lock_guard listguard(m_ListLock);
 
    // increase the heap array size if necessary
    if (m_iLastEntry == m_iArrayLength - 1)
@@ -267,7 +267,7 @@ void CSndUList::insert(int64_t ts, const CUDT* u)
 
 void CSndUList::update(const CUDT* u, bool reschedule)
 {
-   std::lock_guard<std::mutex> listguard(m_ListLock);
+   std::lock_guard listguard(m_ListLock);
 
    CSNode* n = u->m_pSNode;
 
@@ -291,7 +291,7 @@ void CSndUList::update(const CUDT* u, bool reschedule)
 
 int CSndUList::pop(sockaddr*& addr, CPacket& pkt)
 {
-   std::lock_guard<std::mutex> listguard(m_ListLock);
+   std::lock_guard listguard(m_ListLock);
 
    if (-1 == m_iLastEntry)
       return -1;
@@ -323,14 +323,14 @@ int CSndUList::pop(sockaddr*& addr, CPacket& pkt)
 
 void CSndUList::remove(const CUDT* u)
 {
-   std::lock_guard<std::mutex> listguard(m_ListLock);
+   std::lock_guard listguard(m_ListLock);
 
    remove_(u);
 }
 
 uint64_t CSndUList::getNextProcTime()
 {
-   std::lock_guard<std::mutex> listguard(m_ListLock);
+   std::lock_guard listguard(m_ListLock);
 
    if (-1 == m_iLastEntry)
       return 0;
@@ -379,7 +379,7 @@ void CSndUList::insert_(int64_t ts, const CUDT* u)
       // r: i tried removing this lock and the send buffer never got properly cleared.
       //    i'm guessing putting a memory barrier around the notify is necessary because
       //    the UDT writers couldn't do atomics properly
-      std::lock_guard<std::mutex> guard(*m_pWindowLock);
+      std::lock_guard guard(*m_pWindowLock);
       m_pWindowCond->notify_one();
    }
 }
@@ -441,7 +441,7 @@ CSndQueue::~CSndQueue()
    m_bClosing = true;
 
    {
-      std::lock_guard<std::mutex> guard(m_WindowLock);
+      std::lock_guard guard(m_WindowLock);
       m_WindowCond.notify_one();
    }
    m_WorkerThread.join();
@@ -488,7 +488,7 @@ void CSndQueue::worker(CSndQueue* self)
       {
          // wait here if there is no sockets with data to be sent
 
-         std::unique_lock<std::mutex> guard(self->m_WindowLock);
+         std::unique_lock guard(self->m_WindowLock);
 
          if (!self->m_bClosing && (self->m_pSndUList->m_iLastEntry < 0))
             self->m_WindowCond.wait(guard);
@@ -703,7 +703,7 @@ CRendezvousQueue::~CRendezvousQueue()
 
 void CRendezvousQueue::insert(const UDTSOCKET& id, CUDT* u, int ipv, const sockaddr* addr, uint64_t ttl)
 {
-   std::lock_guard<std::mutex> vg(m_RIDVectorLock);
+   std::lock_guard vg(m_RIDVectorLock);
 
    CRL r;
    r.m_iID = id;
@@ -718,7 +718,7 @@ void CRendezvousQueue::insert(const UDTSOCKET& id, CUDT* u, int ipv, const socka
 
 void CRendezvousQueue::remove(const UDTSOCKET& id)
 {
-   std::lock_guard<std::mutex> vg(m_RIDVectorLock);
+   std::lock_guard vg(m_RIDVectorLock);
 
    for (list<CRL>::iterator i = m_lRendezvousID.begin(); i != m_lRendezvousID.end(); ++ i)
    {
@@ -738,7 +738,7 @@ void CRendezvousQueue::remove(const UDTSOCKET& id)
 
 CUDT* CRendezvousQueue::retrieve(const sockaddr* addr, UDTSOCKET& id)
 {
-   std::lock_guard<std::mutex> vg(m_RIDVectorLock);
+   std::lock_guard vg(m_RIDVectorLock);
 
    // TODO: optimize search
    for (list<CRL>::iterator i = m_lRendezvousID.begin(); i != m_lRendezvousID.end(); ++ i)
@@ -758,7 +758,7 @@ void CRendezvousQueue::updateConnStatus()
    if (m_lRendezvousID.empty())
       return;
 
-   std::lock_guard<std::mutex> vg(m_RIDVectorLock);
+   std::lock_guard vg(m_RIDVectorLock);
 
    for (list<CRL>::iterator i = m_lRendezvousID.begin(); i != m_lRendezvousID.end(); ++ i)
    {
@@ -967,7 +967,7 @@ TIMER_CHECK:
 
 int CRcvQueue::recvfrom(int32_t id, CPacket& packet)
 {
-   std::unique_lock<std::mutex> bufferlock(m_PassLock);
+   std::unique_lock bufferlock(m_PassLock);
 
    auto i = m_mBuffer.find(id);
 
@@ -1010,7 +1010,7 @@ int CRcvQueue::recvfrom(int32_t id, CPacket& packet)
 
 int CRcvQueue::setListener(CUDT* u)
 {
-   std::lock_guard<std::mutex> lslock(m_LSLock);
+   std::lock_guard lslock(m_LSLock);
 
    if (NULL != m_pListener)
       return -1;
@@ -1021,7 +1021,7 @@ int CRcvQueue::setListener(CUDT* u)
 
 void CRcvQueue::removeListener(const CUDT* u)
 {
-   std::lock_guard<std::mutex> lslock(m_LSLock);
+   std::lock_guard lslock(m_LSLock);
 
    if (u == m_pListener)
       m_pListener = NULL;
@@ -1036,7 +1036,7 @@ void CRcvQueue::removeConnector(const UDTSOCKET& id)
 {
    m_pRendezvousQueue->remove(id);
 
-   std::lock_guard<std::mutex> bufferlock(m_PassLock);
+   std::lock_guard bufferlock(m_PassLock);
 
    auto i = m_mBuffer.find(id);
    if (i != m_mBuffer.end())
@@ -1052,7 +1052,7 @@ void CRcvQueue::removeConnector(const UDTSOCKET& id)
 
 void CRcvQueue::setNewEntry(CUDT* u)
 {
-   std::lock_guard<std::mutex> listguard(m_IDLock);
+   std::lock_guard listguard(m_IDLock);
    m_vNewEntry.push_back(u);
 }
 
@@ -1063,7 +1063,7 @@ bool CRcvQueue::ifNewEntry()
 
 CUDT* CRcvQueue::getNewEntry()
 {
-   std::lock_guard<std::mutex> listguard(m_IDLock);
+   std::lock_guard listguard(m_IDLock);
 
    if (m_vNewEntry.empty())
       return NULL;
@@ -1076,7 +1076,7 @@ CUDT* CRcvQueue::getNewEntry()
 
 void CRcvQueue::storePkt(int32_t id, std::unique_ptr<CPacket> pkt)
 {
-   std::lock_guard<std::mutex> bufferlock(m_PassLock);
+   std::lock_guard bufferlock(m_PassLock);
 
    auto i = m_mBuffer.find(id);
 

@@ -118,14 +118,14 @@ public:
 
     inline void set() {
         {
-                std::lock_guard<std::mutex> lock(mtx);
+                std::lock_guard lock(mtx);
                 is_set = true;
         }
         cv.notify_one();
     }
 
     inline void wait() {
-        std::unique_lock<std::mutex> lock(mtx);
+        std::unique_lock lock(mtx);
         while (!is_set) cv.wait(lock);
         is_set = false;
     }
@@ -133,14 +133,14 @@ public:
     template<class Rep, class Period>
     inline bool wait_for(const std::chrono::duration<Rep, Period>& timeout) {
         auto deadline = std::chrono::steady_clock::now() + timeout;
-        std::unique_lock<std::mutex> lock(mtx);
+        std::unique_lock lock(mtx);
         if (!cv.wait_until(lock, deadline, [&] { return is_set; })) return false;
         is_set = false;
         return true;
     }
 
     inline bool try_wait() {
-        std::lock_guard<std::mutex> lock(mtx);
+        std::lock_guard lock(mtx);
         if (is_set) {
                 is_set = false;
                 return true;

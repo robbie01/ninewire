@@ -67,7 +67,7 @@ CSndLossList::~CSndLossList()
 
 int CSndLossList::insert(int32_t seqno1, int32_t seqno2)
 {
-   std::lock_guard<std::mutex> listguard(m_ListLock);
+   std::lock_guard listguard(m_ListLock);
 
    if (0 == m_iLength)
    {
@@ -239,7 +239,7 @@ int CSndLossList::insert(int32_t seqno1, int32_t seqno2)
 
 void CSndLossList::remove(int32_t seqno)
 {
-   std::lock_guard<std::mutex> listguard(m_ListLock);
+   std::lock_guard listguard(m_ListLock);
 
    if (0 == m_iLength)
       return;
@@ -351,7 +351,7 @@ void CSndLossList::remove(int32_t seqno)
 
 int CSndLossList::getLossLength()
 {
-   std::lock_guard<std::mutex> listguard(m_ListLock);
+   std::lock_guard listguard(m_ListLock);
 
    return m_iLength;
 }
@@ -361,7 +361,7 @@ int32_t CSndLossList::getLostSeq()
    if (0 == m_iLength)
      return -1;
 
-   std::lock_guard<std::mutex> listguard(m_ListLock);
+   std::lock_guard listguard(m_ListLock);
 
    if (0 == m_iLength)
      return -1;

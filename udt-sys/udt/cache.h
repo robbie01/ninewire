@@ -107,7 +107,7 @@ public:
 
    int lookup(T* data)
    {
-      std::lock_guard<std::mutex> cacheguard(m_Lock);
+      std::lock_guard cacheguard(m_Lock);
 
       int key = data->getKey();
       if (key < 0)
@@ -138,7 +138,7 @@ public:
 
    int update(T* data)
    {
-      std::lock_guard<std::mutex> cacheguard(m_Lock);
+      std::lock_guard cacheguard(m_Lock);
 
       int key = data->getKey();
       if (key < 0)

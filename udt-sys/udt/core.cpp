@@ -317,7 +317,7 @@ void CUDT::setOpt(UDTOpt optName, const void* optval, int)
 
 void CUDT::getOpt(UDTOpt optName, void* optval, int& optlen)
 {
-   std::lock_guard<std::mutex> cg(m_ConnectionLock);
+   std::lock_guard cg(m_ConnectionLock);
 
    switch (optName)
    {
@@ -419,7 +419,7 @@ void CUDT::getOpt(UDTOpt optName, void* optval, int& optlen)
 
 void CUDT::open()
 {
-   std::lock_guard<std::mutex> cg(m_ConnectionLock);
+   std::lock_guard cg(m_ConnectionLock);
 
    // Initial sequence number, loss, acknowledgement, etc.
    m_iPktSize = m_iMSS - 28;
@@ -484,7 +484,7 @@ void CUDT::open()
 
 void CUDT::listen()
 {
-   std::lock_guard<std::mutex> cg(m_ConnectionLock);
+   std::lock_guard cg(m_ConnectionLock);
 
    if (!m_bOpened)
       throw CUDTException(5, 0, 0);
@@ -506,7 +506,7 @@ void CUDT::listen()
 
 void CUDT::connect(const sockaddr* serv_addr)
 {
-   std::lock_guard<std::mutex> cg(m_ConnectionLock);
+   std::lock_guard cg(m_ConnectionLock);
 
    if (!m_bOpened)
       throw CUDTException(5, 0, 0);
@@ -749,7 +749,7 @@ POST_CONNECT:
 
 void CUDT::connect(const sockaddr* peer, CHandShake* hs)
 {
-   std::lock_guard<std::mutex> cg(m_ConnectionLock);
+   std::lock_guard cg(m_ConnectionLock);
 
    // Uses the smaller MSS between the peers
    if (hs->m_iMSS > m_iMSS)
@@ -876,7 +876,7 @@ void CUDT::close()
    // Inform the threads handler to stop.
    m_bClosing = true;
 
-   std::lock_guard<std::mutex> cg(m_ConnectionLock);
+   std::lock_guard cg(m_ConnectionLock);
 
    // Signal the sender and recver if they are waiting for data.
    releaseSynch();
@@ -930,7 +930,7 @@ int CUDT::sendmsg(const char* data, int len, int msttl, bool inorder)
    if (len > m_iSndBufSize * m_iPayloadSize)
       throw CUDTException(5, 12, 0);
 
-   std::lock_guard<std::mutex> sendguard(m_SendLock);
+   std::lock_guard sendguard(m_SendLock);
 
    if (m_pSndBuffer->getCurrBufSize() == 0)
    {
@@ -969,7 +969,7 @@ int CUDT::recvmsg(char* data, int len)
    if (len <= 0)
       return 0;
 
-   std::lock_guard<std::mutex> recvguard(m_RecvLock);
+   std::lock_guard recvguard(m_RecvLock);
 
    if (m_bBroken || m_bClosing)
    {
@@ -1035,7 +1035,7 @@ void CUDT::sample(CPerfMon& perf, bool clear)
    perf.msRTT = m_iRTT/1000.0;
    perf.mbpsBandwidth = m_iBandwidth * m_iPayloadSize * 8.0 / 1000000.0;
 
-   if (auto guard = std::unique_lock<std::mutex>(m_ConnectionLock, std::try_to_lock))
+   if (auto guard = std::unique_lock(m_ConnectionLock, std::try_to_lock))
    {
       perf.byteAvailSndBuf = (NULL == m_pSndBuffer) ? 0 : (m_iSndBufSize - m_pSndBuffer->getCurrBufSize()) * m_iMSS;
       perf.byteAvailRcvBuf = (NULL == m_pRcvBuffer) ? 0 : m_pRcvBuffer->getAvailBufSize() * m_iMSS;
@@ -1075,10 +1075,10 @@ void CUDT::destroySynch()
 void CUDT::releaseSynch()
 {
    {
-      std::lock_guard<std::mutex> guard(m_SendLock);
+      std::lock_guard guard(m_SendLock);
    }
    {
-      std::lock_guard<std::mutex> guard(m_RecvLock);
+      std::lock_guard guard(m_RecvLock);
    }
 }
 
@@ -1349,7 +1349,7 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
 
       {
          // protect packet retransmission
-         std::lock_guard<std::mutex> guard(m_AckLock);
+         std::lock_guard guard(m_AckLock);
 
          int offset = CSeqNo::seqoff(m_iSndLastDataAck, ack);
          if (offset <= 0)
@@ -1602,7 +1602,7 @@ int CUDT::packData(CPacket& packet, uint64_t& ts)
    if ((packet.m_iSeqNo = m_pSndLossList->getLostSeq()) >= 0)
    {
       // protect m_iSndLastDataAck from updating by ACK processing
-      std::lock_guard<std::mutex> ackguard(m_AckLock);
+      std::lock_guard ackguard(m_AckLock);
 
       int offset = CSeqNo::seqoff(m_iSndLastDataAck, packet.m_iSeqNo);
       if (offset < 0)
