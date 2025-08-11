@@ -1,7 +1,7 @@
-// mod v2;
+use std::{io, net::SocketAddr, ops::RangeInclusive, sync::{atomic::{AtomicU64, Ordering}, Arc}};
 
-use std::{io, net::SocketAddr, sync::Arc};
-
+use parking_lot::Mutex;
+use range_set::RangeSet;
 use scc::Bag;
 use snow::StatelessTransportState;
 use tracing::trace;
@@ -11,19 +11,13 @@ use udt::{Connection, Endpoint};
 pub struct SecureTransport {
     inner: Connection,
     crypto: StatelessTransportState,
-    buffers: Bag<Vec<u8>>
-}
-
-#[derive(Debug)]
-pub struct SendHalf {
-    inner: Arc<SecureTransport>,
-    nonce: u64
-}
-
-#[derive(Debug)]
-pub struct RecvHalf {
-    inner: Arc<SecureTransport>,
-    nonce: u64
+    buffers: Bag<Vec<u8>>,
+    nonce_outgoing: AtomicU64,
+    // There's a potential DoS here. A malicious sender could only use non-consecutive nonces
+    // (i.e. all evens) and force the receiver to allocate a ton of memory here. We should
+    // terminate the connection if there's an unreasonable number of nonce gaps.
+    // This shouldn't affect well-behaved senders because we don't expire any messages.
+    nonce_incoming: Mutex<RangeSet<[RangeInclusive<u64>; 1]>>
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -35,7 +29,7 @@ pub enum Side<'a> {
 impl SecureTransport {
     // Feature: add support for 0/0.5 RTT data (e.g. a fast Tversion/Rversion)
     // Of course, fast-open is a pipe dream considering the very nature of rendezvous sockets.
-    pub async fn connect(ep: &Arc<Endpoint>, addr: SocketAddr, side: Side<'_>) -> io::Result<(SendHalf, RecvHalf)> {
+    pub async fn connect(ep: &Arc<Endpoint>, addr: SocketAddr, side: Side<'_>) -> io::Result<Self> {
         let inner = ep.connect_datagram(addr, true).await?;
         // TODO: negotiate AES for accelerated hosts, and ChaChaPoly otherwise
         let crypto = snow::Builder::new("Noise_NK_25519_AESGCM_SHA256".parse().unwrap());
@@ -60,15 +54,13 @@ impl SecureTransport {
             }
         }
 
-        let sec = Arc::new(Self {
+        Ok(Self {
             inner,
             crypto: crypto.into_stateless_transport_mode().map_err(io::Error::other)?,
-            buffers: Bag::new()
-        });
-        Ok((
-            SendHalf { inner: sec.clone(), nonce: 0 },
-            RecvHalf { inner: sec, nonce: 0 }
-        ))
+            buffers: Bag::new(),
+            nonce_outgoing: AtomicU64::new(0),
+            nonce_incoming: RangeSet::new().into()
+        })
     }
 
     pub fn local_addr(&self) -> io::Result<SocketAddr> {
@@ -78,69 +70,65 @@ impl SecureTransport {
     pub fn peer_addr(&self) -> io::Result<SocketAddr> {
         self.inner.peer_addr()
     }
+
+    pub async fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
+        let mut tmp = self.buffers.pop().unwrap_or_default();
+        let tgt = buf.len() + 8 + 16;
+        if tmp.len() < tgt {
+            tmp.resize(tgt, 0);
+        }
+
+        let (mut guard, nonce, n) = loop {
+            let n = self.inner.recv(&mut tmp).await?;
+            let nonce = u64::from_be_bytes(tmp[..8].try_into().unwrap());
+            
+            let guard = self.nonce_incoming.lock();
+            if !guard.contains(nonce) {
+                break (guard, nonce, n)
+            }
+        };
+
+        let res = self.crypto.read_message(nonce, &tmp[8..n], buf).map_err(io::Error::other);
+        self.buffers.push(tmp);
+        let res = res?;
+        guard.insert(nonce);
+        Ok(res)
+    }
+
+    pub async fn send_with(&self, buf: &[u8], inorder: bool) -> io::Result<usize> {
+        let nonce = self.nonce_outgoing.fetch_add(1, Ordering::Relaxed);
+
+        let mut tmp = self.buffers.pop().unwrap_or_default();
+        let tgt = buf.len() + 8 + 16;
+        if tmp.len() < tgt {
+            tmp.resize(tgt, 0);
+        }
+
+        let n = self.crypto.write_message(nonce, buf, &mut tmp[8..]).map_err(io::Error::other)?;
+        assert_eq!(n, tgt - 8);
+
+        tmp[..8].copy_from_slice(&nonce.to_be_bytes());
+
+        // Force inorder if the nonce is 0 so that transport messages aren't reordered behind handshake messages
+        let n = self.inner.send_with(&tmp[..tgt], None, inorder || nonce == 0).await?;
+        assert_eq!(n, tgt);
+
+        self.buffers.push(tmp);
+
+        Ok(buf.len())
+    }
+
+    pub async fn send(&self, buf: impl AsRef<[u8]>) -> io::Result<usize> {
+        self.send_with(buf.as_ref(), true).await
+    }
+
+    pub fn flush(&self) -> impl Future<Output = io::Result<()>> {
+        self.inner.flush()
+    }
 }
 
 impl Drop for SecureTransport {
     fn drop(&mut self) {
         trace!(name: "closed", num_buffers = self.buffers.len());
-    }
-}
-
-impl SendHalf {
-    pub fn inner(&self) -> &SecureTransport { return &self.inner; }
-
-    pub async fn send(&mut self, buf: impl AsRef<[u8]>) -> io::Result<usize> {
-        if self.nonce == u64::MAX {
-            return Err(io::Error::other("too many messages"));
-        }
-
-        let buf = buf.as_ref();
-
-        let nonce = self.nonce;
-        self.nonce += 1;
-
-        let mut tmp = self.inner.buffers.pop().unwrap_or_default();
-        let tgt = buf.len() + 16;
-        if tmp.len() < tgt {
-            tmp.resize(tgt, 0);
-        }
-
-        let n = self.inner.crypto.write_message(nonce, buf, &mut tmp[..]).map_err(io::Error::other)?;
-        assert_eq!(n, tgt);
-
-        let n = self.inner.inner.send_with(&tmp[..tgt], None, true).await?;
-        assert_eq!(n, tgt);
-
-        self.inner.buffers.push(tmp);
-
-        Ok(buf.len())
-    }
-
-    pub fn flush(&self) -> impl Future<Output = io::Result<()>> {
-        self.inner.inner.flush()
-    }
-}
-
-impl RecvHalf {
-    pub fn inner(&self) -> &SecureTransport { return &self.inner; }
-
-    pub async fn recv(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        if self.nonce == u64::MAX {
-            return Err(io::Error::other("too many messages"));
-        }
-
-        let mut tmp = self.inner.buffers.pop().unwrap_or_default();
-        let tgt = buf.len() + 16;
-        if tmp.len() < tgt {
-            tmp.resize(tgt, 0);
-        }
-
-        let n = self.inner.inner.recv(&mut tmp).await?;
-
-        let res = self.inner.crypto.read_message(self.nonce, &tmp[..n], buf).map_err(io::Error::other);
-        self.inner.buffers.push(tmp);
-        let res = res?;
-        self.nonce += 1;
-        Ok(res)
     }
 }
