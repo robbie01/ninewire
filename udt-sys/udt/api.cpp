@@ -186,7 +186,7 @@ UDTSOCKET CUDTUnited::newSocket(int af, int type)
    try
    {
       ns = std::make_shared<CUDTSocket>();
-      ns->m_pUDT = std::make_shared<CUDT>();
+      ns->m_pUDT = std::make_unique<CUDT>();
       if (AF_INET == af)
       {
          ns->m_pSelfAddr = (sockaddr*)(new sockaddr_in);
@@ -277,7 +277,7 @@ int CUDTUnited::newConnection(const UDTSOCKET listener, const sockaddr* peer, CH
    try
    {
       ns = std::make_shared<CUDTSocket>();
-      ns->m_pUDT = std::make_shared<CUDT>(*(ls->m_pUDT));
+      ns->m_pUDT = std::make_unique<CUDT>(*(ls->m_pUDT));
       if (AF_INET == ls->m_iIPversion)
       {
          ns->m_pSelfAddr = (sockaddr*)(new sockaddr_in);

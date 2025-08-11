@@ -20,12 +20,11 @@ async fn main() -> anyhow::Result<()> {
         // let c = l.connect_datagram("[::1]:25583".parse()?, false).await?;
         println!("B: connected to {:?}", c.peer_addr()?);
 
+        // let mut rlimit = interval(Duration::from_millis(1));
+
         loop {
-            if let Ok(r) = timeout(Duration::from_secs(1), c.send_with(&[b'o'; 1192], true)).await {
-                r?;
-            } else {
-                println!("B: send timed out");
-            }
+            // rlimit.tick().await;
+            c.send_with(&[b'o'; 1192], true).await?;
         }
     });
 

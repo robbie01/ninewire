@@ -945,7 +945,6 @@ int CUDT::sendmsg(const char* data, int len, int msttl, bool inorder)
 
    if ((m_iSndBufSize - m_pSndBuffer->getCurrBufSize()) * m_iPayloadSize < len)
    {
-      std::cout << "the send buffer is full! need " << len << " bytes, but only " << (m_iSndBufSize - m_pSndBuffer->getCurrBufSize()) * m_iPayloadSize << "remain.  buffer size is " << m_pSndBuffer->getCurrBufSize() * m_iPayloadSize << std::endl;
       // r: hot path optimization.
       return -6001;
       // throw CUDTException(6, 1, 0);
@@ -1304,6 +1303,8 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
    {
    case 2: //010 - Acknowledgement
       {
+      // r: moving this lock guard here prevents the buffer from filling up but degrades performance
+      std::lock_guard<std::mutex> guard(m_AckLock);
       int32_t ack;
 
       // process a lite ACK
@@ -1353,7 +1354,6 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
 
       {
          // protect packet retransmission
-         std::lock_guard<std::mutex> guard(m_AckLock);
 
          int offset = CSeqNo::seqoff(m_iSndLastDataAck, ack);
          if (offset <= 0)
@@ -1363,7 +1363,6 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
          }
 
          // acknowledge the sending buffer
-         std::cout << "i am acking " << offset << " blocks!" << std::endl;
          m_pSndBuffer->ackData(offset);
 
          // record total time used for sending
