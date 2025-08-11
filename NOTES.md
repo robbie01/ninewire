@@ -1,0 +1,1 @@
+NKosk flow: <https://moderncrypto.org/mail-archive/noise/2018/001758.html>

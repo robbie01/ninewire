@@ -78,8 +78,8 @@ public:
 
    std::unique_ptr<CUDT> m_pUDT;                             // pointer to the UDT entity
 
-   std::set<UDTSOCKET>* m_pQueuedSockets;    // set of connections waiting for accept()
-   std::set<UDTSOCKET>* m_pAcceptSockets;    // set of accept()ed connections
+   std::set<UDTSOCKET> m_pQueuedSockets;    // set of connections waiting for accept()
+   std::set<UDTSOCKET> m_pAcceptSockets;    // set of accept()ed connections
 
    std::mutex m_AcceptLock;             // mutex associated to m_AcceptCond
 

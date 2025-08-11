@@ -223,7 +223,7 @@ private:
    bool scanMsg(int& start, int& end, bool& passack);
 
 private:
-   CUnit** m_pUnit;                     // pointer to the protocol buffer
+   std::unique_ptr<CUnit*[]> m_pUnit;                     // pointer to the protocol buffer
    int m_iSize;                         // size of the protocol buffer
    CUnitQueue* m_pUnitQueue;		// the shared unit queue
 

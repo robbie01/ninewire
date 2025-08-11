@@ -288,7 +288,7 @@ m_iLastAckPos(0),
 m_iMaxPos(0),
 m_iNotch(0)
 {
-   m_pUnit = new CUnit* [m_iSize];
+   m_pUnit = std::make_unique<CUnit*[]>(m_iSize);
    for (int i = 0; i < m_iSize; ++ i)
       m_pUnit[i] = NULL;
 }
@@ -303,8 +303,6 @@ CRcvBuffer::~CRcvBuffer()
          -- m_pUnitQueue->m_iCount;
       }
    }
-
-   delete [] m_pUnit;
 }
 
 int CRcvBuffer::addData(CUnit* unit, int offset)

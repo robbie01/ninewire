@@ -66,9 +66,7 @@ m_PerfInfo()
 }
 
 CCC::~CCC()
-{
-   delete [] m_pcParam;
-}
+{}
 
 void CCC::setACKTimer(int msINT)
 {
@@ -145,9 +143,8 @@ void CCC::setRTT(int rtt)
 
 void CCC::setUserParam(const char* param, int size)
 {
-   delete [] m_pcParam;
-   m_pcParam = new char[size];
-   memcpy(m_pcParam, param, size);
+   m_pcParam = std::make_unique<char[]>(size);
+   memcpy(m_pcParam.get(), param, size);
    m_iPSize = size;
 }
 

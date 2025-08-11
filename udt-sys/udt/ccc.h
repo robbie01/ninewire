@@ -216,7 +216,7 @@ protected:
    int m_iRcvRate;			// packet arrive rate at receiver side, packets per second
    int m_iRTT;				// current estimated RTT, microsecond
 
-   char* m_pcParam;			// user defined parameter
+   std::unique_ptr<char[]> m_pcParam;			// user defined parameter
    int m_iPSize;			// size of m_pcParam
 
 private:

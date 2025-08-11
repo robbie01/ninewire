@@ -62,8 +62,8 @@ m_ListenSocket(0),
 m_PeerID(0),
 m_iISN(0),
 m_pUDT(nullptr),
-m_pQueuedSockets(NULL),
-m_pAcceptSockets(NULL),
+m_pQueuedSockets(),
+m_pAcceptSockets(),
 m_AcceptLock(),
 m_uiBackLog(0),
 m_iMuxID(-1)
@@ -81,9 +81,6 @@ CUDTSocket::~CUDTSocket()
       delete (sockaddr_in6*)m_pSelfAddr;
       delete (sockaddr_in6*)m_pPeerAddr;
    }
-
-   delete m_pQueuedSockets;
-   delete m_pAcceptSockets;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -250,8 +247,8 @@ int CUDTUnited::newConnection(const UDTSOCKET listener, const sockaddr* peer, CH
          ns->m_TimeStamp = CTimer::getTime();
 
          std::lock_guard guard(ls->m_AcceptLock);
-         ls->m_pQueuedSockets->erase(ns->m_SocketID);
-         ls->m_pAcceptSockets->erase(ns->m_SocketID);
+         ls->m_pQueuedSockets.erase(ns->m_SocketID);
+         ls->m_pAcceptSockets.erase(ns->m_SocketID);
       }
       else
       {
@@ -271,7 +268,7 @@ int CUDTUnited::newConnection(const UDTSOCKET listener, const sockaddr* peer, CH
    }
 
    // exceeding backlog, refuse the connection request
-   if (ls->m_pQueuedSockets->size() >= ls->m_uiBackLog)
+   if (ls->m_pQueuedSockets.size() >= ls->m_uiBackLog)
       return -1;
 
    try
@@ -348,7 +345,7 @@ int CUDTUnited::newConnection(const UDTSOCKET listener, const sockaddr* peer, CH
       try
       {
          std::lock_guard guard(ls->m_AcceptLock);
-         ls->m_pQueuedSockets->insert(ns->m_SocketID);
+         ls->m_pQueuedSockets.insert(ns->m_SocketID);
       }
       catch (...)
       {
@@ -467,13 +464,11 @@ int CUDTUnited::listen(const UDTSOCKET u, int backlog)
 
    try
    {
-      s->m_pQueuedSockets = new set<UDTSOCKET>;
-      s->m_pAcceptSockets = new set<UDTSOCKET>;
+      s->m_pQueuedSockets.clear();
+      s->m_pAcceptSockets.clear();
    }
    catch (...)
    {
-      delete s->m_pQueuedSockets;
-      delete s->m_pAcceptSockets;
       throw CUDTException(3, 2, 0);
    }
 
@@ -508,11 +503,11 @@ UDTSOCKET CUDTUnited::accept(const UDTSOCKET listener, sockaddr* addr, int* addr
 
    {
       std::lock_guard guard(ls->m_AcceptLock);
-      if (ls->m_pQueuedSockets->size() > 0)
+      if (ls->m_pQueuedSockets.size() > 0)
       {
-         u = *(ls->m_pQueuedSockets->begin());
-         ls->m_pAcceptSockets->insert(ls->m_pAcceptSockets->end(), u);
-         ls->m_pQueuedSockets->erase(ls->m_pQueuedSockets->begin());
+         u = *(ls->m_pQueuedSockets.begin());
+         ls->m_pAcceptSockets.insert(ls->m_pAcceptSockets.end(), u);
+         ls->m_pQueuedSockets.erase(ls->m_pQueuedSockets.begin());
       }
    }
 
@@ -785,8 +780,8 @@ void CUDTUnited::checkBrokenSockets()
 
          {
             std::lock_guard guard(ls->second->m_AcceptLock);
-            ls->second->m_pQueuedSockets->erase(i.second->m_SocketID);
-            ls->second->m_pAcceptSockets->erase(i.second->m_SocketID);
+            ls->second->m_pQueuedSockets.erase(i.second->m_SocketID);
+            ls->second->m_pAcceptSockets.erase(i.second->m_SocketID);
          }
       }
    }
@@ -825,11 +820,10 @@ void CUDTUnited::removeSocket(const UDTSOCKET u)
    // decrease multiplexer reference count, and remove it if necessary
    const int mid = i->second->m_iMuxID;
 
-   if (NULL != i->second->m_pQueuedSockets)
    {
       std::lock_guard guard(i->second->m_AcceptLock);
       // if it is a listener, close all un-accepted sockets in its queue and remove them later
-      for (const auto& q : *i->second->m_pQueuedSockets)
+      for (const auto& q : i->second->m_pQueuedSockets)
       {
          m_Sockets[q]->m_pUDT->m_bBroken = true;
          m_Sockets[q]->m_pUDT->close();
@@ -1078,8 +1072,8 @@ void CUDTUnited::garbageCollect(CUDTUnited* self)
          }
 
          std::lock_guard guard(ls->second->m_AcceptLock);
-         ls->second->m_pQueuedSockets->erase(i.second->m_SocketID);
-         ls->second->m_pAcceptSockets->erase(i.second->m_SocketID);
+         ls->second->m_pQueuedSockets.erase(i.second->m_SocketID);
+         ls->second->m_pAcceptSockets.erase(i.second->m_SocketID);
       }
       self->m_Sockets.clear();
 

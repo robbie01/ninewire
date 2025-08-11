@@ -376,8 +376,8 @@ private: // for UDP multiplexer
    CRcvQueue* m_pRcvQueue;			// packet receiving queue
    sockaddr* m_pPeerAddr;			// peer address
    uint32_t m_piSelfIP[4];			// local UDP IP address
-   CSNode* m_pSNode;				// node information for UDT list used in snd queue
-   CRNode* m_pRNode;                            // node information for UDT list used in rcv queue
+   std::unique_ptr<CSNode> m_pSNode;				// node information for UDT list used in snd queue
+   std::unique_ptr<CRNode> m_pRNode;                            // node information for UDT list used in rcv queue
 };
 
 

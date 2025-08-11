@@ -189,9 +189,6 @@ CUDT::~CUDT()
    } else {
       delete (sockaddr_in6*)m_pPeerAddr;
    }
-
-   delete m_pSNode;
-   delete m_pRNode;
 }
 
 void CUDT::setOpt(UDTOpt optName, const void* optval, int)
@@ -443,14 +440,14 @@ void CUDT::open()
    m_llSndDuration = m_llSndDurationTotal = 0;
 
    // structures for queue
-   if (NULL == m_pSNode)
-      m_pSNode = new CSNode;
+   if (!m_pSNode)
+      m_pSNode = std::make_unique<CSNode>();
    m_pSNode->m_pUDT = this;
    m_pSNode->m_llTimeStamp = 1;
    m_pSNode->m_iHeapLoc = -1;
 
-   if (NULL == m_pRNode)
-      m_pRNode = new CRNode;
+   if (!m_pRNode)
+      m_pRNode = std::make_unique<CRNode>();
    m_pRNode->m_pUDT = this;
    m_pRNode->m_llTimeStamp = 1;
    m_pRNode->m_pPrev = m_pRNode->m_pNext = NULL;
@@ -556,13 +553,13 @@ void CUDT::connect(const sockaddr* serv_addr)
 
    // Inform the server my configurations.
    CPacket request;
-   char* reqdata = new char [m_iPayloadSize];
-   request.pack(0, NULL, reqdata, m_iPayloadSize);
+   std::unique_ptr<char[]> reqdata = std::make_unique<char[]>(m_iPayloadSize);
+   request.pack(0, NULL, reqdata.get(), m_iPayloadSize);
    // ID = 0, connection request
    request.m_iID = 0;
 
    int hs_size = m_iPayloadSize;
-   m_ConnReq.serialize(reqdata, hs_size);
+   m_ConnReq.serialize(reqdata.get(), hs_size);
    request.setLength(hs_size);
    m_pSndQueue->sendto(serv_addr, request);
    m_llLastReqTime = CTimer::getTime();
@@ -572,14 +569,13 @@ void CUDT::connect(const sockaddr* serv_addr)
    // asynchronous connect, return immediately
    if (!m_bSynConnect)
    {
-      delete [] reqdata;
       return;
    }
 
    // Wait for the negotiated configurations from the peer side.
    CPacket response;
-   char* resdata = new char [m_iPayloadSize];
-   response.pack(0, NULL, resdata, m_iPayloadSize);
+   std::unique_ptr<char[]> resdata = std::make_unique<char[]>(m_iPayloadSize);
+   response.pack(0, NULL, resdata.get(), m_iPayloadSize);
 
    CUDTException e(0, 0);
 
@@ -588,7 +584,7 @@ void CUDT::connect(const sockaddr* serv_addr)
       // avoid sending too many requests, at most 1 request per 250ms
       if (CTimer::getTime() - m_llLastReqTime > 250000)
       {
-         m_ConnReq.serialize(reqdata, hs_size);
+         m_ConnReq.serialize(reqdata.get(), hs_size);
          request.setLength(hs_size);
          if (m_bRendezvous)
             request.m_iID = m_ConnRes.m_iID;
@@ -613,9 +609,6 @@ void CUDT::connect(const sockaddr* serv_addr)
          break;
       }
    }
-
-   delete [] reqdata;
-   delete [] resdata;
 
    if (e.getErrorCode() == 0)
    {
@@ -845,12 +838,11 @@ void CUDT::connect(const sockaddr* peer, CHandShake* hs)
    //send the response to the peer, see listen() for more discussions about this
    CPacket response;
    int size = CHandShake::m_iContentSize;
-   char* buffer = new char[size];
-   hs->serialize(buffer, size);
-   response.pack(0, NULL, buffer, size);
+   std::unique_ptr<char[]> buffer = std::make_unique<char[]>(size);
+   hs->serialize(buffer.get(), size);
+   response.pack(0, NULL, buffer.get(), size);
    response.m_iID = m_PeerID;
    m_pSndQueue->sendto(peer, response);
-   delete [] buffer;
 }
 
 void CUDT::close()
@@ -1212,21 +1204,19 @@ void CUDT::sendCtrl(int pkttype, void* lparam, void* rparam, int size)
          // this is periodically NAK report; make sure NAK cannot be sent back too often
 
          // read loss list from the local receiver loss list
-         int32_t* data = new int32_t[m_iPayloadSize / 4];
+         std::unique_ptr<int32_t[]> data = std::make_unique<int32_t[]>(m_iPayloadSize / 4);
          int losslen;
-         m_pRcvLossList->getLossArray(data, losslen, m_iPayloadSize / 4);
+         m_pRcvLossList->getLossArray(data.get(), losslen, m_iPayloadSize / 4);
 
          if (0 < losslen)
          {
-            ctrlpkt.pack(pkttype, NULL, data, losslen * 4);
+            ctrlpkt.pack(pkttype, NULL, data.get(), losslen * 4);
             ctrlpkt.m_iID = m_PeerID;
             m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
 
             ++ m_iSentNAK;
             ++ m_iSentNAKTotal;
          }
-
-         delete [] data;
       }
 
       // update next NAK time, which should wait enough time for the retansmission, but not too long
@@ -1532,11 +1522,10 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
          initdata.m_iReqType = (!m_bRendezvous) ? -1 : -2;
          initdata.m_iID = m_SocketID;
 
-         char* hs = new char [m_iPayloadSize];
+         std::unique_ptr<char[]> hs = std::make_unique<char[]>(m_iPayloadSize);
          int hs_size = m_iPayloadSize;
-         initdata.serialize(hs, hs_size);
-         sendCtrl(0, NULL, hs, hs_size);
-         delete [] hs;
+         initdata.serialize(hs.get(), hs_size);
+         sendCtrl(0, NULL, hs.get(), hs_size);
       }
 
       break;

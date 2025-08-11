@@ -269,7 +269,7 @@ void CSndUList::update(const CUDT* u, bool reschedule)
 {
    std::lock_guard listguard(m_ListLock);
 
-   CSNode* n = u->m_pSNode;
+   CSNode* n = u->m_pSNode.get();
 
    if (n->m_iHeapLoc >= 0)
    {
@@ -340,7 +340,7 @@ uint64_t CSndUList::getNextProcTime()
 
 void CSndUList::insert_(int64_t ts, const CUDT* u)
 {
-   CSNode* n = u->m_pSNode;
+   CSNode* n = u->m_pSNode.get();
 
    // do not insert repeated node
    if (n->m_iHeapLoc >= 0)
@@ -386,7 +386,7 @@ void CSndUList::insert_(int64_t ts, const CUDT* u)
 
 void CSndUList::remove_(const CUDT* u)
 {
-   CSNode* n = u->m_pSNode;
+   CSNode* n = u->m_pSNode.get();
 
    if (n->m_iHeapLoc >= 0)
    {
@@ -517,7 +517,7 @@ CRcvUList::~CRcvUList()
 
 void CRcvUList::insert(const CUDT* u)
 {
-   CRNode* n = u->m_pRNode;
+   CRNode* n = u->m_pRNode.get();
    CTimer::rdtsc(n->m_llTimeStamp);
 
    if (NULL == m_pUList)
@@ -538,7 +538,7 @@ void CRcvUList::insert(const CUDT* u)
 
 void CRcvUList::remove(const CUDT* u)
 {
-   CRNode* n = u->m_pRNode;
+   CRNode* n = u->m_pRNode.get();
 
    if (!n->m_bOnList)
       return;
@@ -569,7 +569,7 @@ void CRcvUList::remove(const CUDT* u)
 
 void CRcvUList::update(const CUDT* u)
 {
-   CRNode* n = u->m_pRNode;
+   CRNode* n = u->m_pRNode.get();
 
    if (!n->m_bOnList)
       return;
