@@ -195,9 +195,7 @@ void CUDT::setOpt(UDTOpt optName, const void* optval, int)
    if (m_bBroken || m_bClosing)
       throw CUDTException(2, 1, 0);
 
-   std::lock_guard<std::mutex> cg(m_ConnectionLock);
-   std::lock_guard<std::mutex> sendguard(m_SendLock);
-   std::lock_guard<std::mutex> recvguard(m_RecvLock);
+   std::scoped_lock guard(m_ConnectionLock, m_SendLock, m_RecvLock);
 
    switch (optName)
    {
@@ -912,8 +910,7 @@ void CUDT::close()
    }
 
    // waiting all send and recv calls to stop
-   std::lock_guard<std::mutex> sendguard(m_SendLock);
-   std::lock_guard<std::mutex> recvguard(m_RecvLock);
+   std::scoped_lock guard(m_SendLock, m_RecvLock);
 
    // CLOSED.
    m_bOpened = false;

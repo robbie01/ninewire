@@ -1,4 +1,4 @@
-use std::{pin::pin, sync::Arc, time::Duration};
+use std::{pin::pin, sync::Arc, time::{Duration, Instant}};
 
 use tokio::{task::{self, JoinSet}, time::{interval, sleep}};
 use tokio_util::sync::CancellationToken;
@@ -35,6 +35,16 @@ async fn main() -> anyhow::Result<()> {
             }
         }
 
+        let t1 = Instant::now();
+        c.flush().await?;
+        let t2 = Instant::now();
+        println!("B: flush time: {} s", (t2-t1).as_secs_f32());
+
+        let t1 = Instant::now();
+        c.flush().await?;
+        let t2 = Instant::now();
+        println!("B: flush time: {} s", (t2-t1).as_secs_f32());
+
         Ok("sender")
     });
 
@@ -63,7 +73,7 @@ async fn main() -> anyhow::Result<()> {
                     rem -= 1;
                     if rem == 0 {
                         ct.cancel();
-                        return Ok("receiver");
+                        // return Ok("receiver");
                     }
                 }
                 len = r.recv(&mut msg) => {
