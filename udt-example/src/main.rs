@@ -1,6 +1,7 @@
-use std::{sync::Arc, time::Duration};
+use std::{pin::pin, sync::Arc, time::Duration};
 
 use tokio::{task::{self, JoinSet}, time::{interval, sleep}};
+use tokio_util::sync::CancellationToken;
 use transport::SecureTransport;
 
 const PRIVATE_KEY: [u8; 32] = [127, 93, 161, 223, 213, 211, 245, 80, 69, 165, 77, 133, 169, 40, 130, 112, 218, 255, 225, 74, 78, 69, 83, 20, 154, 244, 58, 224, 51, 34, 61, 102];
@@ -10,7 +11,11 @@ const PUBLIC_KEY: [u8; 32] = [241, 1, 228, 0, 247, 163, 248, 66, 94, 57, 122, 30
 async fn main() -> anyhow::Result<()> {
     let mut js = JoinSet::<anyhow::Result<_>>::new();
 
-    let _sender = js.spawn(async move {
+    let ct = CancellationToken::new();
+    let cancelled = ct.child_token().cancelled_owned();
+
+    js.spawn(async move {
+        let mut cancelled = pin!(cancelled);
         println!("B: my id is: {}", task::id());
         sleep(Duration::from_millis(10)).await;
         let l = Arc::new(udt::Endpoint::bind("[::]:25584".parse()?)?);
@@ -24,8 +29,13 @@ async fn main() -> anyhow::Result<()> {
 
         loop {
             // rlimit.tick().await;
-            c.send_with(&[b'o'; 1192], true).await?;
+            tokio::select! {
+                _ = &mut cancelled => break,
+                res = c.send_with(&[b'o'; 1192], true) => { res?; }
+            }
         }
+
+        Ok("sender")
     });
 
     js.spawn(async move {
@@ -52,7 +62,7 @@ async fn main() -> anyhow::Result<()> {
                     println!("A: {mbps} mbps");
                     rem -= 1;
                     if rem == 0 {
-                        // sender.abort();
+                        ct.cancel();
                         return Ok("receiver");
                     }
                 }

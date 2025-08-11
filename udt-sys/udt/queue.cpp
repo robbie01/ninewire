@@ -376,7 +376,9 @@ void CSndUList::insert_(int64_t ts, const CUDT* u)
    // first entry, activate the sending queue
    if (0 == m_iLastEntry)
    {
-      // r: why is this needed? removing it broke the send buffer
+      // r: i tried removing this lock and the send buffer never got properly cleared.
+      //    i'm guessing putting a memory barrier around the notify is necessary because
+      //    the UDT writers couldn't do atomics properly
       std::lock_guard<std::mutex> guard(*m_pWindowLock);
       m_pWindowCond->notify_one();
    }
