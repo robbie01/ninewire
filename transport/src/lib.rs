@@ -95,7 +95,12 @@ impl SecureTransport {
         Ok(res)
     }
 
-    pub async fn send_with(&self, buf: &[u8], inorder: bool) -> io::Result<usize> {
+    pub async fn send_with(&self, buf: &[u8], _inorder: bool) -> io::Result<usize> {
+        // Force inorder always, it's broken anyway.
+        // Fun fact: datagrams can still arrive out of order even with this set, hence
+        // why we prefix the nonce regardless.
+        let inorder = true;
+
         let nonce = self.nonce_outgoing.fetch_add(1, Ordering::Relaxed);
 
         let mut tmp = self.buffers.pop().unwrap_or_default();
