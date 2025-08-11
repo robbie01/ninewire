@@ -21,7 +21,6 @@ async fn main() -> anyhow::Result<()> {
         let l = Arc::new(udt::Endpoint::bind("[::]:25584".parse()?)?);
         println!("B: bound to {:?}", l.local_addr()?);
         let c = SecureTransport::connect(&l, "[::1]:25583".parse()?, transport::Side::Initiator { remote_public_key: &PUBLIC_KEY }).await?;
-        println!("B: my socket is {c:?}");
         // let c = l.connect_datagram("[::1]:25583".parse()?, false).await?;
         println!("B: connected to {:?}", c.peer_addr()?);
 
@@ -53,7 +52,6 @@ async fn main() -> anyhow::Result<()> {
         let l = Arc::new(udt::Endpoint::bind("[::]:25583".parse()?)?);//.listen_datagram(16)?;
         println!("A: bound to {:?}", l.local_addr()?);
         let r = SecureTransport::connect(&l, "[::1]:25584".parse()?, transport::Side::Responder { local_private_key: &PRIVATE_KEY }).await?;
-        println!("A: my socket is {r:?}");
         // let r = l.accept().await?;
         println!("A: connected to {:?}", r.peer_addr()?);
         let mut msg = [0; 30000];
