@@ -9,6 +9,7 @@ const PUBLIC_KEY: [u8; 32] = [241, 1, 228, 0, 247, 163, 248, 66, 94, 57, 122, 30
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    tracing_subscriber::fmt::init();
     let mut js = JoinSet::<anyhow::Result<_>>::new();
 
     let ct = CancellationToken::new();
@@ -26,12 +27,17 @@ async fn main() -> anyhow::Result<()> {
 
         // let mut rlimit = interval(Duration::from_millis(1));
 
+        let mut buf = [b'o'; 1412];
+        let mut n = 1u64;
+
         loop {
             // rlimit.tick().await;
+            buf[..8].copy_from_slice(&n.to_ne_bytes());
             tokio::select! {
                 _ = &mut cancelled => break,
-                res = c.send_with(&[b'o'; 1412], true) => { res?; }
+                res = c.send_with(&buf, true) => { res?; }
             }
+            n += 1;
         }
 
         let t1 = Instant::now();
@@ -60,6 +66,8 @@ async fn main() -> anyhow::Result<()> {
 
         let mut rem = 12;
 
+        let mut last_n = None;
+
         int.reset();
         loop {
             tokio::select! {
@@ -76,6 +84,15 @@ async fn main() -> anyhow::Result<()> {
                 }
                 len = r.recv(&mut msg) => {
                     ctr += len?;
+                    if let Some(ln) = last_n {
+                        let n = u64::from_ne_bytes(msg[..8].try_into().unwrap());
+                        if n != ln + 1 {
+                            println!("expected {}, got {n}", ln + 1);
+                        }
+                        last_n = Some(n);
+                    } else {
+                        last_n = Some(u64::from_ne_bytes(msg[..8].try_into().unwrap()));
+                    }
                 }
             }
         }

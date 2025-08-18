@@ -10,6 +10,7 @@ bitflags = "2.9"
 md-5 = "0.11.0-rc.0"
 tokio = { workspace = true, features = ["sync"] }
 util.workspace = true
+range-set.workspace = true
 
 [build-dependencies]
 cxx-build = "1"

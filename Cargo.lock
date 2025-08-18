@@ -4764,6 +4764,7 @@ dependencies = [
  "anyhow",
  "tokio",
  "tokio-util",
+ "tracing-subscriber",
  "transport",
  "udt",
 ]
@@ -4776,6 +4777,7 @@ dependencies = [
  "cxx",
  "cxx-build",
  "md-5",
+ "range-set",
  "scc",
  "tokio",
  "util",

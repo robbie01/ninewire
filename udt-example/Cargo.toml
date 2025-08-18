@@ -9,3 +9,4 @@ udt = { path = "../udt" }
 transport = { path = "../transport" }
 tokio = { workspace = true, features = ["macros", "rt", "time", "io-util", "rt-multi-thread"] }
 tokio-util = { workspace = true }
+tracing-subscriber.workspace = true

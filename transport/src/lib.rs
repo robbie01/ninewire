@@ -78,21 +78,26 @@ impl SecureTransport {
             tmp.resize(tgt, 0);
         }
 
-        let (mut guard, nonce, n) = loop {
-            let n = self.inner.recv(&mut tmp).await?;
-            let nonce = u64::from_be_bytes(tmp[..8].try_into().unwrap());
-            
-            let guard = self.nonce_incoming.lock();
-            if !guard.contains(nonce) {
-                break (guard, nonce, n)
-            }
-        };
+        loop {
+            let (mut guard, nonce, n) = loop {
+                let n = self.inner.recv(&mut tmp).await?;
+                let nonce = u64::from_be_bytes(tmp[..8].try_into().unwrap());
+                
+                let guard = self.nonce_incoming.lock();
+                if !guard.contains(nonce) {
+                    break (guard, nonce, n)
+                }
+                trace!("duplicate nonce: {n}");
+            };
 
-        let res = self.crypto.read_message(nonce, &tmp[8..n], buf).map_err(io::Error::other);
-        self.buffers.push(tmp);
-        let res = res?;
-        guard.insert(nonce);
-        Ok(res)
+            let res = self.crypto.read_message(nonce, &tmp[8..n], buf);
+            if let Ok(n) = res {
+                guard.insert(nonce);
+                self.buffers.push(tmp);
+                break Ok(n);
+            };
+            trace!("decryption failure")
+        }
     }
 
     pub async fn send_with(&self, buf: &[u8], _inorder: bool) -> io::Result<usize> {
