@@ -14,6 +14,7 @@
 #include <condition_variable>
 #include <cstdint>
 #include <chrono>
+#include <atomic>
 
 namespace rsynch {
 
@@ -107,9 +108,11 @@ public:
 
 class AutoResetEvent {
 private:
-    bool is_set = false;
-    std::mutex mtx;
-    std::condition_variable cv;
+    // status: 0 = unset, no waiters
+    //         1 = set
+    //        -N = unset, N waiters
+    std::atomic<int> status{0};
+    Semaphore sem;
 
 public:
     AutoResetEvent() = default;
@@ -117,35 +120,37 @@ public:
     AutoResetEvent& operator=(const AutoResetEvent&) = delete;
 
     inline void set() {
-        {
-                std::lock_guard lock(mtx);
-                is_set = true;
+        int old = status.load(std::memory_order_relaxed);
+        for (;;) {
+                int new_ = old < 1 ? old + 1 : 1;
+                if (status.compare_exchange_weak(old, new_, std::memory_order_release, std::memory_order_relaxed))
+                        break;
         }
-        cv.notify_one();
+        if (old < 0) sem.post();
     }
 
     inline void wait() {
-        std::unique_lock lock(mtx);
-        while (!is_set) cv.wait(lock);
-        is_set = false;
+        if (status.fetch_sub(1, std::memory_order_acquire) < 1) sem.wait();
     }
 
     template<class Rep, class Period>
     inline bool wait_for(const std::chrono::duration<Rep, Period>& timeout) {
-        auto deadline = std::chrono::steady_clock::now() + timeout;
-        std::unique_lock lock(mtx);
-        if (!cv.wait_until(lock, deadline, [&] { return is_set; })) return false;
-        is_set = false;
-        return true;
+        if (status.fetch_sub(1, std::memory_order_acquire) == 1) return true;
+        if (sem.wait_for(timeout)) return true;
+
+        int old = status.load(std::memory_order_relaxed);
+        for (;;) {
+                // Adding is a dangerous game because we don't want to accidentally signal.
+                int new_ = old < 0 ? old + 1 : 0;
+                if (status.compare_exchange_weak(old, new_, std::memory_order_acquire, std::memory_order_relaxed))
+                        break;
+        }
+        return old == 1;
     }
 
     inline bool try_wait() {
-        std::lock_guard lock(mtx);
-        if (is_set) {
-                is_set = false;
-                return true;
-        }
-        return false;
+        int v = 1;
+        return status.compare_exchange_strong(v, 0, std::memory_order_acquire, std::memory_order_relaxed);
     }
 };
 
