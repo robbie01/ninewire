@@ -1,4 +1,4 @@
-use std::{fs::File, io, os::unix::fs::FileExt, path::PathBuf, sync::Arc};
+use std::{fs::{read_dir, File}, io, mem, os::unix::fs::FileExt, path::PathBuf, sync::Arc};
 
 use anyhow::bail;
 use bytes::BytesMut;
@@ -143,14 +143,20 @@ impl traits::OpenResource for OpenResource {
 
                 if offset == 0 {
                     rem.clear();
-                    let mut readdir = fs::read_dir(path).await?;
-                    while let Some(dent) = readdir.next_entry().await? {
-                        let name = dent.file_name();
-                        let meta = dent.metadata().await?;
-                        if meta.is_symlink() { continue } // Too easy to break, no justifiable use case
-                        let Some(name) = name.to_str() else { continue };
-                        rem.push((name.into(), meta));
-                    }
+                    let mut rem2 = mem::take(rem);
+                    let readdir = read_dir(path)?;
+                    *rem = task::spawn_blocking(move || {
+                        rem2.clear();
+                        rem2.extend(readdir.filter_map(|dent| {
+                            let dent = dent.unwrap();
+                            let name = dent.file_name();
+                            let meta = dent.metadata().unwrap();
+                            if meta.is_symlink() { return None }
+                            let Some(name) = name.to_str() else { return None };
+                            Some((name.into(), meta))
+                        }));
+                        rem2
+                    }).await?;
                 } else if offset != *last_offset {
                     bail!("Invalid argument");
                 }

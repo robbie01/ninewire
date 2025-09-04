@@ -68,7 +68,10 @@ public:
 #elif defined(MACOSX)
         dispatch_semaphore_wait(inner, DISPATCH_TIME_FOREVER);
 #else
-        sem_wait(&inner);
+        int res;
+        do {
+                res = sem_wait(&inner);
+        } while (res == -1 && errno == EINTR);
 #endif
     }
 
@@ -133,6 +136,9 @@ public:
         if (status.fetch_sub(1, std::memory_order_acquire) < 1) sem.wait();
     }
 
+    // There's a bug in this implementation that can cause another waiter to wake up
+    // spuriously from a single set() call. Luckily this is only ever used just to
+    // have an interruptible timer.
     template<class Rep, class Period>
     inline bool wait_for(const std::chrono::duration<Rep, Period>& timeout) {
         if (status.fetch_sub(1, std::memory_order_acquire) == 1) return true;

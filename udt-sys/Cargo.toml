@@ -8,7 +8,7 @@ cxx = "1"
 scc = "2.3"
 bitflags = "2.9"
 md-5 = "0.11.0-rc.0"
-tokio = { workspace = true, features = ["sync"] }
+tokio = { version = "1.47", default-features = false, features = ["sync"] }
 util.workspace = true
 range-set.workspace = true
 
