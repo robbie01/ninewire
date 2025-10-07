@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["client", "hashbench", "mediator", "mediator-proto", "npwire","server", "transport", "udt", "udt-example", "udt-sys", "ui", "ui2", "util"]
+members = ["client", "hashbench", "mediator", "mediator-proto", "npwire","server", "transport", "udt", "udt-example", "udt-sys", "ui", "ui/src-tauri", "util"]
 
 [workspace.dependencies]
 util.path = "./util"

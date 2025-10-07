@@ -1,11 +1,13 @@
-use app::App;
-use winit::event_loop::EventLoop;
-
 mod app;
-mod font;
 
-fn main() -> anyhow::Result<()> {
-    let ev = EventLoop::new()?;
-    ev.run_app(&mut App::default())?;
-    Ok(())
+use app::*;
+use leptos::prelude::*;
+
+fn main() {
+    console_error_panic_hook::set_once();
+    mount_to_body(|| {
+        view! {
+            <App/>
+        }
+    })
 }

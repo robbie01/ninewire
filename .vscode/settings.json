@@ -58,5 +58,8 @@
         "charconv": "cpp",
         "forward_list": "cpp",
         "iostream": "cpp"
+    },
+    "emmet.includeLanguages": {
+        "rust": "html"
     }
 }
