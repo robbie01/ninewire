@@ -8,12 +8,26 @@ use web_sys::AddEventListenerOptions;
 extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "core"])]
     async fn invoke(cmd: &str, args: JsValue) -> JsValue;
+
+    #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "core"])]
+    type Channel;
+
+    #[wasm_bindgen(constructor)]
+    fn new() -> Channel;
 }
 
 #[component]
-pub fn Window(z: ReadSignal<i32>, bring_me_up: impl Fn() + 'static) -> impl IntoView {
+pub fn Window<N: IntoView + 'static>(
+    z: ReadSignal<i32>,
+    bring_me_up: impl Fn() + 'static,
+    #[prop(default = true)]
+    use_inset: bool,
+    children: impl FnOnce(RwSignal<(i32, i32)>) -> N
+) -> impl IntoView {
     let (pos, set_pos) = signal((32, 32));
     let (collapsed, set_collapsed) = signal(false);
+
+    let size = RwSignal::new((128, 96));
     
     let dragging = Rc::new(Cell::new(None));
 
@@ -62,25 +76,32 @@ pub fn Window(z: ReadSignal<i32>, bring_me_up: impl Fn() + 'static) -> impl Into
             class="window"
             class:active=move || z.get() == 0
             class:collapsed=move || collapsed.get()
-            style:z-index=move || format!("{}", z.get())
+            style:z-index=move || z.get().to_string()
             style:left=move || format!("{}px", pos.get().0.max(0))
             style:top=move || format!("{}px", pos.get().1.max(0))
+            style=("--width", move || size.get().0.to_string())
+            style=("--height", move || if collapsed.get() { String::new() } else { size.get().1.to_string() })
             on:mousedown=move |_| bring_me_up()
         >
             <div
                 class="titlebar"
                 on:mousedown=on_mouse_down
+                on:dblclick=move |_| set_collapsed.update(|v| *v = !*v)
             >
                 <button class="btn-close" on:mousedown=|e| e.set_cancel_bubble(true) />
                 <div class="space-left" />
                 <div class="title">Files</div>
                 <div class="space-right" />
-                <button class="btn-collapse" on:mousedown=move |e| {
-                    e.set_cancel_bubble(true);
-                    set_collapsed.update(|v| *v = !*v);
-                } />
+                <button
+                    class="btn-collapse"
+                    on:mousedown=move |e| {
+                        e.set_cancel_bubble(true);
+                        set_collapsed.update(|v| *v = !*v);
+                    }
+                    on:dblclick=|e| e.set_cancel_bubble(true)
+                />
             </div>
-            <div class="inner">aaa</div>
+            <div class="inner" class:inset=use_inset>{children(size)}</div>
         </div>
     }
 }
@@ -114,8 +135,8 @@ pub fn App() -> impl IntoView {
     let zs = zsr.take();
 
     let view = view! {
-        <Window z=zs[0].read_only() bring_me_up=bring_me_up(0) />
-        <Window z=zs[1].read_only() bring_me_up=bring_me_up(1) />
+        <Window z=zs[0].read_only() bring_me_up=bring_me_up(0) let(_)>aaa</Window>
+        <Window z=zs[1].read_only() bring_me_up=bring_me_up(1) use_inset=false let(_)>aaa</Window>
     };
 
     zsr.set(zs);

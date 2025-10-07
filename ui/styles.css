@@ -28,8 +28,8 @@ div {
   position: absolute;
 
   border-image: url("public/border-window-inactive.svg") 37.5% fill / calc(3*var(--pixel-scale));
-  width: calc(128*var(--pixel-scale));
-  height: calc(96*var(--pixel-scale));
+  width: calc(var(--width)*var(--pixel-scale));
+  height: calc(var(--height)*var(--pixel-scale));
   padding: calc(4*var(--pixel-scale)) calc(5*var(--pixel-scale)) calc(5*var(--pixel-scale)) calc(4*var(--pixel-scale));
   display: flex;
   flex-direction: column;
@@ -76,6 +76,10 @@ button {
   height: calc(13*var(--pixel-scale));
 }
 
+.window.collapsed > .titlebar {
+  margin-bottom: 0;
+}
+
 .window > .titlebar > .space-left {
   flex: 1;
   height: calc(13*var(--pixel-scale));
@@ -114,13 +118,16 @@ button {
 }
 
 .window > .inner {
+  flex: 1;
+}
+
+.window > .inner.inset {
   border-image: url("public/border-inset-inactive.svg") 40% / calc(2*var(--pixel-scale));
   padding: calc(2*var(--pixel-scale));
   background-color: #fff;
   background-clip: content-box;
-  flex: 1;
 }
 
-.window.active > .inner {
+.window.active > .inner.inset {
   border-image-source: url("public/border-inset.svg");
 }
