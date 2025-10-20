@@ -26,7 +26,7 @@ pub struct RPoll {
 
 impl RPoll {
     pub fn update_events(&self, socket: super::Socket, events: Event, value: bool) {
-        let ent = self.evts.entry(socket).or_default();
+        let ent = self.evts.entry_sync(socket).or_default();
         if value {
             if events.contains(Event::IN) {
                 ent.readable.notify_waiters();
@@ -42,14 +42,14 @@ impl RPoll {
     }
 
     pub(crate) fn remove_usock(&self, socket: super::Socket) {
-        self.evts.remove(&socket);
+        self.evts.remove_sync(&socket);
     }
 
     pub fn readable(&self, socket: super::Socket) -> Option<OwnedNotified> {
-        self.evts.read(&socket, |_, ent| ent.readable.clone().notified_owned())
+        self.evts.read_sync(&socket, |_, ent| ent.readable.clone().notified_owned())
     }
 
     pub fn writable(&self, socket: super::Socket) -> Option<OwnedNotified> {
-        self.evts.read(&socket, |_, ent| ent.writable.clone().notified_owned())
+        self.evts.read_sync(&socket, |_, ent| ent.writable.clone().notified_owned())
     }
 }

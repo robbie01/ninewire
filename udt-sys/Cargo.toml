@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 cxx = "1"
-scc = "2.3"
+scc.workspace = true
 bitflags = "2.9"
 md-5 = "0.11.0-rc.0"
 tokio = { version = "1.47", default-features = false, features = ["sync"] }
