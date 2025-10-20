@@ -1,6 +1,9 @@
-use std::{cell::Cell, iter, rc::Rc};
+use std::{cell::Cell, rc::Rc};
 
+use indexmap::IndexMap;
+use js_sys::Function;
 use leptos::{ev::MouseEvent, prelude::*};
+use nohash::BuildNoHashHasher;
 use wasm_bindgen::prelude::*;
 use web_sys::AddEventListenerOptions;
 
@@ -13,21 +16,22 @@ extern "C" {
     type Channel;
 
     #[wasm_bindgen(constructor)]
-    fn new() -> Channel;
+    fn new(onmessage: Function) -> Channel;
 }
 
+type Windows = IndexMap<usize, WindowData, BuildNoHashHasher<usize>>;
+
 #[component]
-pub fn Window<N: IntoView + 'static>(
-    z: ReadSignal<i32>,
-    bring_me_up: impl Fn() + 'static,
+fn Window(
+    id: usize,
+    windows: RwSignal<Windows, LocalStorage>,
+    size: ReadSignal<(i32, i32)>,
     #[prop(default = true)]
     use_inset: bool,
-    children: impl FnOnce(RwSignal<(i32, i32)>) -> N
+    children: AnyView
 ) -> impl IntoView {
     let (pos, set_pos) = signal((32, 32));
     let (collapsed, set_collapsed) = signal(false);
-
-    let size = RwSignal::new((128, 96));
     
     let dragging = Rc::new(Cell::new(None));
 
@@ -74,21 +78,31 @@ pub fn Window<N: IntoView + 'static>(
     view! {
         <div
             class="window"
-            class:active=move || z.get() == 0
+            class:active=move || {
+                let windows = windows.read();
+                windows.last().is_some_and(|(&lid, _)| lid == id)
+            }
             class:collapsed=move || collapsed.get()
-            style:z-index=move || z.get().to_string()
             style:left=move || format!("{}px", pos.get().0.max(0))
             style:top=move || format!("{}px", pos.get().1.max(0))
             style=("--width", move || size.get().0.to_string())
             style=("--height", move || if collapsed.get() { String::new() } else { size.get().1.to_string() })
-            on:mousedown=move |_| bring_me_up()
+            on:mousedown=move |_| {
+                let mut windows = windows.write();
+                let idx = windows.get_index_of(&id).unwrap();
+                let len = windows.len();
+                windows.move_index(idx, len - 1);
+            }
         >
             <div
                 class="titlebar"
                 on:mousedown=on_mouse_down
                 on:dblclick=move |_| set_collapsed.update(|v| *v = !*v)
             >
-                <button class="btn-close" on:mousedown=|e| e.set_cancel_bubble(true) />
+                <button class="btn-close"
+                    on:mousedown=|e| e.set_cancel_bubble(true)
+                    on:click=move |_| { windows.write().shift_remove(&id); }
+                />
                 <div class="space-left" />
                 <div class="title">Files</div>
                 <div class="space-right" />
@@ -101,45 +115,70 @@ pub fn Window<N: IntoView + 'static>(
                     on:dblclick=|e| e.set_cancel_bubble(true)
                 />
             </div>
-            <div class="inner" class:inset=use_inset>{children(size)}</div>
+            <div class="inner" class:inset=use_inset>{children}</div>
         </div>
     }
 }
 
+struct WindowData {
+    view: Option<AnyView>,
+    use_inset: bool,
+    size: RwSignal<(i32, i32)>
+}
+
 #[component]
 pub fn App() -> impl IntoView {
-    let n = 2;
-    let zsr = Rc::new(Cell::new(iter::once(0).chain(iter::repeat(-1)).map(|v| RwSignal::new(v)).take(n).collect::<Vec<_>>()));
+    let windows = RwSignal::new_local(Windows::default());
 
-    let bring_me_up = {
-        let zsr = zsr.clone();
+    let window_id_ctr = Cell::new(0usize);
+    let open_window = move |win: WindowData| {
+        let id = window_id_ctr.get();
+        window_id_ctr.set(id + 1);
 
-        move |id: usize| {
-            let zsr = zsr.clone();
-            
-            move || {
-                let zs = zsr.take();
-                let max_outside = zs.iter().enumerate().filter_map(|(i, v)| (i != id).then(|| v.get())).max().unwrap_or(0);
-                for (i, &z) in zs.iter().enumerate() {
-                    z.set(if i == id {
-                        0
-                    } else {
-                        z.get() - max_outside - 1
-                    })
-                }
-                zsr.set(zs);
+        windows.write().insert(id, win)
+    };
+
+    open_window(WindowData {
+        view: Some(view! { bbb }.into_any()),
+        use_inset: false,
+        size: RwSignal::new((128, 96))
+    });
+
+    open_window(WindowData {
+        view: Some(view! { aaa }.into_any()),
+        use_inset: true,
+        size: RwSignal::new((128, 96))
+    });
+
+    // spawn_local(async move {
+    //     loop {
+    //         let p = Promise::new(&mut |res, _| set_timeout(move || { let _ = res.call0(&JsValue::null()); }, Duration::from_secs(2)));
+    //         let _ = JsFuture::from(p).await;
+    //         open_window(WindowData {
+    //             view: Some(view! { "HWP" }.into_any()),
+    //             use_inset: false,
+    //             size: RwSignal::new((128, 128))
+    //         });
+    //     }
+    // });
+
+    view! {
+        <For
+            each=move || { windows.read().keys().copied().collect::<Vec<_>>() }
+            key=|&id| id
+            let(id)
+        >{
+            let win = &mut windows.write_untracked()[id];
+
+            view! {
+                <Window
+                    id
+                    size=win.size.read_only()
+                    windows=windows
+                    use_inset=win.use_inset
+                    children=win.view.take().unwrap()
+                />
             }
-        }
-    };
-
-    let zs = zsr.take();
-
-    let view = view! {
-        <Window z=zs[0].read_only() bring_me_up=bring_me_up(0) let(_)>aaa</Window>
-        <Window z=zs[1].read_only() bring_me_up=bring_me_up(1) use_inset=false let(_)>aaa</Window>
-    };
-
-    zsr.set(zs);
-
-    view
+        }</For>
+    }
 }

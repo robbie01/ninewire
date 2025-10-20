@@ -152,8 +152,7 @@ impl traits::OpenResource for OpenResource {
                             let name = dent.file_name();
                             let meta = dent.metadata().unwrap();
                             if meta.is_symlink() { return None }
-                            let Some(name) = name.to_str() else { return None };
-                            Some((name.into(), meta))
+                            Some((name.to_str()?.into(), meta))
                         }));
                         rem2
                     }).await?;

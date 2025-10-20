@@ -51,6 +51,8 @@ fn compute_md5(s: &CxxString, digest: &mut [u8; 16]) {
 
 #[cxx::bridge(namespace = "UDT")]
 mod ffi {
+    #![allow(clippy::missing_safety_doc)]
+
     #[repr(u32)]
     #[cxx_name = "UDTOpt"]
     enum SocketOption {

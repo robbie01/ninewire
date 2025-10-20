@@ -27,7 +27,7 @@ fn validate_endpoint(ep: &Endpoint, server: bool) -> tonic::Result<()> {
     if !(1..65536).contains(&ep.port) {
         return Err(Status::invalid_argument("bad port"));
     }
-    if !server && ep.pubkey.len() != 0 {
+    if !server && !ep.pubkey.is_empty() {
         return Err(Status::invalid_argument("you don't get a public key"));
     }
     if server && ep.pubkey.len() != 32 {

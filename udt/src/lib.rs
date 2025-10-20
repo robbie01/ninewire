@@ -1,6 +1,6 @@
 mod instance;
 mod util;
-use std::{i32, io, mem, net::SocketAddr, ptr, sync::Arc, time::Duration};
+use std::{io, mem, net::SocketAddr, ptr, sync::Arc, time::Duration};
 
 use futures::FutureExt;
 use instance::*;
