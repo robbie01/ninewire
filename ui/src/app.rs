@@ -58,10 +58,12 @@ fn Window(
         let dragging = dragging.clone();
         let on_mouse_move = on_mouse_move.clone();
 
-        move |_| {
-            document().remove_event_listener_with_callback("mousemove", on_mouse_move.unchecked_ref()).unwrap();
-            dragging.set(None);
-            set_pos.update(|v| *v = (v.0.max(0), v.1.max(0)));
+        move |e: MouseEvent| {
+            if e.button() == 0 {
+                document().remove_event_listener_with_callback("mousemove", on_mouse_move.unchecked_ref()).unwrap();
+                dragging.set(None);
+                set_pos.update(|v| *v = (v.0.max(0), v.1.max(0)));
+            }
         }
     }).into_js_value();
 
@@ -76,8 +78,6 @@ fn Window(
         }
     };
 
-    let size2 = size.clone();
-
     view! {
         <div
             class="window"
@@ -88,8 +88,8 @@ fn Window(
             class:collapsed=move || collapsed.get()
             style:left=move || format!("{}px", pos.get().0.max(0))
             style:top=move || format!("{}px", pos.get().1.max(0))
-            style=("--width", move || size.get().0.to_string())
-            style=("--height", move || if collapsed.get() { String::new() } else { size2.get().1.to_string() })
+            style=("--width", { let size = size.clone(); move || size.get().0.to_string() })
+            style=("--height", move || if collapsed.get() { String::new() } else { size.get().1.to_string() })
             on:mousedown=move |_| {
                 let mut windows = windows.write();
                 let idx = windows.get_index_of(&id).unwrap();
