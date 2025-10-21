@@ -4,6 +4,7 @@ use indexmap::IndexMap;
 use js_sys::Function;
 use leptos::{ev::MouseEvent, prelude::*};
 use nohash::BuildNoHashHasher;
+use sync_wrapper::SyncWrapper;
 use wasm_bindgen::prelude::*;
 use web_sys::AddEventListenerOptions;
 
@@ -24,8 +25,8 @@ type Windows = IndexMap<usize, WindowData, BuildNoHashHasher<usize>>;
 #[component]
 fn Window(
     id: usize,
-    windows: RwSignal<Windows, LocalStorage>,
-    size: ReadSignal<(i32, i32)>,
+    windows: RwSignal<Windows>,
+    size: ArcReadSignal<(i32, i32)>,
     #[prop(default = true)]
     use_inset: bool,
     children: AnyView
@@ -75,6 +76,8 @@ fn Window(
         }
     };
 
+    let size2 = size.clone();
+
     view! {
         <div
             class="window"
@@ -86,7 +89,7 @@ fn Window(
             style:left=move || format!("{}px", pos.get().0.max(0))
             style:top=move || format!("{}px", pos.get().1.max(0))
             style=("--width", move || size.get().0.to_string())
-            style=("--height", move || if collapsed.get() { String::new() } else { size.get().1.to_string() })
+            style=("--height", move || if collapsed.get() { String::new() } else { size2.get().1.to_string() })
             on:mousedown=move |_| {
                 let mut windows = windows.write();
                 let idx = windows.get_index_of(&id).unwrap();
@@ -121,14 +124,14 @@ fn Window(
 }
 
 struct WindowData {
-    view: Option<AnyView>,
+    view: SyncWrapper<Option<AnyView>>,
     use_inset: bool,
-    size: RwSignal<(i32, i32)>
+    size: ArcRwSignal<(i32, i32)>
 }
 
 #[component]
 pub fn App() -> impl IntoView {
-    let windows = RwSignal::new_local(Windows::default());
+    let windows = RwSignal::new(Windows::default());
 
     let window_id_ctr = Cell::new(0usize);
     let open_window = move |win: WindowData| {
@@ -139,15 +142,15 @@ pub fn App() -> impl IntoView {
     };
 
     open_window(WindowData {
-        view: Some(view! { bbb }.into_any()),
+        view: SyncWrapper::new(Some(view! { bbb }.into_any())),
         use_inset: false,
-        size: RwSignal::new((128, 96))
+        size: ArcRwSignal::new((128, 96))
     });
 
     open_window(WindowData {
-        view: Some(view! { aaa }.into_any()),
+        view: SyncWrapper::new(Some(view! { aaa }.into_any())),
         use_inset: true,
-        size: RwSignal::new((128, 96))
+        size: ArcRwSignal::new((128, 96))
     });
 
     // spawn_local(async move {
@@ -176,7 +179,7 @@ pub fn App() -> impl IntoView {
                     size=win.size.read_only()
                     windows=windows
                     use_inset=win.use_inset
-                    children=win.view.take().unwrap()
+                    children=win.view.get_mut().take().unwrap()
                 />
             }
         }</For>

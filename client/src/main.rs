@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 use std::{io, net::{IpAddr, Ipv6Addr, SocketAddr, SocketAddrV6}, sync::Arc, time::Duration};
 
 use anyhow::bail;

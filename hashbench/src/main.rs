@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 use std::{hash::{BuildHasher as _, Hasher as _, RandomState}, hint::black_box, time::Instant};
 
 use rand::random;

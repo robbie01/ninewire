@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 use std::{collections::HashMap, error::Error, future::ready, net::{IpAddr, Ipv6Addr, SocketAddrV6}, path::PathBuf, pin::pin, sync::{atomic::{AtomicU64, Ordering}, Arc}};
 
 use anyhow::{anyhow, bail};

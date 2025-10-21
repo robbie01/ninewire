@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 use std::{io, net::SocketAddr, ops::RangeInclusive, sync::{atomic::{AtomicU64, Ordering}, Arc}};
 
 use parking_lot::Mutex;

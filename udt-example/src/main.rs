@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 use std::{pin::pin, sync::Arc, time::{Duration, Instant}};
 
 use tokio::{task::{self, JoinSet}, time::{interval, sleep}};

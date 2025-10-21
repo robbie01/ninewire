@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 mod data;
 mod ser;
 mod de;

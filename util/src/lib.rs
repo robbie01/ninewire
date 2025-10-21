@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 use std::net::Ipv6Addr;
 
 pub mod fidpool;

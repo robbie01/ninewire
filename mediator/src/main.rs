@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 use std::{collections::HashMap, pin::Pin, sync::{Arc, LazyLock}};
 
 use async_stream::try_stream;
