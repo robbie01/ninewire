@@ -1,9 +1,9 @@
-use std::{cell::Cell, rc::Rc};
+use std::cell::Cell;
 
-use indexmap::IndexMap;
+use indexmap::IndexSet;
 use js_sys::Function;
 use leptos::{ev::MouseEvent, prelude::*};
-use nohash::BuildNoHashHasher;
+use nohash::{BuildNoHashHasher, IntMap};
 use sync_wrapper::SyncWrapper;
 use wasm_bindgen::prelude::*;
 use web_sys::AddEventListenerOptions;
@@ -20,7 +20,7 @@ extern "C" {
     fn new(onmessage: Function) -> Channel;
 }
 
-type Windows = IndexMap<usize, WindowData, BuildNoHashHasher<usize>>;
+type Windows = IndexSet<usize, BuildNoHashHasher<usize>>;
 
 #[component]
 fn Window(
@@ -34,18 +34,16 @@ fn Window(
     let (pos, set_pos) = signal((32, 32));
     let (collapsed, set_collapsed) = signal(false);
     
-    let dragging = Rc::new(Cell::new(None));
+    let dragging = ArenaItem::new(None);
 
     let on_mouse_move = Closure::<dyn Fn(MouseEvent)>::new({
-        let dragging = dragging.clone();
-
         move |e: MouseEvent| {
-            if let Some((last_x, last_y)) = dragging.get() {
+            if let Some((last_x, last_y)) = dragging.try_get_value().unwrap() {
                 e.prevent_default();
 
                 let x = e.screen_x();
                 let y = e.screen_y();
-                dragging.set(Some((x, y)));
+                dragging.try_update_value(|v| *v = Some((x, y))).unwrap();
 
                 let dx = x - last_x;
                 let dy = y - last_y;
@@ -55,13 +53,12 @@ fn Window(
     }).into_js_value();
 
     let on_mouse_up = Closure::<dyn Fn(MouseEvent)>::new({
-        let dragging = dragging.clone();
         let on_mouse_move = on_mouse_move.clone();
 
         move |e: MouseEvent| {
             if e.button() == 0 {
                 document().remove_event_listener_with_callback("mousemove", on_mouse_move.unchecked_ref()).unwrap();
-                dragging.set(None);
+                dragging.try_update_value(|v| *v = None).unwrap();
                 set_pos.update(|v| *v = (v.0.max(0), v.1.max(0)));
             }
         }
@@ -69,7 +66,7 @@ fn Window(
 
     let on_mouse_down = move |e: MouseEvent| {
         if e.button() == 0 {
-            dragging.set(Some((e.screen_x(), e.screen_y())));
+            dragging.try_update_value(|v| *v = Some((e.screen_x(), e.screen_y()))).unwrap();
             let document = document();
             document.add_event_listener_with_callback("mousemove", on_mouse_move.unchecked_ref()).unwrap();
             let opts = AddEventListenerOptions::new();
@@ -83,7 +80,7 @@ fn Window(
             class="window"
             class:active=move || {
                 let windows = windows.read();
-                windows.last().is_some_and(|(&lid, _)| lid == id)
+                windows.last().is_some_and(|&lid| lid == id)
             }
             class:collapsed=move || collapsed.get()
             style:left=move || format!("{}px", pos.get().0.max(0))
@@ -123,34 +120,38 @@ fn Window(
     }
 }
 
-struct WindowData {
-    view: SyncWrapper<Option<AnyView>>,
+struct WindowParams {
+    view: SyncWrapper<AnyView>,
     use_inset: bool,
-    size: ArcRwSignal<(i32, i32)>
+    size: ArcReadSignal<(i32, i32)>
 }
 
 #[component]
 pub fn App() -> impl IntoView {
+    let pending_windows = ArenaItem::new(IntMap::<usize, WindowParams>::default());
     let windows = RwSignal::new(Windows::default());
 
     let window_id_ctr = Cell::new(0usize);
-    let open_window = move |win: WindowData| {
+    let open_window = move |win: WindowParams| {
         let id = window_id_ctr.get();
         window_id_ctr.set(id + 1);
 
-        windows.write().insert(id, win)
+        let fresh = pending_windows.try_update_value(|w| w.insert(id, win).is_none()).unwrap();
+        assert!(fresh);
+        let fresh = windows.write().insert(id);
+        assert!(fresh);
     };
 
-    open_window(WindowData {
-        view: SyncWrapper::new(Some(view! { bbb }.into_any())),
+    open_window(WindowParams {
+        view: SyncWrapper::new(view! { bbb }.into_any()),
         use_inset: false,
-        size: ArcRwSignal::new((128, 96))
+        size: ArcRwSignal::new((128, 96)).read_only()
     });
 
-    open_window(WindowData {
-        view: SyncWrapper::new(Some(view! { aaa }.into_any())),
+    open_window(WindowParams {
+        view: SyncWrapper::new(view! { aaa }.into_any()),
         use_inset: true,
-        size: ArcRwSignal::new((128, 96))
+        size: ArcRwSignal::new((128, 96)).read_only()
     });
 
     // spawn_local(async move {
@@ -167,19 +168,19 @@ pub fn App() -> impl IntoView {
 
     view! {
         <For
-            each=move || { windows.read().keys().copied().collect::<Vec<_>>() }
+            each=move || { windows.read().iter().copied().collect::<Vec<_>>() }
             key=|&id| id
             let(id)
         >{
-            let win = &mut windows.write_untracked()[id];
+            let win = pending_windows.try_update_value(|w| w.remove(&id)).flatten().unwrap();
 
             view! {
                 <Window
                     id
-                    size=win.size.read_only()
+                    size=win.size.clone()
                     windows=windows
                     use_inset=win.use_inset
-                    children=win.view.get_mut().take().unwrap()
+                    children=win.view.into_inner()
                 />
             }
         }</For>
