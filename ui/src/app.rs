@@ -78,10 +78,7 @@ fn Window(
     view! {
         <div
             class="window"
-            class:active=move || {
-                let windows = windows.read();
-                windows.last().is_some_and(|&lid| lid == id)
-            }
+            class:active=move || windows.read().last().is_some_and(|&lid| lid == id)
             class:collapsed=move || collapsed.get()
             style:left=move || format!("{}px", pos.get().0.max(0))
             style:top=move || format!("{}px", pos.get().1.max(0))
@@ -177,7 +174,7 @@ pub fn App() -> impl IntoView {
             view! {
                 <Window
                     id
-                    size=win.size.clone()
+                    size=win.size
                     windows=windows
                     use_inset=win.use_inset
                     children=win.view.into_inner()

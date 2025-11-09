@@ -9,8 +9,8 @@
   <rect x="0" y="0" width="12" height="12" fill="#8a8a8a"/>
   <rect x="1" y="1" width="12" height="12" fill="#fff"/>
   <rect x="1" y="1" width="11" height="11" fill="#222"/>
-  <rect x="2" y="2" width="9" height="9" fill="#cdcdcd"/>
+  <rect x="2" y="2" width="9" height="9" fill="#8a8a8a"/>
+  <polygon points="2, 2 11, 2 2, 11" fill="#cdcdcd"/>
   <rect x="2" y="2" width="1" height="1" fill="#fff"/>
-  <rect x="3" y="3" width="8" height="8" fill="#8a8a8a"/>
   <rect x="3" y="3" width="7" height="7" fill="url(#inner)"/>
 </svg>
