@@ -6,11 +6,11 @@ use tokio::io::{AsyncRead, AsyncSeek, AsyncWrite, ReadBuf};
 use tokio_util::sync::ReusableBoxFuture;
 use util::fidpool::FidHandle;
 
-use super::{Directory, FilesystemInner};
 
-#[derive(Debug)]
+use super::{Directory, DynFilesystemInner};
+
 pub struct File {
-    pub(super) fsys: Arc<FilesystemInner>,
+    pub(super) fsys: Arc<DynFilesystemInner>,
     pub(super) fid: FidHandle
 }
 

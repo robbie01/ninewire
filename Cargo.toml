@@ -1,10 +1,12 @@
 [workspace]
 resolver = "2"
-members = ["client", "hashbench", "mediator", "mediator-proto", "npwire","server", "transport", "udt", "udt-example", "udt-sys", "ui", "ui/src-tauri", "util"]
+members = ["client", "hashbench", "mediator", "mediator-proto", "npwire","server", "transport", "udt", "udt-example", "udt-sys", "ui", "ui/src-tauri", "ui/ixchg", "util"]
 
 [workspace.dependencies]
 util.path = "./util"
 npwire.path = "./npwire"
+client.path = "./client"
+transport.path = "./transport"
 
 anyhow = "1"
 bytes = "1.10"

@@ -3,11 +3,10 @@ use std::{io, mem, sync::Arc};
 use npwire::{RMessage, Rattach, Rerror, Tattach, QTDIR};
 use util::fidpool::FidHandle;
 
-use super::{Filesystem, FilesystemInner};
+use super::{Filesystem, DynFilesystemInner};
 
-#[derive(Debug)]
 pub struct Directory {
-    pub(super) fsys: Arc<FilesystemInner>,
+    pub(super) fsys: Arc<DynFilesystemInner>,
     pub(super) fid: FidHandle
 }
 

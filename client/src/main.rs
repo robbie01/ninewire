@@ -4,13 +4,11 @@ use std::{io, net::{IpAddr, Ipv6Addr, SocketAddr, SocketAddrV6}, sync::Arc, time
 
 use anyhow::bail;
 use bytestring::ByteString;
-use fs::{Directory, FileReader, Filesystem};
+use client::{Directory, FileReader, Filesystem};
 use mediator_proto::{mediator_client::MediatorClient, RendezvousRequest};
 use tokio::{io::AsyncReadExt as _, time};
 use transport::SecureTransport;
 use util::is_unicast_global;
-
-pub mod fs;
 
 const PUBLIC_KEY: [u8; 32] = [241, 1, 228, 0, 247, 163, 248, 66, 94, 57, 122, 30, 59, 183, 146, 22, 39, 145, 26, 136, 130, 145, 111, 87, 19, 2, 218, 116, 17, 82, 71, 40];
 

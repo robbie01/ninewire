@@ -4,7 +4,6 @@ use npwire::{yank_stat, Stat, QTDIR};
 
 use super::{Directory, File};
 
-#[derive(Debug)]
 pub struct ReadDir {
     offset: u64,
     file: File,

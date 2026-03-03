@@ -1,0 +1,7 @@
+[package]
+name = "ui-ixchg"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+rkyv = "0.8"

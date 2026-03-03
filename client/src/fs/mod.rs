@@ -1,5 +1,6 @@
 use std::{collections::BTreeMap, io, mem, sync::Arc};
 
+use async_trait::async_trait;
 use bytes::BytesMut;
 use bytestring::ByteString;
 use npwire::{deserialize_r, RMessage, TMessage, Tversion};
@@ -15,33 +16,53 @@ pub use readdir::*;
 pub use file::*;
 use tokio::sync::oneshot;
 use tracing::trace;
-use transport::SecureTransport;
 use util::fidpool::{FidHandle, FidPool};
 
 const MAX_MESSAGE_SIZE: u32 = 1280 - 64 - 8 - 16;
 
+#[async_trait]
+pub trait Transport {
+    async fn recv(&self, buf: &mut [u8]) -> io::Result<usize>;
+    async fn send(&self, buf: &[u8]) -> io::Result<usize>;
+}
+
+#[cfg(feature = "secure-transport")]
+pub use transport::SecureTransport;
+
+#[cfg(feature = "secure-transport")]
+#[async_trait]
+impl Transport for transport::SecureTransport {
+    async fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
+        self.recv(buf).await
+    }
+
+    async fn send(&self, buf: &[u8]) -> io::Result<usize> {
+        self.send(buf).await
+    }
+}
+
 // todo: AtomicBool flag in case recv task dies
-#[derive(Debug)]
-pub(crate) struct FilesystemInner {
-    transport: SecureTransport,
+pub(crate) struct FilesystemInner<T: ?Sized> {
     inflight: Mutex<BTreeMap<u16, oneshot::Sender<RMessage>>>,
     fids: FidPool,
-    maxlen: usize
+    maxlen: usize,
+    transport: T
 }
 
-#[derive(Debug)]
+type DynFilesystemInner = FilesystemInner<dyn Transport + Send + Sync>;
+
 pub struct Filesystem {
-    fsys: Arc<FilesystemInner>
+    fsys: Arc<DynFilesystemInner>
 }
 
-impl FilesystemInner {
+impl<T: ?Sized> FilesystemInner<T> {
     fn get_fid(&self) -> Option<FidHandle> {
         self.fids.get()
     }
 }
 
 impl Filesystem {
-    pub async fn new(transport: SecureTransport) -> io::Result<Self> {
+    pub async fn new(transport: impl Transport + Send + Sync + 'static) -> io::Result<Self> {
         let mut inner = FilesystemInner {
             transport,
             inflight: Default::default(),
@@ -53,7 +74,7 @@ impl Filesystem {
             msize: MAX_MESSAGE_SIZE,
             version: ByteString::from_static("9P2000")
         });
-        inner.transport.send(ver.serialize(!0).unwrap()).await?;
+        inner.transport.send(&ver.serialize(!0).unwrap()).await?;
         trace!("sent request {ver:?}");
 
         let mut ver = BytesMut::zeroed(MAX_MESSAGE_SIZE as usize);

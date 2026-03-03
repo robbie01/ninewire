@@ -6,9 +6,9 @@ use tokio::sync::oneshot;
 use tracing::trace;
 use util::fidpool::FidHandle;
 
-use super::FilesystemInner;
+use super::{Transport, FilesystemInner};
 
-impl FilesystemInner {
+impl<T: Transport + ?Sized> FilesystemInner<T> {
     pub(super) async fn transact(&self, message: impl Into<TMessage>) -> io::Result<RMessage> {
         let mut message = message.into();
         
@@ -36,7 +36,7 @@ impl FilesystemInner {
             .serialize(tag)
             .unwrap_or_else(|e| Rerror::from(e).serialize(tag).unwrap());
 
-        self.transport.send(data).await?;
+        self.transport.send(&data).await?;
         trace!(target: "client::fs", "sent request with tag {tag}, {:?}", message);
 
         rcv.await.map_err(|_| io::ErrorKind::UnexpectedEof.into())
