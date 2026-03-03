@@ -5,6 +5,7 @@ use std::sync::{Arc, RwLock, atomic::AtomicU64};
 use nohash::{BuildNoHashHasher, IntMap};
 use tauri::ipc::InvokeBody;
 use transport::SecureTransport;
+use ui_ixchg::{ArchivedSendRequest, rkyv::{self, rancor}};
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -17,8 +18,18 @@ static CONNECTIONS: RwLock<IntMap<u64, Arc<SecureTransport>>> = RwLock::new(IntM
 
 #[tauri::command]
 async fn dispatch_np(req: tauri::ipc::Request<'_>) -> Result<usize, String> {
-    let raw = match req.body() {
-        InvokeBody::Json(_) => return Err("expected r")
+    match req.body() {
+        InvokeBody::Json(_) => Err("expected raw".into()),
+        InvokeBody::Raw(req) => {
+            let req = rkyv::access::<ArchivedSendRequest, rancor::Error>(&req).map_err(|e| e.to_string())?;
+            let connections = CONNECTIONS.read().map_err(|e| e.to_string())?;
+
+            let con = connections.get(&req.id.to_native()).ok_or_else(|| "no id".to_owned())?;
+
+            let n = con.send(&req.data).await.map_err(|e| e.to_string())?;
+            
+            Ok(n)
+        }
     }
 }
 

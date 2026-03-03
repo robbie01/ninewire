@@ -6452,6 +6452,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-opener",
  "transport",
+ "ui-ixchg",
 ]
 
 [[package]]
