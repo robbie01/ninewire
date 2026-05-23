@@ -5,4 +5,4 @@ edition = "2024"
 
 [dependencies]
 util.workspace = true
-rand = "0.9"
+rand = "0.10"

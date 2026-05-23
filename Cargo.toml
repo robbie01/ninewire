@@ -1,12 +1,12 @@
 [workspace]
 resolver = "2"
-members = ["client", "hashbench", "mediator", "mediator-proto", "npwire","server", "transport", "udt", "udt-example", "udt-sys", "ui", "ui/src-tauri", "ui/ixchg", "util"]
+members = ["client", "hashbench", "mediator", "mediator-proto", "npwire","server", "transport", "udt", "udt-example", "udt-sys", "ui", "ui/src-tauri", "ui/ixchg", "util", "player", "player/mpv-sys"]
 
 [workspace.dependencies]
 util.path = "./util"
 npwire.path = "./npwire"
 client.path = "./client"
-transport.path = "./transport"
+transport = { path = "./transport", default-features = false }
 
 anyhow = "1"
 bytes = "1.10"
@@ -15,7 +15,7 @@ crossbeam = "0.8"
 futures = "0.3"
 libutp-rs2 = "0.1"
 pin-project = "1.1"
-rand = "0.9"
+rand = "0.10"
 scc = "3.3"
 thiserror = "2"
 tokio = "1.47"

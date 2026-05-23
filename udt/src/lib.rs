@@ -128,7 +128,7 @@ impl Endpoint {
         self.binding.local_addr()
     }
 
-    fn listen(&self, type_: i32, backlog: u32) -> io::Result<Socket> {
+    fn listen_(&self, type_: i32, backlog: u32) -> io::Result<Socket> {
         let inst = Instance::default();
         let addr = self.binding.local_addr_os()?;
         let u = unsafe { udt_sys::socket(
@@ -157,7 +157,7 @@ impl Endpoint {
         Ok(Socket { _inst: inst, inner: u})
     }
 
-    fn connect(&self, type_: i32, addr: SocketAddr, rendezvous: bool) -> io::Result<Socket> {
+    fn connect_(&self, type_: i32, addr: SocketAddr, rendezvous: bool) -> io::Result<Socket> {
         let inst = Instance::default();
         let local_addr = self.binding.local_addr_os()?;
         let u = unsafe { udt_sys::socket(
@@ -199,15 +199,15 @@ impl Endpoint {
         Ok(Socket { _inst: inst, inner: u })
     }
 
-    pub fn listen_datagram(&self, backlog: u32) -> io::Result<Listener> {
-        let u = self.listen(SOCK_DGRAM, backlog)?;
+    pub fn listen(&self, backlog: u32) -> io::Result<Listener> {
+        let u = self.listen_(SOCK_DGRAM, backlog)?;
         Ok(Listener { u })
     }
 
-    pub async fn connect_datagram(self: &Arc<Self>, addr: SocketAddr, rendezvous: bool) -> io::Result<Connection> {
+    pub async fn connect(self: &Arc<Self>, addr: SocketAddr, rendezvous: bool) -> io::Result<Connection> {
         let inner = self.clone();
         let con = spawn_blocking(move || {
-            let u = inner.connect(SOCK_DGRAM, addr, rendezvous)?;
+            let u = inner.connect_(SOCK_DGRAM, addr, rendezvous)?;
             Ok::<_, io::Error>(Connection { u })
         }).await.unwrap()?;
         

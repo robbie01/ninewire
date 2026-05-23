@@ -1,6 +1,5 @@
 use std::{collections::BTreeMap, io, mem, sync::Arc};
 
-use async_trait::async_trait;
 use bytes::BytesMut;
 use bytestring::ByteString;
 use npwire::{deserialize_r, RMessage, TMessage, Tversion};
@@ -16,30 +15,11 @@ pub use readdir::*;
 pub use file::*;
 use tokio::sync::oneshot;
 use tracing::trace;
+use transport::NpTransport;
 use util::fidpool::{FidHandle, FidPool};
 
-const MAX_MESSAGE_SIZE: u32 = 1280 - 64 - 8 - 16;
-
-#[async_trait]
-pub trait Transport {
-    async fn recv(&self, buf: &mut [u8]) -> io::Result<usize>;
-    async fn send(&self, buf: &[u8]) -> io::Result<usize>;
-}
-
-#[cfg(feature = "secure-transport")]
-pub use transport::SecureTransport;
-
-#[cfg(feature = "secure-transport")]
-#[async_trait]
-impl Transport for transport::SecureTransport {
-    async fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
-        self.recv(buf).await
-    }
-
-    async fn send(&self, buf: &[u8]) -> io::Result<usize> {
-        self.send(buf).await
-    }
-}
+// const MAX_MESSAGE_SIZE: u32 = 1280 - 64 - 8 - 16;
+const MAX_MESSAGE_SIZE: u32 = 65536;
 
 // todo: AtomicBool flag in case recv task dies
 pub(crate) struct FilesystemInner<T: ?Sized> {
@@ -49,7 +29,7 @@ pub(crate) struct FilesystemInner<T: ?Sized> {
     transport: T
 }
 
-type DynFilesystemInner = FilesystemInner<dyn Transport + Send + Sync>;
+type DynFilesystemInner = FilesystemInner<dyn NpTransport + Send + Sync>;
 
 pub struct Filesystem {
     fsys: Arc<DynFilesystemInner>
@@ -62,7 +42,7 @@ impl<T: ?Sized> FilesystemInner<T> {
 }
 
 impl Filesystem {
-    pub async fn new(transport: impl Transport + Send + Sync + 'static) -> io::Result<Self> {
+    pub async fn new(transport: impl NpTransport + Send + Sync + 'static) -> io::Result<Self> {
         let mut inner = FilesystemInner {
             transport,
             inflight: Default::default(),

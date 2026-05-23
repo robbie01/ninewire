@@ -14,7 +14,7 @@ fn main() {
         let n = random::<u64>();
         let mut h = h.build_hasher();
         h.write_u64(n);
-        black_box(h.finish());
+        black_box(black_box(h).finish());
     }
     let t2 = Instant::now();
     println!("default: {} ns/iter", ((t2 - t1) / ITERATIONS).as_nanos());
@@ -26,7 +26,7 @@ fn main() {
         let n = random::<u64>();
         let mut h = h.build_hasher();
         h.write_u64(n);
-        black_box(h.finish());
+        black_box(black_box(h).finish());
     }
     let t2 = Instant::now();
     println!("polymur: {} ns/iter", ((t2 - t1) / ITERATIONS).as_nanos());

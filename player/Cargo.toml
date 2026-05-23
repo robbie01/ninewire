@@ -1,0 +1,18 @@
+[package]
+name = "player"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+client.path = "../client"
+transport = { path = "../transport", default-features = false, features = ["tcp-plain"] }
+mpv-sys.path = "./mpv-sys"
+
+tracing-subscriber.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread"] }
+tokio-util.workspace = true
+
+winit = "0.30"
+ctrlc = "3.5"
+async-task = "4.7"
+stable-vec = "0.4"

@@ -58,16 +58,21 @@ impl Directory {
     }
 }
 
+// from u9fs
+const IOHDRSZ: u32 = 24;
+
 impl File {
     pub async fn stat(&self) -> io::Result<npwire::Stat> {
         self.fsys.stat(&self.fid).await
     }
 
     pub async fn read_at(&self, count: u32, offset: u64) -> io::Result<Bytes> {
+        let maxlen = self.fsys.maxlen;
+
         let resp = self.fsys.transact(Tread {
             fid: self.fid.fid(),
             offset,
-            count
+            count: count.min(maxlen as u32 - IOHDRSZ)
         }).await?;
 
         match resp {
@@ -77,7 +82,11 @@ impl File {
         }
     }
 
-    pub async fn write_at(&self, data: Bytes, offset: u64) -> io::Result<u32> {
+    pub async fn write_at(&self, mut data: Bytes, offset: u64) -> io::Result<u32> {
+        if data.len() > self.fsys.maxlen - IOHDRSZ as usize {
+            data.truncate(self.fsys.maxlen - IOHDRSZ as usize);
+        }
+
         let resp = self.fsys.transact(Twrite {
             fid: self.fid.fid(),
             offset,

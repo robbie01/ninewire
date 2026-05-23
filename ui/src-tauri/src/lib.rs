@@ -17,7 +17,12 @@ static CONNECTION_CTR: AtomicU64 = AtomicU64::new(0);
 static CONNECTIONS: RwLock<IntMap<u64, Arc<SecureTransport>>> = RwLock::new(IntMap::with_hasher(BuildNoHashHasher::new()));
 
 #[tauri::command]
-async fn dispatch_np(req: tauri::ipc::Request<'_>) -> Result<usize, String> {
+async fn connect_np(req: tauri::ipc::Request<'_>) -> Result<u64, String> {
+    todo!()
+}
+
+#[tauri::command]
+async fn dispatch_np(req: tauri::ipc::Request<'_>) -> Result<(), String> {
     match req.body() {
         InvokeBody::Json(_) => Err("expected raw".into()),
         InvokeBody::Raw(req) => {
@@ -26,9 +31,9 @@ async fn dispatch_np(req: tauri::ipc::Request<'_>) -> Result<usize, String> {
 
             let con = connections.get(&req.id.to_native()).ok_or_else(|| "no id".to_owned())?;
 
-            let n = con.send(&req.data).await.map_err(|e| e.to_string())?;
+            con.send(&req.data).await.map_err(|e| e.to_string())?;
             
-            Ok(n)
+            Ok(())
         }
     }
 }

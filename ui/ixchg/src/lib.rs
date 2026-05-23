@@ -1,6 +1,6 @@
 pub use rkyv;
 
-use rkyv::{Archive, Serialize, rancor};
+use rkyv::{Archive, Serialize};
 
 #[derive(Archive, Serialize)]
 pub struct SendRequest {

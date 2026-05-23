@@ -36,6 +36,7 @@ async fn main() -> anyhow::Result<()> {
             // rlimit.tick().await;
             buf[..8].copy_from_slice(&n.to_ne_bytes());
             tokio::select! {
+                biased;
                 _ = &mut cancelled => break,
                 res = c.send_with(&buf, true) => { res?; }
             }

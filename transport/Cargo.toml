@@ -4,9 +4,27 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-udt.path = "../udt"
-snow = { version = "0.10", features = ["ring-accelerated"] }
-range-set.workspace = true
-parking_lot = "0.12"
-scc.workspace = true
-tracing.workspace = true
+async-trait = "0.1"
+either = "1.15"
+cfg-if = "1"
+
+udt = { path = "../udt", optional = true }
+snow = { version = "0.10", features = ["ring-accelerated"], optional = true }
+range-set = { workspace = true, optional = true }
+parking_lot = { version = "0.12", optional = true }
+scc = { workspace = true, optional = true }
+tracing = { workspace = true, optional = true }
+
+tokio = { workspace = true, optional = true, features = ["net", "sync"] }
+tokio-util = { workspace = true, optional = true, features = ["io"] }
+bytes = { workspace = true, optional = true }
+futures-sink = { version = "0.3", optional = true }
+futures-core = { version = "0.3", optional = true }
+futures-util = { version = "0.3", optional = true, default-features = false, features = ["sink"] }
+
+[features]
+secure = ["dep:snow"]
+secure-transport = ["dep:udt", "secure", "dep:range-set", "dep:parking_lot", "dep:scc", "dep:tracing"]
+tcp = ["dep:tokio", "dep:tokio-util", "dep:bytes", "dep:futures-sink", "dep:futures-core", "dep:futures-util", "secure"]
+tcp-plain = ["dep:tokio", "dep:tokio-util", "dep:bytes", "dep:futures-util"]
+default = ["secure-transport", "tcp", "tcp-plain"]

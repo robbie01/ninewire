@@ -4,11 +4,12 @@ use bytestring::ByteString;
 use npwire::{RMessage, Rclunk, Rerror, Ropen, Rstat, Rwalk, TMessage, Tclunk, Topen, Tstat, Twalk, Twrite, TWRITE_OVERHEAD};
 use tokio::sync::oneshot;
 use tracing::trace;
+use transport::NpTransport;
 use util::fidpool::FidHandle;
 
-use super::{Transport, FilesystemInner};
+use super::FilesystemInner;
 
-impl<T: Transport + ?Sized> FilesystemInner<T> {
+impl<T: NpTransport + ?Sized> FilesystemInner<T> {
     pub(super) async fn transact(&self, message: impl Into<TMessage>) -> io::Result<RMessage> {
         let mut message = message.into();
         

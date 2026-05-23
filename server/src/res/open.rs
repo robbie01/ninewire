@@ -142,7 +142,6 @@ impl traits::OpenResource for OpenResource {
                 let DirState { ref mut rem, ref mut last_offset } = *dir_state.lock().await;
 
                 if offset == 0 {
-                    rem.clear();
                     let mut rem2 = mem::take(rem);
                     let readdir = read_dir(path)?;
                     *rem = task::spawn_blocking(move || {
