@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-use std::{collections::BTreeMap, error::Error, future::{Future, ready}, net::{IpAddr, Ipv6Addr, SocketAddrV6}, path::PathBuf, pin::pin, sync::{Arc, atomic::{AtomicU64, Ordering}}};
+use std::{collections::BTreeMap, error::Error, future::ready, net::{IpAddr, Ipv6Addr, SocketAddrV6}, path::PathBuf, pin::pin, sync::{Arc, atomic::{AtomicU64, Ordering}}};
 
 use anyhow::{anyhow, bail};
 use bytestring::ByteString;
@@ -11,8 +11,6 @@ use tokio::{net::TcpListener, sync::mpsc};
 use tokio_stream::wrappers::{ReceiverStream, TcpListenerStream};
 use transport::{PlainTcpTransport, SecureTransport, Side};
 use util::is_unicast_global;
-
-use crate::np::traits::{IsCancelSafe, cancel_safe};
 
 mod np;
 mod res;
@@ -51,29 +49,25 @@ impl traits::Serve for Handler {
     type PathResource = res::path::PathResource;
     type OpenResource = res::open::OpenResource;
 
-    fn auth(&self, _uname: &str, _aname: &str) -> impl Future<Output = Result<Self::OpenResource, Self::Error>> + IsCancelSafe + Send {
-        cancel_safe(async move {
-            bail!("Function not implemented");
-        })
+    async fn auth(&self, _uname: &str, _aname: &str) -> Result<Self::OpenResource, Self::Error> {
+        bail!("Function not implemented");
     }
 
-    fn attach(&self, ares: Option<&Self::OpenResource>, uname: &str, aname: &str) -> impl Future<Output = Result<Self::PathResource, Self::Error>> + IsCancelSafe + Send {
-        cancel_safe(async move {
-            if ares.is_some() {
-                bail!("permission denied");
-            }
+    async fn attach(&self, ares: Option<&Self::OpenResource>, uname: &str, aname: &str) -> Result<Self::PathResource, Self::Error> {
+        if ares.is_some() {
+            bail!("permission denied");
+        }
 
-            if !aname.is_empty() {
-                bail!("No such file or directory");
-            }
+        if !aname.is_empty() {
+            bail!("No such file or directory");
+        }
 
-            let session = Arc::new(Session {
-                id: self.session_ctr.fetch_add(1, Ordering::Relaxed),
-                uname: uname.into()
-            });
+        let session = Arc::new(Session {
+            id: self.session_ctr.fetch_add(1, Ordering::Relaxed),
+            uname: uname.into()
+        });
 
-            Ok(res::path::PathResource::root(self, session))
-        })
+        Ok(res::path::PathResource::root(self, session))
     }
 }
 
