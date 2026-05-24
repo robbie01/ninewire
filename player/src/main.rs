@@ -56,6 +56,7 @@ impl<'data, W: Fn() + Sync, O: Fn(&str) -> Result<Box<dyn IntoStreamInfo>, Strea
 
         self.spawn(async {
             let mpv = self.mpv.as_ref().unwrap();
+
             let yes = mpv::NodeValue::Flag(true).into();
 
             mpv.set_property("force-window\0", &yes).await.unwrap();
@@ -64,6 +65,10 @@ impl<'data, W: Fn() + Sync, O: Fn(&str) -> Result<Box<dyn IntoStreamInfo>, Strea
             mpv.set_property("input-vo-keyboard\0", &yes).await.unwrap();
             mpv.set_property("input-media-keys\0", &yes).await.unwrap();
             mpv.set_property("osc\0", &yes).await.unwrap();
+
+            mpv.set_property("cache\0", &yes).await.unwrap();
+            // mpv.set_property("demuxer-max-bytes", &mpv::NodeValue::Int64(512*1024*1024).into()).await.unwrap();
+            // mpv.set_property("demuxer-readahead-secs", &mpv::NodeValue::Int64(20).into()).await.unwrap();
 
             mpv.command(&["loadfile\0", "np://anime/The Melancholy of Haruhi Suzumiya (2006)/Season 1/[Blank] Suzumiya Haruhi no Yuuutsu 2006 - 02.mkv\0"]).await.unwrap()
         });
@@ -117,8 +122,8 @@ fn main() {
     let _guard = rt.enter();
 
     let root = rt.block_on(async {
-        let tcp = TcpStream::connect("localhost:9998").await.unwrap();
-        let transport = PlainTcpTransport::new(tcp).unwrap();
+        let tcp = TcpStream::connect("quietlife:9998").await.unwrap();
+        let transport = PlainTcpTransport::new(tcp);
         let fs = client::Filesystem::new(transport).await.unwrap();
         println!("got the fs?");
         fs.attach("anonymous", "").await.unwrap()

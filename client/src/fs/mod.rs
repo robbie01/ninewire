@@ -19,7 +19,7 @@ use transport::NpTransport;
 use util::fidpool::{FidHandle, FidPool};
 
 // const MAX_MESSAGE_SIZE: u32 = 1280 - 64 - 8 - 16;
-const MAX_MESSAGE_SIZE: u32 = 65536;
+const MAX_MESSAGE_SIZE: u32 = 131072;
 
 // todo: AtomicBool flag in case recv task dies
 pub(crate) struct FilesystemInner<T: ?Sized> {

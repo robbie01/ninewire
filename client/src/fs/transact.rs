@@ -1,7 +1,7 @@
 use std::io;
 
 use bytestring::ByteString;
-use npwire::{RMessage, Rclunk, Rerror, Ropen, Rstat, Rwalk, TMessage, Tclunk, Topen, Tstat, Twalk, Twrite, TWRITE_OVERHEAD};
+use npwire::{IOHDRSZ, RMessage, Rclunk, Rerror, Ropen, Rstat, Rwalk, TMessage, Tclunk, Topen, Tstat, Twalk, Twrite};
 use tokio::sync::oneshot;
 use tracing::trace;
 use transport::NpTransport;
@@ -30,7 +30,7 @@ impl<T: NpTransport + ?Sized> FilesystemInner<T> {
 
         // Bound writes by the max message size
         if let TMessage::Twrite(Twrite { ref mut data, .. }) = message {
-            data.truncate(self.maxlen - TWRITE_OVERHEAD);
+            data.truncate(self.maxlen - IOHDRSZ);
         }
 
         let data = message

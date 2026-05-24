@@ -1,9 +1,8 @@
 #![forbid(unsafe_code)]
 
-use std::sync::{Arc, RwLock, atomic::AtomicU64};
+use std::{collections::BTreeMap, sync::{Arc, atomic::AtomicU64}};
 
-use nohash::{BuildNoHashHasher, IntMap};
-use tauri::ipc::InvokeBody;
+use tauri::{async_runtime::RwLock, ipc::InvokeBody};
 use transport::SecureTransport;
 use ui_ixchg::{ArchivedSendRequest, rkyv::{self, rancor}};
 
@@ -13,21 +12,24 @@ fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
 }
 
+#[allow(dead_code)]
 static CONNECTION_CTR: AtomicU64 = AtomicU64::new(0);
-static CONNECTIONS: RwLock<IntMap<u64, Arc<SecureTransport>>> = RwLock::new(IntMap::with_hasher(BuildNoHashHasher::new()));
+static CONNECTIONS: RwLock<BTreeMap<u64, Arc<SecureTransport>>> = RwLock::const_new(BTreeMap::new());
 
 #[tauri::command]
-async fn connect_np(req: tauri::ipc::Request<'_>) -> Result<u64, String> {
+#[allow(dead_code)]
+async fn connect_np(_req: tauri::ipc::Request<'_>) -> Result<u64, String> {
     todo!()
 }
 
 #[tauri::command]
+#[allow(dead_code)]
 async fn dispatch_np(req: tauri::ipc::Request<'_>) -> Result<(), String> {
     match req.body() {
         InvokeBody::Json(_) => Err("expected raw".into()),
         InvokeBody::Raw(req) => {
-            let req = rkyv::access::<ArchivedSendRequest, rancor::Error>(&req).map_err(|e| e.to_string())?;
-            let connections = CONNECTIONS.read().map_err(|e| e.to_string())?;
+            let req = rkyv::access::<ArchivedSendRequest, rancor::Error>(req).map_err(|e| e.to_string())?;
+            let connections = CONNECTIONS.read().await;
 
             let con = connections.get(&req.id.to_native()).ok_or_else(|| "no id".to_owned())?;
 

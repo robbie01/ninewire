@@ -1,21 +1,23 @@
 #![forbid(unsafe_code)]
 
-use std::{collections::HashMap, error::Error, future::ready, net::{IpAddr, Ipv6Addr, SocketAddrV6}, path::PathBuf, pin::pin, sync::{atomic::{AtomicU64, Ordering}, Arc}};
+use std::{collections::BTreeMap, error::Error, future::{Future, ready}, net::{IpAddr, Ipv6Addr, SocketAddrV6}, path::PathBuf, pin::pin, sync::{Arc, atomic::{AtomicU64, Ordering}}};
 
 use anyhow::{anyhow, bail};
 use bytestring::ByteString;
-use futures::{stream::abortable, StreamExt};
+use futures::{StreamExt, stream::abortable};
 use mediator_proto::{mediator_client::MediatorClient, register_request, RegisterReply, RegisterRequest, Registration};
 use np::traits;
-use tokio::sync::mpsc;
-use tokio_stream::{wrappers::ReceiverStream};
-use transport::{SecureTransport, Side};
+use tokio::{net::TcpListener, sync::mpsc};
+use tokio_stream::wrappers::{ReceiverStream, TcpListenerStream};
+use transport::{PlainTcpTransport, SecureTransport, Side};
 use util::is_unicast_global;
+
+use crate::np::traits::{IsCancelSafe, cancel_safe};
 
 mod np;
 mod res;
 
-type ShareTable = HashMap<Arc<str>, PathBuf>;
+type ShareTable = BTreeMap<Arc<str>, PathBuf>;
 
 #[derive(Debug)]
 struct Config {
@@ -49,25 +51,29 @@ impl traits::Serve for Handler {
     type PathResource = res::path::PathResource;
     type OpenResource = res::open::OpenResource;
 
-    async fn auth(&self, _uname: &str, _aname: &str) -> Result<Self::OpenResource, Self::Error> {
-        bail!("Function not implemented");
+    fn auth(&self, _uname: &str, _aname: &str) -> impl Future<Output = Result<Self::OpenResource, Self::Error>> + IsCancelSafe + Send {
+        cancel_safe(async move {
+            bail!("Function not implemented");
+        })
     }
 
-    async fn attach(&self, ares: Option<&Self::OpenResource>, uname: &str, aname: &str) -> Result<Self::PathResource, Self::Error> {
-        if ares.is_some() {
-            bail!("permission denied");
-        }
+    fn attach(&self, ares: Option<&Self::OpenResource>, uname: &str, aname: &str) -> impl Future<Output = Result<Self::PathResource, Self::Error>> + IsCancelSafe + Send {
+        cancel_safe(async move {
+            if ares.is_some() {
+                bail!("permission denied");
+            }
 
-        if !aname.is_empty() {
-            bail!("No such file or directory");
-        }
+            if !aname.is_empty() {
+                bail!("No such file or directory");
+            }
 
-        let session = Arc::new(Session {
-            id: self.session_ctr.fetch_add(1, Ordering::Relaxed),
-            uname: uname.into()
-        });
+            let session = Arc::new(Session {
+                id: self.session_ctr.fetch_add(1, Ordering::Relaxed),
+                uname: uname.into()
+            });
 
-        Ok(res::path::PathResource::root(self, session))
+            Ok(res::path::PathResource::root(self, session))
+        })
     }
 }
 
@@ -79,74 +85,98 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
     // console_subscriber::init();
 
-    let Some(addr) = local_ip_address::unix::list_afinet_netifas()?.into_iter()
-        .find_map(|(_, addr)| match addr {
-            IpAddr::V6(addr) if is_unicast_global(&addr) => Some(addr),
-            _ => None
-        }) else { bail!("no usable address :(") };
-    
-    let endpoint = Arc::new(udt::Endpoint::bind("[::]:0".parse()?)?);
+    if false {
+        let Some(addr) = local_ip_address::unix::list_afinet_netifas()?.into_iter()
+            .find_map(|(_, addr)| match addr {
+                IpAddr::V6(addr) if is_unicast_global(&addr) => Some(addr),
+                _ => None
+            }) else { bail!("no usable address :(") };
+        
+        let endpoint = Arc::new(udt::Endpoint::bind("[::]:0".parse()?)?);
 
-    println!("bound to [{addr:?}]:{}", endpoint.local_addr()?.port());
+        println!("bound to [{addr:?}]:{}", endpoint.local_addr()?.port());
 
-    let mut mediator = MediatorClient::connect("http://[::1]:64344").await?;
+        let mut mediator = MediatorClient::connect("http://[::1]:64344").await?;
 
-    let (registration, r2) = mpsc::channel(1);
-    let incoming = mediator.register(ReceiverStream::new(r2)).await?.into_inner();
-    println!("brug");
+        let (registration, r2) = mpsc::channel(1);
+        let incoming = mediator.register(ReceiverStream::new(r2)).await?.into_inner();
+        println!("brug");
 
-    registration.send(RegisterRequest {
-        req: Some(register_request::Req::Registration(Registration {
-            name: "bugerking".to_owned(),
-            endpoint: Some(mediator_proto::Endpoint {
-                addr: addr.octets().to_vec(),
-                port: endpoint.local_addr()?.port().into(),
-                pubkey: PUBLIC_KEY.to_vec()
-            })
-        }))
-    }).await.map_err(|_| anyhow!("bruh moment"))?;
-
-    let listener = incoming
-        .filter_map(|req| ready({
-            match req {
-                Ok(RegisterReply { request_id: 0, .. }) => None,
-                _ => Some(async {
-                    let req = req?;
-                    registration.send(RegisterRequest {
-                        req: Some(register_request::Req::ApproveId(req.request_id))
-                    }).await.map_err(|_| anyhow!("bruh moment2"))?;
-                    let ep = req.endpoint.unwrap();
-                    let addr = Ipv6Addr::from(<[u8; 16]>::try_from(&ep.addr[..])?);
-                    let port = ep.port.try_into()?;
-                    let ep = SocketAddrV6::new(addr, port, 0, 0);
-                    Ok::<_, anyhow::Error>((
-                        SecureTransport::connect(&endpoint, ep.into(), Side::Responder { local_private_key: &PRIVATE_KEY }).await?,
-                        ep
-                    ))
+        registration.send(RegisterRequest {
+            req: Some(register_request::Req::Registration(Registration {
+                name: "bugerking".to_owned(),
+                endpoint: Some(mediator_proto::Endpoint {
+                    addr: addr.octets().to_vec(),
+                    port: endpoint.local_addr()?.port().into(),
+                    pubkey: PUBLIC_KEY.to_vec()
                 })
-            }
-        }))
-        .buffer_unordered(16);
+            }))
+        }).await.map_err(|_| anyhow!("bruh moment"))?;
 
-    let listener = listener.filter(|e| ready(match e {
-        Ok(_) => true,
-        Err(e) => {
-            let is_tonic_error = e.chain()
-                .find_map(<dyn Error>::downcast_ref::<tonic::Status>)
-                .is_some();
-            if !is_tonic_error {
-                println!("connection failed: {e}");
+        let listener = incoming
+            .filter_map(|req| ready({
+                match req {
+                    Ok(RegisterReply { request_id: 0, .. }) => None,
+                    _ => Some(async {
+                        let req = req?;
+                        registration.send(RegisterRequest {
+                            req: Some(register_request::Req::ApproveId(req.request_id))
+                        }).await.map_err(|_| anyhow!("bruh moment2"))?;
+                        let ep = req.endpoint.unwrap();
+                        let addr = Ipv6Addr::from(<[u8; 16]>::try_from(&ep.addr[..])?);
+                        let port = ep.port.try_into()?;
+                        let ep = SocketAddrV6::new(addr, port, 0, 0);
+                        Ok::<_, anyhow::Error>((
+                            SecureTransport::connect(&endpoint, ep.into(), Side::Responder { local_private_key: &PRIVATE_KEY }).await?,
+                            ep
+                        ))
+                    })
+                }
+            }))
+            .buffer_unordered(16);
+
+        let _listener = listener.filter(|e| ready(match e {
+            Ok(_) => true,
+            Err(e) => {
+                let is_tonic_error = e.chain()
+                    .find_map(<dyn Error>::downcast_ref::<tonic::Status>)
+                    .is_some();
+                if !is_tonic_error {
+                    println!("connection failed: {e}");
+                }
+                is_tonic_error
             }
-            is_tonic_error
-        }
-    }));
+        }));
+
+        // let _listener = select(
+        //     listener.map_ok(|(s, a)| (Box::new(s) as Box<dyn NpTransport + Send>, SocketAddr::V6(a))),
+        //     listener_plain.map(|r| match r {
+        //         Ok(s) => {
+        //             let a = s.peer_addr()?;
+        //             Ok((Box::new(PlainTcpTransport::new(s)) as Box<dyn NpTransport + Send>, a))
+        //         },
+        //         Err(e) => Err(anyhow::Error::new(e))
+        //     })
+        // );
+    }
+
+    let listener_plain = TcpListenerStream::new(TcpListener::bind("127.0.0.1:8998").await?);
+
+    let listener = listener_plain.map(|r| match r {
+        Ok(s) => {
+            let a = s.peer_addr()?;
+            Ok((PlainTcpTransport::new(s), a))
+        },
+        Err(e) => Err(e)
+    });
 
     let (listener, _handle) = abortable(listener);
     // ctrlc::set_handler(move || handle.abort())?;
 
     np::serve_mux(Arc::new(Handler::new([
         ("forfun".into(), "forfun".into()),
-        ("ff2".into(), "forfun".into())
+        ("ff2".into(), "forfun".into()),
+        ("home".into(), "/Users/robbie".into())
     ].into_iter().collect())), pin!(listener)).await?;
     
     Ok(())

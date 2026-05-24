@@ -1,11 +1,11 @@
-use std::{path::PathBuf, sync::Arc};
+use std::{future::Future, path::PathBuf, sync::Arc};
 
 use anyhow::bail;
 use npwire::Qid;
 use tokio::fs;
 
 use super::*;
-use crate::np::traits::{self, Resource as _};
+use crate::np::traits::{self, IsCancelSafe, Resource as _, cancel_safe};
 
 type Atom = Arc<str>;
 
@@ -104,90 +104,102 @@ impl traits::Resource for PathResource {
         self.qid
     }
 
-    async fn remove(self) -> Result<(), Self::Error> {
-        bail!("permission denied");
+    fn remove(self) -> impl Future<Output = Result<(), Self::Error>> + IsCancelSafe + Send {
+        cancel_safe(async move {
+            bail!("permission denied");
+        })
     }
 
-    async fn stat(&self) -> Result<npwire::Stat, Self::Error> {
-        match self.inner {
-            PathInner::Root => Ok(root_stat(&self.session)),
-            PathInner::Rpc => Ok(rpc_stat(&self.session)),
-            PathInner::OnShare { .. } => {
-                let meta = fs::metadata(self.real_path().unwrap()).await?;
-                Ok(stat(&self.session, self.name(), &meta))
-            }
-        }
-    }
-
-    async fn wstat(&self, stat: npwire::Stat) -> Result<(), Self::Error> {
-        match self.inner {
-            PathInner::Rpc => {
-                if stat.type_ != !0 || stat.dev != !0 || stat.qid.type_ != !0 || stat.qid.version != !0 || stat.qid.path != !0 || stat.mode != !0 || !stat.name.is_empty() || !stat.uid.is_empty() || !stat.gid.is_empty() || !stat.muid.is_empty() {
-                    bail!("permission denied")
+    fn stat(&self) -> impl Future<Output = Result<Stat, Self::Error>> + IsCancelSafe + Send {
+        cancel_safe(async move {
+            match self.inner {
+                PathInner::Root => Ok(root_stat(&self.session)),
+                PathInner::Rpc => Ok(rpc_stat(&self.session)),
+                PathInner::OnShare { .. } => {
+                    let meta = fs::metadata(self.real_path().unwrap()).await?;
+                    Ok(stat(&self.session, self.name(), &meta))
                 }
-                Ok(())
-            },
-            PathInner::Root | PathInner::OnShare { .. } => bail!("permission denied")
-        }
+            }
+        })
+    }
+
+    fn wstat(&self, stat: npwire::Stat) -> impl Future<Output = Result<(), Self::Error>> + IsCancelSafe + Send {
+        cancel_safe(async move {
+            match self.inner {
+                PathInner::Rpc => {
+                    if stat.type_ != !0 || stat.dev != !0 || stat.qid.type_ != !0 || stat.qid.version != !0 || stat.qid.path != !0 || stat.mode != !0 || !stat.name.is_empty() || !stat.uid.is_empty() || !stat.gid.is_empty() || !stat.muid.is_empty() {
+                        bail!("permission denied")
+                    }
+                    Ok(())
+                },
+                PathInner::Root | PathInner::OnShare { .. } => bail!("permission denied")
+            }
+        })
     }
 }
 
 impl traits::PathResource for PathResource {
     type OpenResource = super::open::OpenResource;
 
-    async fn create(&self, _name: &str, _perm: u32, _mode: u8) -> Result<Self::OpenResource, Self::Error> {
-        bail!("permission denied");
+    fn create(&self, _name: &str, _perm: u32, _mode: u8) -> impl Future<Output = Result<Self::OpenResource, Self::Error>> + IsCancelSafe + Send {
+        cancel_safe(async move {
+            bail!("permission denied");
+        })
     }
 
-    async fn open(&self, mode: u8) -> Result<Self::OpenResource, Self::Error> {
-        match self.inner {
-            PathInner::Rpc => if mode & 3 == 3 {
-                // may not execute
-                bail!("permission denied");
-            },
-            PathInner::Root | PathInner::OnShare { .. } => if mode != 0 {
-                // read only
-                bail!("permission denied");
-            }
-        }
-
-        let res = match self.inner {
-            PathInner::Root => open::OpenResource::root(self.handler.clone(), self.session.clone()),
-            PathInner::Rpc => open::OpenResource::rpc(self.handler.clone(), self.session.clone()),
-            PathInner::OnShare { .. } => open::OpenResource::new(
-                self.handler.clone(),
-                self.session.clone(),
-                self.name().to_owned(),
-                self.real_path().unwrap(),
-                self.qid
-            )?
-        };
-        Ok(res)
-    }
-
-    async fn walk(&self, wname: &[&str]) -> Result<(Vec<Qid>, Option<Self>), Self::Error> {
-        let mut new = Some(self.clone());
-
-        let mut wqid = Vec::new();
-
-        for (idx, &component) in wname.iter().enumerate() {
-            let Some(path) = new.take() else { break };
-
-            match path.walk_one(component).await {
-                Ok(path) => {
-                    if idx != wname.len() - 1 {
-                        wqid.push(path.qid());
-                    }
-                    new = Some(path);
+    fn open(&self, mode: u8) -> impl Future<Output = Result<Self::OpenResource, Self::Error>> + IsCancelSafe + Send {
+        cancel_safe(async move {
+            match self.inner {
+                PathInner::Rpc => if mode & 3 == 3 {
+                    // may not execute
+                    bail!("permission denied");
                 },
-                Err(e) => if wqid.is_empty() {
-                    return Err(e);
-                } else {
-                    break;
+                PathInner::Root | PathInner::OnShare { .. } => if mode != 0 {
+                    // read only
+                    bail!("permission denied");
                 }
             }
-        }
 
-        Ok((wqid, new))
+            let res = match self.inner {
+                PathInner::Root => open::OpenResource::root(self.handler.clone(), self.session.clone()),
+                PathInner::Rpc => open::OpenResource::rpc(self.handler.clone(), self.session.clone()),
+                PathInner::OnShare { .. } => open::OpenResource::new(
+                    self.handler.clone(),
+                    self.session.clone(),
+                    self.name().to_owned(),
+                    self.real_path().unwrap(),
+                    self.qid
+                )?
+            };
+            Ok(res)
+        })
+    }
+
+    fn walk(&self, wname: &[&str]) -> impl Future<Output = Result<(Vec<Qid>, Option<Self>), Self::Error>> + IsCancelSafe + Send {
+        cancel_safe(async move {
+            let mut new = Some(self.clone());
+
+            let mut wqid = Vec::new();
+
+            for (idx, &component) in wname.iter().enumerate() {
+                let Some(path) = new.take() else { break };
+
+                match path.walk_one(component).await {
+                    Ok(path) => {
+                        if idx != wname.len() - 1 {
+                            wqid.push(path.qid());
+                        }
+                        new = Some(path);
+                    },
+                    Err(e) => if wqid.is_empty() {
+                        return Err(e);
+                    } else {
+                        break;
+                    }
+                }
+            }
+
+            Ok((wqid, new))
+        })
     }
 }

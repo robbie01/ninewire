@@ -1,7 +1,7 @@
 use std::{future::pending, io, mem, pin::Pin, sync::Arc, task::{ready, Context, Poll}};
 
 use bytes::{Buf as _, Bytes};
-use npwire::{RMessage, Rerror, Rread, Rwrite, Tread, Twrite, QTDIR};
+use npwire::{IOHDRSZ, QTDIR, RMessage, Rerror, Rread, Rwrite, Tread, Twrite};
 use tokio::io::{AsyncRead, AsyncSeek, AsyncWrite, ReadBuf};
 use tokio_util::sync::ReusableBoxFuture;
 use util::fidpool::FidHandle;
@@ -58,9 +58,6 @@ impl Directory {
     }
 }
 
-// from u9fs
-const IOHDRSZ: u32 = 24;
-
 impl File {
     pub async fn stat(&self) -> io::Result<npwire::Stat> {
         self.fsys.stat(&self.fid).await
@@ -72,7 +69,7 @@ impl File {
         let resp = self.fsys.transact(Tread {
             fid: self.fid.fid(),
             offset,
-            count: count.min(maxlen as u32 - IOHDRSZ)
+            count: count.min(maxlen as u32 - IOHDRSZ as u32)
         }).await?;
 
         match resp {
@@ -83,8 +80,8 @@ impl File {
     }
 
     pub async fn write_at(&self, mut data: Bytes, offset: u64) -> io::Result<u32> {
-        if data.len() > self.fsys.maxlen - IOHDRSZ as usize {
-            data.truncate(self.fsys.maxlen - IOHDRSZ as usize);
+        if data.len() > self.fsys.maxlen - IOHDRSZ {
+            data.truncate(self.fsys.maxlen - IOHDRSZ);
         }
 
         let resp = self.fsys.transact(Twrite {

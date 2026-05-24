@@ -1,13 +1,13 @@
-use std::{collections::HashMap, future::{ready, Future}, mem, pin::{pin, Pin}, sync::Arc, task::{Context, Poll, Waker}};
+use std::{collections::BTreeMap, future::{Future, ready}, mem, pin::{Pin, pin}, sync::Arc, task::{Context, Poll}};
 
-use bytes::BytesMut;
+use bytes::Bytes;
 use bytestring::ByteString;
-use futures::{io, stream::FuturesUnordered, FutureExt as _, Stream, StreamExt as _};
+use futures::{FutureExt as _, Stream, StreamExt as _, io, stream::FuturesUnordered};
 use pin_project::pin_project;
 use tokio::sync::RwLock;
 use npwire::*;
 use transport::NpTransport;
-use util::polymur;
+use util::pooled::Pool;
 
 use super::{traits::{OpenResource as _, PathResource as _, Resource as _}, Serve};
 
@@ -16,7 +16,8 @@ const MAX_IN_FLIGHT: usize = 16;
 // 1280: IPv6 MTU
 // 64: UDT combined overhead (IP+UDP+UDT)
 // 8/16: nonce/tag
-const MAX_MESSAGE_SIZE: u32 = 1280 - 64 - 8 - 16;
+// const MAX_MESSAGE_SIZE: u32 = 1280 - 64 - 8 - 16;
+const MAX_MESSAGE_SIZE: u32 = 131072;
 
 #[derive(Debug)]
 enum Resource<S: Serve> {
@@ -25,19 +26,19 @@ enum Resource<S: Serve> {
 }
 
 struct ResourceManager<S: Serve> {
-    resources: RwLock<HashMap<u32, Resource<S>, polymur::RandomState>>,
+    resources: RwLock<BTreeMap<u32, Resource<S>>>,
     handler: Arc<S>,
 }
 
 #[pin_project]
-struct TaggedFuture<T> {
+struct Tagged<T: ?Sized> {
     tag: u16,
     flushes: Option<u16>,
     #[pin]
     hdl: T
 }
 
-impl<T: Future> Future for TaggedFuture<T> {
+impl<T: Future + ?Sized> Future for Tagged<T> {
     type Output = (u16, Option<u16>, T::Output);
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
@@ -51,6 +52,20 @@ impl<T: Future> Future for TaggedFuture<T> {
     }
 }
 
+impl<T: Stream + ?Sized> Stream for Tagged<T> {
+    type Item = (u16, Option<u16>, T::Item);
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let me = self.project();
+
+        me.hdl.poll_next(cx).map(|v| v.map(|v| (
+            *me.tag,
+            *me.flushes,
+            v
+        )))
+    }
+}
+
 const fn rerror(ename: &'static str) -> Rerror {
     Rerror { ename: ByteString::from_static(ename) }
 }
@@ -61,7 +76,7 @@ async fn dispatch<S: Serve>(
     maxlen: usize
 ) -> Result<RMessage, Rerror> {
     match request {
-        TMessage::Tversion(..) | TMessage::Tflush(..) => {
+        TMessage::Tversion(..) | TMessage::Tflush(..) | TMessage::Treads(..) => {
             unimplemented!()
         },
         TMessage::Tauth(Tauth { afid, uname, aname }) => {
@@ -171,16 +186,14 @@ async fn dispatch<S: Serve>(
             let resource = resources.get(&fid).ok_or_else(|| rerror("fid invalid"))?;
             
             if let Resource::Open(resource) = resource {
+                let count = count.min((maxlen - IOHDRSZ) as u32);
                 let mut data = resource.read(offset, count).await?;
-                data.truncate(maxlen - RREAD_OVERHEAD);
+                data.truncate(maxlen - IOHDRSZ);
                 Ok(Rread { data }.into())
             } else {
                 Err(rerror("fid not open for read"))
             }
         },
-        TMessage::Treads(_) => {
-            Err(rerror("not implemented"))
-        }
         TMessage::Twrite(Twrite { fid, offset, data }) => {
             let resources = resource_mgr.resources.read().await;
             let resource = resources.get(&fid).ok_or_else(|| rerror("fid invalid"))?;
@@ -236,10 +249,6 @@ async fn dispatch<S: Serve>(
     }
 }
 
-fn poll_no_context<S: Stream + Unpin>(stream: &mut S) -> Poll<Option<S::Item>> {
-    stream.poll_next_unpin(&mut Context::from_waker(Waker::noop()))
-}
-
 pub async fn handle_client<T: NpTransport, S: Serve>(
     peer: T,
     handler: Arc<S>
@@ -253,6 +262,8 @@ pub async fn handle_client<T: NpTransport, S: Serve>(
 
     let mut initialized = false;
     let mut next_session = None;
+
+    let bufpool = Pool::new(|| vec![0u8; MAX_MESSAGE_SIZE as usize]);
 
     loop {
         if inflight.is_empty() {
@@ -277,15 +288,18 @@ pub async fn handle_client<T: NpTransport, S: Serve>(
         // 2025-03-31: I have realized that I reinvented StreamExt::buffer_unordered
         // from first principles. Luckily, that method doesn't actually work directly
         // with what I need to do because of the flush stuff.
-        let mut buffer = BytesMut::zeroed(MAX_MESSAGE_SIZE as usize);
+        let mut buffer = bufpool.get();
+
         tokio::select! {
             biased;
             incoming_n = peer.recv(&mut buffer), if inflight.len() < MAX_IN_FLIGHT && next_session.is_none() => {
                 let incoming_n = incoming_n?;
-                let mut incoming = mem::replace(&mut buffer, BytesMut::zeroed(MAX_MESSAGE_SIZE as usize));
+                let incoming = mem::replace(&mut buffer, bufpool.get());
+
+                let mut incoming = Bytes::from_owner(incoming);
                 incoming.truncate(incoming_n);
 
-                let des = deserialize_t(incoming.freeze());
+                let des = deserialize_t(incoming);
 
                 if !initialized && !matches!(des, Ok((_, TMessage::Tversion(_)))) {
                     // just throw out any messages before the first Tversion
@@ -299,7 +313,7 @@ pub async fn handle_client<T: NpTransport, S: Serve>(
                                 if tag == !0 {
                                     next_session = Some(tversion);
                                 } else {
-                                    inflight.push(TaggedFuture {
+                                    inflight.push(Tagged {
                                         tag,
                                         flushes: None,
                                         hdl: ready(rerror(
@@ -312,7 +326,7 @@ pub async fn handle_client<T: NpTransport, S: Serve>(
                                 if let Some(fut) = inflight.as_mut().iter_pin_mut().find(|h| h.tag == oldtag) {
                                     *fut.project().flushes = Some(tag);
                                 } else {
-                                    inflight.push(TaggedFuture {
+                                    inflight.push(Tagged {
                                         tag,
                                         flushes: None,
                                         hdl: ready(Rflush.into()).right_future()
@@ -320,7 +334,7 @@ pub async fn handle_client<T: NpTransport, S: Serve>(
                                 }
                             },
                             req => {
-                                inflight.push(TaggedFuture {
+                                inflight.push(Tagged {
                                     tag,
                                     flushes: None,
                                     hdl: dispatch(
@@ -334,7 +348,7 @@ pub async fn handle_client<T: NpTransport, S: Serve>(
                     },
                     Err(e) => {
                         if let Some(tag) = e.tag() {
-                            inflight.push(TaggedFuture {
+                            inflight.push(Tagged {
                                 tag,
                                 flushes: None,
                                 hdl: ready(Rerror {
@@ -345,27 +359,15 @@ pub async fn handle_client<T: NpTransport, S: Serve>(
                     }
                 }
             },
-            Some((mut tag, mut flushes, mut resp)) = inflight.next() => {
-                // Desperate attempt to replicate the behavior of StreamExt::forward
-                // (Maybe I should just implement my own buffered stream at this point?)
-                loop {
-                    let serialized = resp
-                        .serialize(tag)
-                        .unwrap_or_else(|e| Rerror::from(e).serialize(tag).unwrap());
+            Some((tag, flushes, resp)) = inflight.next() => {
+                let serialized = resp
+                    .serialize(tag)
+                    .unwrap_or_else(|e| Rerror::from(e).serialize(tag).unwrap());
 
-                    peer.send(&serialized).await?;
+                peer.send(&serialized).await?;
 
-                    if let Some(flush) = flushes {
-                        peer.send(&Rflush.serialize(flush).unwrap()).await?;
-                    }
-
-                    if let Poll::Ready(Some(tfr)) = poll_no_context(&mut inflight) {
-                        tag = tfr.0;
-                        flushes = tfr.1;
-                        resp = tfr.2;
-                    } else {
-                        break;
-                    }
+                if let Some(flush) = flushes {
+                    peer.send(&Rflush.serialize(flush).unwrap()).await?;
                 }
             },
             else => break

@@ -14,7 +14,7 @@ pub struct PlainTcpTransport {
 }
 
 impl PlainTcpTransport {
-    pub fn new(inner: TcpStream) -> io::Result<Self> {
+    pub fn new(inner: TcpStream) -> Self {
         let codec = LengthDelimitedCodec::builder()
             .little_endian()
             .length_field_type::<u32>()
@@ -23,13 +23,13 @@ impl PlainTcpTransport {
 
         let (r, w) = inner.into_split();
 
-        Ok(Self {
+        Self {
             read_half: Mutex::new(FramedRead::new(
                 r,
                 codec.clone()
             ).peekable()),
             write_half: Mutex::new(FramedWrite::new(w, codec))
-        })
+        }
     }
 }
 

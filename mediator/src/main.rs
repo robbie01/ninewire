@@ -19,7 +19,7 @@ struct PlsRendezvous {
 
 #[derive(Debug, Default)]
 struct Handler {
-    mappings: Arc<scc::HashMap<String, mpsc::Sender<PlsRendezvous>>>
+    mappings: Arc<scc::HashMap<String, mpsc::Sender<PlsRendezvous>, polymur::RandomState>>
 }
 
 fn validate_endpoint(ep: &Endpoint, server: bool) -> tonic::Result<()> {
