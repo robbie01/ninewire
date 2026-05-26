@@ -2,7 +2,7 @@ use std::{path::PathBuf, sync::Arc};
 
 use anyhow::bail;
 use npwire::Qid;
-use tokio::fs;
+use compio::fs;
 
 use super::*;
 use crate::np::traits::{self, Resource as _};
@@ -160,7 +160,7 @@ impl traits::PathResource for PathResource {
                 self.name().to_owned(),
                 self.real_path().unwrap(),
                 self.qid
-            )?
+            ).await?
         };
         Ok(res)
     }

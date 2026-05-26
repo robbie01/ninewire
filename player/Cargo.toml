@@ -1,11 +1,11 @@
 [package]
 name = "player"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
 
 [dependencies]
 client.path = "../client"
-transport = { path = "../transport", default-features = false, features = ["tcp-plain"] }
+transport = { path = "../transport", features = ["tokio"] }
 mpv-sys.path = "./mpv-sys"
 
 tracing-subscriber.workspace = true

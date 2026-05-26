@@ -2,6 +2,10 @@
 resolver = "2"
 members = ["client", "hashbench", "mediator", "mediator-proto", "npwire","server", "transport", "udt", "udt-example", "udt-sys", "ui", "ui/src-tauri", "ui/ixchg", "util", "player", "player/mpv-sys"]
 
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+
 [workspace.dependencies]
 util.path = "./util"
 npwire.path = "./npwire"
@@ -23,3 +27,5 @@ tokio-util = { version = "0.7", features = ["codec"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
 range-set = "0.1"
+
+compio = { version = ">=0.19.0-rc.2,<0.20", features = ["fs", "io", "net", "macros"] }

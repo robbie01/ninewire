@@ -1,13 +1,12 @@
-use std::{collections::BTreeMap, future::ready, mem, sync::Arc};
+use std::{collections::BTreeMap, future::ready, rc::Rc};
 
 use async_stream::try_stream;
 use bytes::Bytes;
 use bytestring::ByteString;
 use futures::{FutureExt as _, Stream, StreamExt as _, io};
-use tokio::sync::RwLock;
 use npwire::*;
+use tokio::sync::RwLock;
 use transport::NpTransport;
-use util::pooled::Pool;
 
 use crate::np::client::{pin_array::PinArray, tagged::Tagged};
 
@@ -32,7 +31,7 @@ enum Resource<S: Serve> {
 
 struct ResourceManager<S: Serve> {
     resources: RwLock<BTreeMap<u32, Resource<S>>>,
-    handler: Arc<S>,
+    handler: Rc<S>,
 }
 
 const fn rerror(ename: &'static str) -> Rerror {
@@ -248,7 +247,7 @@ fn dispatch_reads<S: Serve>(
 
 pub async fn handle_client<T: NpTransport, S: Serve>(
     peer: T,
-    handler: Arc<S>
+    handler: Rc<S>
 ) -> io::Result<()> {
     let resource_mgr = ResourceManager {
         resources: RwLock::default(),
@@ -260,43 +259,32 @@ pub async fn handle_client<T: NpTransport, S: Serve>(
     let mut initialized = None;
     let mut next_session = None;
 
-    let bufpool = Pool::new(|| vec![0u8; MAX_MESSAGE_SIZE as usize]);
-
     loop {
-        if inflight.is_empty() {
-            if let Some(Tversion { msize, version }) = next_session.take() {
-                // in-flight requests have been completely flushed out
-                resource_mgr.resources.write().await.clear();
+        if inflight.is_empty() && let Some(Tversion { msize, version }) = next_session.take() {
+            // in-flight requests have been completely flushed out
+            resource_mgr.resources.write().await.clear();
 
-                if msize < 256 {
-                    peer.send(&rerror(
-                        "Tversion: message size too small"
-                    ).serialize(!0).unwrap()).await?;
-                } else {
-                    let msize = msize.min(MAX_MESSAGE_SIZE).min(peer.max_msize());
-                    let version: &'static str = if version == "9P2000" { "9P2000" } else { "unknown" };
-                    peer.send(&Rversion { msize, version: ByteString::from_static(version) }.serialize(!0).unwrap()).await?;
-    
-                    initialized = Some(msize);
-                }
+            if msize < 256 {
+                peer.send(rerror(
+                    "Tversion: message size too small"
+                ).serialize(!0).unwrap()).await?;
+            } else {
+                let msize = msize.min(MAX_MESSAGE_SIZE).min(peer.max_msize());
+                let version: &'static str = if version == "9P2000" { "9P2000" } else { "unknown" };
+                peer.send(Rversion { msize, version: ByteString::from_static(version) }.serialize(!0).unwrap()).await?;
+
+                initialized = Some(msize);
             }
         }
 
         // 2025-03-31: I have realized that I reinvented StreamExt::buffer_unordered
         // from first principles. Luckily, that method doesn't actually work directly
         // with what I need to do because of the flush stuff.
-        let mut buffer = bufpool.get();
 
         tokio::select! {
             biased;
-            incoming_n = peer.recv(&mut buffer), if !inflight.is_full() && next_session.is_none() => {
-                let incoming_n = incoming_n?;
-                let incoming = mem::replace(&mut buffer, bufpool.get());
-
-                let mut incoming = Bytes::from_owner(incoming);
-                incoming.truncate(incoming_n);
-
-                let des = deserialize_t(incoming);
+            incoming = peer.recv(), if !inflight.is_full() && next_session.is_none() => {
+                let des = deserialize_t(incoming?);
 
                 if initialized.is_none() && !matches!(des, Ok((_, TMessage::Tversion(_)))) {
                     // just throw out any messages before the first Tversion
@@ -368,7 +356,7 @@ pub async fn handle_client<T: NpTransport, S: Serve>(
                     .serialize(tag)
                     .unwrap_or_else(|e| Rerror::from(e).serialize(tag).unwrap());
 
-                peer.send(&serialized).await?;
+                peer.send(serialized).await?;
             },
             else => break
         }

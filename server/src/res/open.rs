@@ -1,9 +1,10 @@
-use std::{fs::{read_dir, File}, io, mem, os::unix::fs::FileExt, path::PathBuf, sync::Arc};
+use std::{fs::read_dir, io, mem, path::PathBuf, sync::Arc};
 
 use anyhow::bail;
 use bytes::BytesMut;
+use compio::{BufResult, fs::{self, File}, io::AsyncReadAt, runtime::spawn_blocking};
+use futures::{AsyncReadExt as _, io::Empty, lock::Mutex};
 use npwire::{put_stat, Qid, QTDIR};
-use tokio::{fs, io::{AsyncReadExt, AsyncWriteExt, Empty}, sync::Mutex, task};
 
 use super::*;
 use crate::np::traits;
@@ -16,7 +17,7 @@ struct RootState {
 
 #[derive(Debug, Default)]
 struct DirState {
-    rem: Vec<(Arc<str>, Metadata)>,
+    rem: Vec<(Arc<str>, std::fs::Metadata)>,
     last_offset: u64
 }
 
@@ -57,11 +58,11 @@ impl OpenResource {
             session,
             qid: RPC_QID,
             name: String::from("rpc"),
-            inner: OpenInner::Rpc(Mutex::new(tokio::io::empty()))
+            inner: OpenInner::Rpc(Mutex::new(futures::io::empty()))
         }
     }
 
-    pub fn new(handler: Arc<crate::Config>, session: Arc<crate::Session>, name: String, path: PathBuf, qid: Qid) -> io::Result<Self> {
+    pub async fn new(handler: Arc<crate::Config>, session: Arc<crate::Session>, name: String, path: PathBuf, qid: Qid) -> io::Result<Self> {
         if qid.type_ & QTDIR == QTDIR {
             Ok(Self {
                 handler,
@@ -74,7 +75,7 @@ impl OpenResource {
                 }
             })
         } else {
-            let file = File::open(&path)?;
+            let file = File::open(&path).await?;
             Ok(Self {
                 handler,
                 session,
@@ -101,8 +102,7 @@ impl traits::Resource for OpenResource {
         match &self.inner {
             OpenInner::Root { .. } => Ok(root_stat(&self.session)),
             OpenInner::File(file) => {
-                let file = file.try_clone()?;
-                let meta = task::spawn_blocking(move || file.metadata()).await??;
+                let meta = file.metadata().await?;
                 Ok(stat(&self.session, &self.name, &meta))
             },
             OpenInner::Dir { path, .. } => {
@@ -130,13 +130,10 @@ impl traits::OpenResource for OpenResource {
     async fn read(&self, offset: u64, count: u32) -> Result<bytes::Bytes, Self::Error> {
         match &self.inner {
             OpenInner::File(file) => {
-                let file = file.try_clone()?;
-                Ok(task::spawn_blocking(move || {
-                    let mut buf = BytesMut::zeroed(count as usize);
-                    let n = file.read_at(&mut buf, offset)?;
-                    buf.truncate(n);
-                    Ok::<_, io::Error>(buf.freeze())
-                }).await??)
+                let BufResult(r, mut buf) = file.read_at(BytesMut::zeroed(count as usize), offset).await;
+                let n = r?;
+                buf.truncate(n);
+                Ok(buf.freeze())
             },
             OpenInner::Dir { path, dir_state } => {
                 let DirState { ref mut rem, ref mut last_offset } = *dir_state.lock().await;
@@ -144,7 +141,7 @@ impl traits::OpenResource for OpenResource {
                 if offset == 0 {
                     let mut rem2 = mem::take(rem);
                     let readdir = read_dir(path)?;
-                    *rem = task::spawn_blocking(move || {
+                    *rem = spawn_blocking(move || {
                         rem2.clear();
                         rem2.extend(readdir.filter_map(|dent| {
                             let dent = dent.unwrap();
@@ -154,14 +151,14 @@ impl traits::OpenResource for OpenResource {
                             Some((name.to_str()?.into(), meta))
                         }));
                         rem2
-                    }).await?;
+                    }).await.unwrap();
                 } else if offset != *last_offset {
                     bail!("Invalid argument");
                 }
 
                 let mut buf = BytesMut::new();
                 while let Some((name, meta)) = rem.first() {
-                    let stat = stat(&self.session, name, meta);
+                    let stat = stat_std(&self.session, name, meta);
 
                     let oldlen = buf.len();
                     put_stat(&mut buf, &stat)?;
@@ -229,7 +226,8 @@ impl traits::OpenResource for OpenResource {
                 bail!("fid not open for write");
             }
             OpenInner::Rpc(rpc) => {
-                let n = rpc.lock().await.write(data).await?;
+                let (_, _) = (rpc, data);
+                let n = 0;//rpc.lock().await.write(data).await?;
                 Ok(n.try_into()?)
             }
         }

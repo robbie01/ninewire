@@ -1,30 +1,20 @@
 [package]
 name = "server"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 
 [dependencies]
-util.workspace = true
 npwire.workspace = true
+transport = { path = "../transport", features = ["compio"] }
 
 anyhow.workspace = true
 bytes.workspace = true
 bytestring.workspace = true
-tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros", "net", "io-util", "fs", "full", "tracing"] }
-tokio-util = { workspace = true, features = ["net"] }
-tokio-stream = "0.1"
+tokio = { workspace = true, features = [ "macros", "sync"] }
+compio.workspace = true
 futures.workspace = true
 pin-project.workspace = true
-rand.workspace = true
-udt.path = "../udt"
-mediator-proto.path = "../mediator-proto"
-local-ip-address = "0.6.5"
-transport.path = "../transport"
-async-stream = "0.3"
-stable-vec = "0.4"
 
-# console-subscriber = "0.4"
+async-stream = "0.3"
 tracing-subscriber = "0.3"
 cfg-if = "1"
-tonic = "0.14"
-ctrlc = "3.4"

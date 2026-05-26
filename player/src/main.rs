@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use async_task::Runnable;
 use tokio::net::TcpStream;
-use transport::PlainTcpTransport;
+use transport::tokio::PlainTransport;
 use winit::{application::ApplicationHandler, event_loop::{EventLoop, EventLoopProxy}};
 
 use crate::{mpv::{IntoStreamInfo, StreamError}, nine::NineStream};
@@ -76,7 +76,7 @@ impl<'data, W: Fn() + Sync, O: Fn(&str) -> Result<Box<dyn IntoStreamInfo>, Strea
             // mpv.set_property("demuxer-max-bytes", &mpv::NodeValue::Int64(512*1024*1024).into()).await.unwrap();
             // mpv.set_property("demuxer-readahead-secs", &mpv::NodeValue::Int64(20).into()).await.unwrap();
 
-            mpv.command(&["loadfile\0", "np://anime/The Melancholy of Haruhi Suzumiya (2006)/Season 1/[Blank] Suzumiya Haruhi no Yuuutsu 2006 - 02.mkv\0"]).await.unwrap()
+            mpv.command(&["loadfile\0", "np://home/Downloads/ルールから学習へ：AIの二つの革命.mp4\0"]).await.unwrap()
         });
 
         self.mpv = Some(mpv);
@@ -131,8 +131,8 @@ fn main() {
     let _guard = rt.enter();
 
     let root = rt.block_on(async {
-        let tcp = TcpStream::connect("quietlife:9998").await.unwrap();
-        let transport = PlainTcpTransport::new(tcp);
+        let tcp = TcpStream::connect("localhost:8998").await.unwrap();
+        let transport = PlainTransport::new(tcp);
         let fs = client::Filesystem::new(transport).await.unwrap();
         println!("got the fs?");
         fs.attach("anonymous", "").await.unwrap()

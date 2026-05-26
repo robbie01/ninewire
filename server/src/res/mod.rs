@@ -1,4 +1,4 @@
-use std::fs::Metadata;
+use compio::fs::Metadata;
 
 use bytestring::ByteString;
 use npwire::{Qid, Stat, DMDIR, QTDIR, QTFILE};
@@ -25,6 +25,40 @@ fn qid(meta: &Metadata) -> Qid {
 }
 
 fn stat(session: &super::Session, name: &str, meta: &Metadata) -> Stat {
+    Stat {
+        type_: 0,
+        dev: 0,
+        qid: qid(meta),
+        mode: if meta.is_dir() { DMDIR | 0o555 } else { 0o444 },
+        atime: 0,
+        mtime: 0,
+        length: if meta.is_dir() { 0 } else { meta.len() },
+        name: name.into(),
+        uid: session.uname.clone(),
+        gid: session.uname.clone(),
+        muid: session.uname.clone()
+    }
+}
+
+fn stat_std(session: &super::Session, name: &str, meta: &std::fs::Metadata) -> Stat {
+    fn inode(meta: &std::fs::Metadata) -> u64 {
+        cfg_if::cfg_if! {
+            if #[cfg(unix)] {
+                std::os::unix::fs::MetadataExt::ino(meta)
+            } else {
+                compile_error!("implement inode")
+            }
+        }
+    }
+
+    fn qid(meta: &std::fs::Metadata) -> Qid {
+        Qid {
+            type_: if meta.is_dir() { QTDIR } else { QTFILE },
+            version: 0,
+            path: inode(meta)
+        }
+    }
+
     Stat {
         type_: 0,
         dev: 0,

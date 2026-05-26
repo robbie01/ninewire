@@ -4,12 +4,12 @@ use bytestring::ByteString;
 use npwire::{IOHDRSZ, RMessage, Rclunk, Rerror, Ropen, Rstat, Rwalk, TMessage, Tclunk, Topen, Tstat, Twalk, Twrite};
 use tokio::sync::oneshot;
 use tracing::trace;
-use transport::NpTransport;
+use transport::SyncNpTransport;
 use util::fidpool::FidHandle;
 
 use super::FilesystemInner;
 
-impl<T: NpTransport + ?Sized> FilesystemInner<T> {
+impl<T: SyncNpTransport + ?Sized> FilesystemInner<T> {
     pub(super) async fn transact(&self, message: impl Into<TMessage>) -> io::Result<RMessage> {
         let mut message = message.into();
         
@@ -37,7 +37,7 @@ impl<T: NpTransport + ?Sized> FilesystemInner<T> {
             .serialize(tag)
             .unwrap_or_else(|e| Rerror::from(e).serialize(tag).unwrap());
 
-        self.transport.send(&data).await?;
+        self.transport.send(data).await?;
         trace!(target: "client::fs", "sent request with tag {tag}, {:?}", message);
 
         rcv.await.map_err(|_| io::ErrorKind::UnexpectedEof.into())
