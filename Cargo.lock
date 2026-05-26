@@ -5409,6 +5409,7 @@ name = "server"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-stream",
  "bytes",
  "bytestring",
  "cfg-if",
@@ -5419,6 +5420,7 @@ dependencies = [
  "npwire",
  "pin-project",
  "rand",
+ "stable-vec",
  "tokio",
  "tokio-stream",
  "tokio-util",
@@ -7006,12 +7008,9 @@ checksum = "b6c140620e7ffbb22c2dee59cafe6084a59b5ffc27a8859a5f0d494b5d52b6be"
 name = "util"
 version = "0.1.0"
 dependencies = [
- "futures",
  "polymur-hash",
  "rand",
  "scc",
- "stable-vec",
- "tokio",
 ]
 
 [[package]]

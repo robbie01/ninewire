@@ -1,4 +1,4 @@
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 
 use std::{collections::BTreeMap, error::Error, future::ready, net::{IpAddr, Ipv6Addr, SocketAddrV6}, path::PathBuf, pin::pin, sync::{Arc, atomic::{AtomicU64, Ordering}}};
 

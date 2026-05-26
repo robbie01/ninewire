@@ -4,10 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-tokio.workspace = true
 rand.workspace = true
 scc.workspace = true
-futures.workspace = true
 
 polymur-hash = "0.2"
-stable-vec = "0.4"

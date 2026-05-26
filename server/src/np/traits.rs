@@ -27,7 +27,7 @@ pub trait OpenResource: Resource + Send + Sync {
 }
 
 pub trait Serve: Send + Sync + 'static {
-    type Error: Display;
+    type Error: Display + Send;
 
     type PathResource: PathResource<Error = Self::Error, OpenResource = Self::OpenResource>;
     type OpenResource: OpenResource<Error = Self::Error>;

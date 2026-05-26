@@ -1,15 +1,20 @@
-use std::{collections::BTreeMap, future::{Future, ready}, mem, pin::{Pin, pin}, sync::Arc, task::{Context, Poll}};
+use std::{collections::BTreeMap, future::ready, mem, sync::Arc};
 
+use async_stream::try_stream;
 use bytes::Bytes;
 use bytestring::ByteString;
-use futures::{FutureExt as _, Stream, StreamExt as _, io, stream::FuturesUnordered};
-use pin_project::pin_project;
+use futures::{FutureExt as _, Stream, StreamExt as _, io};
 use tokio::sync::RwLock;
 use npwire::*;
 use transport::NpTransport;
 use util::pooled::Pool;
 
+use crate::np::client::{pin_array::PinArray, tagged::Tagged};
+
 use super::{traits::{OpenResource as _, PathResource as _, Resource as _}, Serve};
+
+mod pin_array;
+mod tagged;
 
 const MAX_IN_FLIGHT: usize = 16;
 
@@ -28,42 +33,6 @@ enum Resource<S: Serve> {
 struct ResourceManager<S: Serve> {
     resources: RwLock<BTreeMap<u32, Resource<S>>>,
     handler: Arc<S>,
-}
-
-#[pin_project]
-struct Tagged<T: ?Sized> {
-    tag: u16,
-    flushes: Option<u16>,
-    #[pin]
-    hdl: T
-}
-
-impl<T: Future + ?Sized> Future for Tagged<T> {
-    type Output = (u16, Option<u16>, T::Output);
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let me = self.project();
-
-        me.hdl.poll(cx).map(|v| (
-            *me.tag,
-            *me.flushes,
-            v
-        ))
-    }
-}
-
-impl<T: Stream + ?Sized> Stream for Tagged<T> {
-    type Item = (u16, Option<u16>, T::Item);
-
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let me = self.project();
-
-        me.hdl.poll_next(cx).map(|v| v.map(|v| (
-            *me.tag,
-            *me.flushes,
-            v
-        )))
-    }
 }
 
 const fn rerror(ename: &'static str) -> Rerror {
@@ -133,7 +102,7 @@ async fn dispatch<S: Serve>(
             if resources.contains_key(&newfid) {
                 return Err(rerror("fid in use"));
             }
-            let resource = resources.get(&fid).ok_or_else(|| rerror("Fid not"))?;
+            let resource = resources.get(&fid).ok_or_else(|| rerror("fid invalid"))?;
             
             if let Resource::Path(resource) = resource {
                 let wname = wname.iter().map(|s| &s[..]).collect::<Vec<_>>();
@@ -249,6 +218,34 @@ async fn dispatch<S: Serve>(
     }
 }
 
+fn dispatch_reads<S: Serve>(
+    resource_mgr: &ResourceManager<S>,
+    Treads { fid, mut offset, mut count }: Treads,
+    maxlen: usize
+) -> impl Stream<Item = Result<RMessage, Rerror>> + '_ {
+    try_stream! {
+        let resources = resource_mgr.resources.read().await;
+
+        let resource = resources.get(&fid).ok_or_else(|| rerror("fid invalid"))?;
+        
+        if let Resource::Open(resource) = resource {
+            while count > 0 {
+                let n = count.min((maxlen - IOHDRSZ) as u32);
+                let mut data = resource.read(offset, n).await?;
+                data.truncate(maxlen - IOHDRSZ);
+
+                offset += data.len() as u64;
+                count -= data.len() as u32;
+
+                yield Rreads { offset, data }.into();
+            }
+            yield Rreads { offset, data: Bytes::new() }.into();
+        } else {
+            Err(rerror("fid not open for read"))?;
+        }
+    }
+}
+
 pub async fn handle_client<T: NpTransport, S: Serve>(
     peer: T,
     handler: Arc<S>
@@ -258,9 +255,9 @@ pub async fn handle_client<T: NpTransport, S: Serve>(
         handler: handler.clone(),
     };
 
-    let mut inflight = pin!(FuturesUnordered::new());
+    let mut inflight = PinArray::new(MAX_IN_FLIGHT);
 
-    let mut initialized = false;
+    let mut initialized = None;
     let mut next_session = None;
 
     let bufpool = Pool::new(|| vec![0u8; MAX_MESSAGE_SIZE as usize]);
@@ -276,11 +273,11 @@ pub async fn handle_client<T: NpTransport, S: Serve>(
                         "Tversion: message size too small"
                     ).serialize(!0).unwrap()).await?;
                 } else {
-                    let msize = msize.min(MAX_MESSAGE_SIZE);
+                    let msize = msize.min(MAX_MESSAGE_SIZE).min(peer.max_msize());
                     let version: &'static str = if version == "9P2000" { "9P2000" } else { "unknown" };
                     peer.send(&Rversion { msize, version: ByteString::from_static(version) }.serialize(!0).unwrap()).await?;
     
-                    initialized = true;
+                    initialized = Some(msize);
                 }
             }
         }
@@ -292,7 +289,7 @@ pub async fn handle_client<T: NpTransport, S: Serve>(
 
         tokio::select! {
             biased;
-            incoming_n = peer.recv(&mut buffer), if inflight.len() < MAX_IN_FLIGHT && next_session.is_none() => {
+            incoming_n = peer.recv(&mut buffer), if !inflight.is_full() && next_session.is_none() => {
                 let incoming_n = incoming_n?;
                 let incoming = mem::replace(&mut buffer, bufpool.get());
 
@@ -301,7 +298,7 @@ pub async fn handle_client<T: NpTransport, S: Serve>(
 
                 let des = deserialize_t(incoming);
 
-                if !initialized && !matches!(des, Ok((_, TMessage::Tversion(_)))) {
+                if initialized.is_none() && !matches!(des, Ok((_, TMessage::Tversion(_)))) {
                     // just throw out any messages before the first Tversion
                     continue;
                 }
@@ -313,62 +310,65 @@ pub async fn handle_client<T: NpTransport, S: Serve>(
                                 if tag == !0 {
                                     next_session = Some(tversion);
                                 } else {
-                                    inflight.push(Tagged {
-                                        tag,
-                                        flushes: None,
-                                        hdl: ready(rerror(
-                                            "Tversion: invalid tag"
-                                        ).into()).right_future()
-                                    });
+                                    inflight.push(Tagged::new(tag, ready(rerror(
+                                        "Tversion: invalid tag"
+                                    ).into()).into_stream().left_stream())).unwrap();
                                 }
                             },
                             TMessage::Tflush(Tflush { oldtag }) => {
-                                if let Some(fut) = inflight.as_mut().iter_pin_mut().find(|h| h.tag == oldtag) {
-                                    *fut.project().flushes = Some(tag);
-                                } else {
-                                    inflight.push(Tagged {
-                                        tag,
-                                        flushes: None,
-                                        hdl: ready(Rflush.into()).right_future()
-                                    });
+                                let found;
+                                // mucking around with lifetimes
+                                {
+                                    if let Some(fut) = inflight.iter_mut().find(|h| h.tag() == oldtag) {
+                                        found = true;
+                                        fut.flush(tag);
+                                    } else {
+                                        found = false;
+                                    }
+                                }
+
+                                if !found {
+                                    inflight.push(Tagged::new(tag, ready(Rflush.into()).into_stream().left_stream()))
+                                        .expect("inflight is full");
                                 }
                             },
-                            req => {
-                                inflight.push(Tagged {
-                                    tag,
-                                    flushes: None,
-                                    hdl: dispatch(
+                            TMessage::Treads(req) => {
+                                inflight.push(Tagged::new(tag,
+                                    dispatch_reads(
                                         &resource_mgr,
                                         req,
-                                        MAX_MESSAGE_SIZE as usize
-                                    ).map(|resp| resp.unwrap_or_else(RMessage::from)).left_future()
-                                });
+                                        initialized.unwrap() as usize
+                                    )
+                                        .map(|resp| resp.unwrap_or_else(RMessage::from))
+                                        .right_stream().right_stream()
+                                )).unwrap();
+                            },
+                            req => {
+                                inflight.push(Tagged::new(tag, 
+                                    dispatch(
+                                        &resource_mgr,
+                                        req,
+                                        initialized.unwrap() as usize
+                                    )
+                                        .map(|resp| resp.unwrap_or_else(RMessage::from))
+                                        .into_stream().left_stream().right_stream()
+                                )).unwrap();
                             }
                         }
                     },
                     Err(e) => {
                         if let Some(tag) = e.tag() {
-                            inflight.push(Tagged {
-                                tag,
-                                flushes: None,
-                                hdl: ready(Rerror {
-                                    ename: e.to_string().into()
-                                }.into()).right_future()
-                            });
+                            inflight.push(Tagged::new(tag, ready(Rerror { ename: e.to_string().into() }.into()).into_stream().left_stream())).unwrap();
                         }
                     }
                 }
             },
-            Some((tag, flushes, resp)) = inflight.next() => {
+            Some((tag, resp)) = inflight.next() => {
                 let serialized = resp
                     .serialize(tag)
                     .unwrap_or_else(|e| Rerror::from(e).serialize(tag).unwrap());
 
                 peer.send(&serialized).await?;
-
-                if let Some(flush) = flushes {
-                    peer.send(&Rflush.serialize(flush).unwrap()).await?;
-                }
             },
             else => break
         }

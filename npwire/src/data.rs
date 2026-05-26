@@ -442,6 +442,12 @@ impl Debug for RMessage {
     }
 }
 
+impl From<Rreads> for RMessage {
+    fn from(value: Rreads) -> Self {
+        Self::Rreads(value)
+    }
+}
+
 impl From<Rversion> for RMessage {
     fn from(value: Rversion) -> Self {
         Self::Rversion(value)

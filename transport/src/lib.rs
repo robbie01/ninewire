@@ -2,7 +2,7 @@ use std::{rc::Rc, sync::Arc};
 
 #[async_trait]
 pub trait NpTransport {
-    const MANDATORY_MAX_MSIZE: u32 = u32::MAX;
+    fn max_msize(&self) -> u32 { u32::MAX }
 
     async fn recv(&self, buf: &mut [u8]) -> io::Result<usize>;
     async fn send(&self, buf: &[u8]) -> io::Result<()>;
@@ -11,11 +11,12 @@ pub trait NpTransport {
 }
 
 impl<L: NpTransport, R: NpTransport> NpTransport for Either<L, R> {
-    const MANDATORY_MAX_MSIZE: u32 = if L::MANDATORY_MAX_MSIZE <= R::MANDATORY_MAX_MSIZE {
-        L::MANDATORY_MAX_MSIZE
-    } else {
-        R::MANDATORY_MAX_MSIZE
-    };
+    fn max_msize(&self) -> u32 {
+        match self {
+            Either::Left(l) => l.max_msize(),
+            Either::Right(r) => r.max_msize()
+        }
+    }
 
     fn send<'a, 'b, 'c>(&'a self, buf: &'b [u8]) -> Pin<Box<dyn Future<Output = io::Result<()>> + Send + 'c>> where 'a: 'c, 'b: 'c, Self: 'c {
         match self {
@@ -40,7 +41,9 @@ impl<L: NpTransport, R: NpTransport> NpTransport for Either<L, R> {
 }
 
 impl<T: NpTransport + ?Sized> NpTransport for Box<T> {
-    const MANDATORY_MAX_MSIZE: u32 = T::MANDATORY_MAX_MSIZE;
+    fn max_msize(&self) -> u32 {
+        (**self).max_msize()
+    }
 
     fn send<'a, 'b, 'c>(&'a self, buf: &'b [u8]) -> Pin<Box<dyn Future<Output = io::Result<()>> + Send + 'c>> where 'a: 'c, 'b: 'c, Self: 'c {
         (**self).send(buf)
@@ -56,7 +59,9 @@ impl<T: NpTransport + ?Sized> NpTransport for Box<T> {
 }
 
 impl<T: NpTransport + ?Sized> NpTransport for Arc<T> {
-    const MANDATORY_MAX_MSIZE: u32 = T::MANDATORY_MAX_MSIZE;
+    fn max_msize(&self) -> u32 {
+        (**self).max_msize()
+    }
 
     fn send<'a, 'b, 'c>(&'a self, buf: &'b [u8]) -> Pin<Box<dyn Future<Output = io::Result<()>> + Send + 'c>> where 'a: 'c, 'b: 'c, Self: 'c {
         (**self).send(buf)
@@ -72,7 +77,9 @@ impl<T: NpTransport + ?Sized> NpTransport for Arc<T> {
 }
 
 impl<T: NpTransport + ?Sized> NpTransport for Rc<T> {
-    const MANDATORY_MAX_MSIZE: u32 = T::MANDATORY_MAX_MSIZE;
+    fn max_msize(&self) -> u32 {
+        (**self).max_msize()
+    }
 
     fn send<'a, 'b, 'c>(&'a self, buf: &'b [u8]) -> Pin<Box<dyn Future<Output = io::Result<()>> + Send + 'c>> where 'a: 'c, 'b: 'c, Self: 'c {
         (**self).send(buf)
@@ -109,7 +116,9 @@ cfg_if::cfg_if! {
 
         #[async_trait]
         impl NpTransport for SecureTransport {
-            const MANDATORY_MAX_MSIZE: u32 = 1280 - 64 - 8 - 16;
+            fn max_msize(&self) -> u32 {
+                1280 - 64 - 8 - 16
+            }
 
             async fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
                 self.recv(buf).await

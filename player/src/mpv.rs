@@ -73,9 +73,13 @@ pub enum Event<'a> {
 }
 
 #[derive(Debug)]
+pub struct EventToken(Arc<()>);
+
+#[derive(Debug)]
 pub struct Handle<'data> {
     inner: NonNull<mpv_handle>,
     in_flight: Arc<Mutex<StableVec<AsyncState>>>,
+    token: Arc<()>,
     _phantom: PhantomData<&'data ()>
 }
 
@@ -83,13 +87,16 @@ unsafe impl<'data> Send for Handle<'data> {}
 unsafe impl<'data> Sync for Handle<'data> {}
 
 impl<'data> Handle<'data> {
-    pub fn new() -> Result<Self> {
+    pub fn new() -> Result<(Self, EventToken)> {
         let inner = NonNull::new(unsafe { mpv_create() })
             .expect("mpv_create returned null");
+
+        let token = Arc::new(());
 
         let this = Self {
             inner,
             in_flight: Arc::new(Mutex::new(StableVec::new())),
+            token: token.clone(),
             _phantom: PhantomData
         };
 
@@ -97,7 +104,7 @@ impl<'data> Handle<'data> {
 
         res0(unsafe { mpv_initialize(this.inner.as_ptr()) })?;
 
-        Ok(this)
+        Ok((this, EventToken(token)))
     }
 
     /// Ensure that the callback doesn't call any libmpv API functions.
@@ -128,7 +135,9 @@ impl<'data> Handle<'data> {
         })
     }
 
-    pub fn poll_event<R>(&mut self, cb: impl FnOnce(Event<'_>) -> R) -> Option<R>  {
+    pub fn poll_event<R>(&self, token: &mut EventToken, cb: impl FnOnce(Event<'_>) -> R) -> Option<R>  {
+        assert!(Arc::ptr_eq(&self.token, &token.0));
+
         loop {
             let ev = unsafe { *mpv_wait_event(self.inner.as_ptr(), 0.) };
             if ev.event_id == MPV_EVENT_NONE {

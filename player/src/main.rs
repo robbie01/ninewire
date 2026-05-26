@@ -1,6 +1,8 @@
 
 #![allow(clippy::missing_safety_doc)]
 
+use std::sync::Arc;
+
 use async_task::Runnable;
 use tokio::net::TcpStream;
 use transport::PlainTcpTransport;
@@ -22,21 +24,20 @@ struct App<'data, W, O> {
     proxy: &'data EventLoopProxy<Event>,
     wakeup: &'data W,
     open_nine: &'data O,
-    mpv: Option<mpv::Handle<'static>>
+    mpv: Option<Arc<mpv::Handle<'static>>>,
+    mpv_token: Option<mpv::EventToken>
 }
 
 impl<'data, W, O> App<'data, W, O> {
-    fn spawn<'this>(&'this self, fut: impl Future<Output = ()> + 'this) {
+    fn spawn(&self, fut: impl Future<Output = ()> + 'static) {
         let proxy = self.proxy.clone();
 
-        let (r, t) = unsafe { 
-            async_task::spawn_unchecked(
-                fut,
-                move |r| {
-                    let _ = proxy.send_event(Event::Runnable(r));
-                }
-            )
-        };
+        let (r, t) = async_task::spawn_local(
+            fut,
+            move |r| {
+                let _ = proxy.send_event(Event::Runnable(r));
+            }
+        );
 
         t.detach();
         r.schedule();
@@ -45,7 +46,9 @@ impl<'data, W, O> App<'data, W, O> {
 
 impl<'data, W: Fn() + Sync, O: Fn(&str) -> Result<Box<dyn IntoStreamInfo>, StreamError> + Sync> ApplicationHandler<Event> for App<'data, W, O> {
     fn resumed(&mut self, _event_loop: &winit::event_loop::ActiveEventLoop) {
-        let mpv = mpv::Handle::new().unwrap();
+        let (mpv, token) = mpv::Handle::new().unwrap();
+
+        self.mpv_token = Some(token);
         
         unsafe {
             mpv.set_wakeup_callback(self.wakeup);
@@ -54,8 +57,11 @@ impl<'data, W: Fn() + Sync, O: Fn(&str) -> Result<Box<dyn IntoStreamInfo>, Strea
 
         mpv.request_log_messages("info\0").unwrap();
 
-        self.spawn(async {
-            let mpv = self.mpv.as_ref().unwrap();
+        let mpv = Arc::new(mpv);
+
+        let mpv2 = mpv.clone();
+        self.spawn(async move {
+            let mpv = mpv2;
 
             let yes = mpv::NodeValue::Flag(true).into();
 
@@ -88,18 +94,21 @@ impl<'data, W: Fn() + Sync, O: Fn(&str) -> Result<Box<dyn IntoStreamInfo>, Strea
     fn user_event(&mut self, event_loop: &winit::event_loop::ActiveEventLoop, event: Event) {
         match event {
             Event::MpvWakeup => {
-                while let Some(()) = self.mpv.as_mut().unwrap().poll_event(|ev| {
-                    match ev {
-                        mpv::Event::Shutdown => {
-                            println!("shutdown received");
-                            event_loop.exit()
-                        },
-                        mpv::Event::LogMessage { prefix: _, level: _, text } => {
-                            println!("log: {}", text.to_str().unwrap().trim());
-                        },
-                        _ => println!("{ev:?}")
+                while let Some(()) = self.mpv.as_ref().unwrap().poll_event(
+                    self.mpv_token.as_mut().unwrap(),
+                    |ev| {
+                        match ev {
+                            mpv::Event::Shutdown => {
+                                println!("shutdown received");
+                                event_loop.exit()
+                            },
+                            mpv::Event::LogMessage { prefix: _, level: _, text } => {
+                                println!("log: {}", text.to_str().unwrap().trim());
+                            },
+                            _ => println!("{ev:?}")
+                        }
                     }
-                }) {}
+                ) {}
             },
             Event::CtrlC => {
                 let fut = self.mpv.as_ref().unwrap().command(&["quit"]);
@@ -154,6 +163,7 @@ fn main() {
         proxy,
         wakeup: &wakeup,
         open_nine: &open_nine,
-        mpv: None
+        mpv: None,
+        mpv_token: None
     }).unwrap();
 }
